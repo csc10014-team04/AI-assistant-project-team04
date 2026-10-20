@@ -1,0 +1,74 @@
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: schedule_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: university_assistant
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - internal_bridge
+    command: --default-authentication-plugin=mysql_native_password --max_connections=200
+
+  llama_engine:
+    image: vllm/vllm-openai:latest
+    container_name: local_llama_inference
+    restart: always
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      --model meta-llama/Meta-Llama-3-8B-Instruct
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len 4096
+      --gpu-memory-utilization 0.85
+      --enforce-eager
+    networks:
+      - internal_bridge
+
+  backend:
+    build: ./backend
+    container_name: schedule_backend
+    restart: always
+    environment:
+      DATABASE_URL: mysql+aiomysql://${DB_USER}:${DB_PASSWORD}@db:3306/university_assistant
+      LLAMA_API_URL: http://llama_engine:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - llama_engine
+    networks:
+      - internal_bridge
+
+  frontend:
+    build: ./frontend
+    container_name: schedule_frontend
+    ports:
+      - "80:80"
+    networks:
+      - internal_bridge
+
+volumes:
+  db_data:
+
+networks:
+  internal_bridge:
+    driver: bridge
