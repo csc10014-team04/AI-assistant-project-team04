@@ -1,128 +1,217 @@
-Backend Integration Guide - Virtual Assistant (CSC10014)
+# Infrastructure & Backend Integration Guide — Database & AI Services
 
-This is the System Integration phase. The core infrastructure (Database, AI Engine, and Backend Gateway) is currently hosted centrally on the Team Lead's laptop.
+> **Course:** CSC10014 — Virtual Assistant Project  
+> **Target Database:** MySQL 8.0 (`utf8mb4_unicode_ci`, UTC timestamps)  
+> **AI Engine:** Meta-Llama-3.1-8B-Instruct (AWQ-INT4) via vLLM  
+> **Central Host IP:** `192.168.100.112` *(or `127.0.0.1` when developing on the host laptop)*
 
-Central Host IP: 192.168.100.112
+---
 
-This guide outlines how to connect your local development environment to the central host, access the database, and route data to the local Llama 3.1 AI Engine.
+## 1. Network Topology & Port Mapping
 
-1. Database Access & Connection
+Services run inside a private Docker bridge network (`internal_bridge`). When connecting from outside Docker (GUI clients, or Backend running locally in virtual environment), use the **Host Ports**:
 
-The project uses MySQL 8.0. You will interact with it in two ways: externally (via a DB Client like DBeaver) for schema management, and internally (via Python) for the application logic.
+| Service | Container Internal Address | Host External Access | Purpose |
+| :--- | :--- | :--- | :--- |
+| **MySQL 8.0** | `db:3306` | `Host_IP:3307` | Central Database (Port 3307 avoids conflicts with local MySQL) |
+| **vLLM AI Engine** | `llama_engine:8000` | `Host_IP:8000` | Llama 3.1 8B Inference API |
+| **Backend Gateway** | `backend:8080` | `Host_IP:8080` | Central FastAPI Service |
+| **Frontend Web** | `frontend:80` | `Host_IP:80` | Status & Web Preview UI |
 
-A. External Access (GUI Client)
+> [!IMPORTANT]
+> **Why Port 3307 on Host?**  
+> Port 3306 on developer laptops is frequently occupied by a local MySQL, MariaDB, or XAMPP service. Therefore, Docker exposes MySQL on host port **`3307`** (`"3307:3306"`).
 
-Use these credentials to connect your local database client (DBeaver, MySQL Workbench, DataGrip) to the central host to view tables and insert mock data:
+---
 
-Host: 192.168.100.112
+## 2. Database Connection Guide
 
-Port: 3306
+### A. External GUI Client Access (DBeaver, MySQL Workbench, DataGrip)
 
-Database: university_assistant
+Use these credentials to connect your database manager to the central host:
 
-Username: schedule_admin
+* **Host:** `192.168.100.112` *(or `127.0.0.1` / `localhost` if running Docker locally)*
+* **Port:** `3307`
+* **Database / Default Schema:** `university_assistant`
+* **Username:** `schedule_admin` *(careful: avoid typos like `schedule_main`)*
+* **Password:** *(Defined in `assistant_deploy/.env` — ask Host Lead via Discord/Zalo)*
 
-Password: (Get the .env password from the Host Lead via team's Discord or Zalo)
+---
 
-B. Connecting the Data Line (Python/SQLAlchemy)
+### B. Python / SQLAlchemy Connection Strings
 
-When writing backend code (FastAPI), your service will run inside the Docker network. Therefore, you must use the internal Docker DNS name (db), not the Host IP, to connect.
+Choose the connection string based on **where your code is executing**:
 
-1. Install Dependencies:
+#### 1. Backend Running Locally on Developer PC (Standard Dev Workflow)
+Since Team Backend runs FastAPI directly in a local virtual environment (`.venv`), connect through the host port **`3307`** using the synchronous `pymysql` driver (as defined in `sourceCode/BE/database.py`):
 
-pip install fastapi sqlalchemy aiomysql
+```bash
+# In your local .env or terminal environment:
+# If connecting to Team Lead's host across Wi-Fi:
+DATABASE_URL="mysql+pymysql://schedule_admin:[PASSWORD]@192.168.100.112:3307/university_assistant?charset=utf8mb4"
 
+# If running the Docker stack on your own machine:
+DATABASE_URL="mysql+pymysql://schedule_admin:[PASSWORD]@127.0.0.1:3307/university_assistant?charset=utf8mb4"
+```
 
-2. Database Connection Setup (database.py):
-
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+*Code implementation in `database.py`:*
+```python
+import os
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-# NOTE: Use 'db:3306' because the backend container communicates internally via Docker bridge.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "mysql+pymysql://schedule_admin:[PASSWORD]@127.0.0.1:3307/university_assistant?charset=utf8mb4",
+)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+```
+
+#### 2. Backend Running Inside Docker Container
+When packaged inside a Docker container attached to `internal_bridge`, use Docker DNS name `db` and container port `3306`:
+```python
+# Synchronous PyMySQL:
+DATABASE_URL = "mysql+pymysql://schedule_admin:[PASSWORD]@db:3306/university_assistant?charset=utf8mb4"
+
+# Asynchronous aiomysql (if using create_async_engine):
 DATABASE_URL = "mysql+aiomysql://schedule_admin:[PASSWORD]@db:3306/university_assistant"
+```
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+---
 
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
+## 3. Deployment & Host Operations (`assistant_deploy/`)
 
+### 3.1. Environment Setup (`.env`)
+Before launching the Docker stack, create a `.env` file in `sourceCode/Database/assistant_deploy/` (you can copy from `.env.example`):
 
-2. Calling the AI Engine (vLLM)
+```bash
+cd sourceCode/Database/assistant_deploy
+cp .env.example .env
+```
 
-The Llama 3.1 model is served via vLLM. Like the database, the backend communicates with the AI engine internally through the Docker network.
+Ensure `.env` contains:
+```env
+DB_ROOT_PASSWORD=your_secure_root_password
+DB_USER=schedule_admin
+DB_PASSWORD=your_schedule_admin_password
+HF_TOKEN=your_huggingface_access_token
+```
 
-Internal AI Endpoint: http://llama_engine:8000/v1/chat/completions
+### 3.2. Common Docker Commands
 
-Example Integration (FastAPI Route)
+```powershell
+# Navigate to deployment directory
+cd sourceCode\Database\assistant_deploy
 
-Here is how to fetch data from the database, construct a prompt, and call the AI engine using httpx.
+# Start all services in the background
+docker compose up -d
 
-1. Install HTTP client:
+# Check live logs of the database container
+docker compose logs -f db
 
-pip install httpx
+# Check running containers
+docker compose ps
 
+# Stop all services safely
+docker compose down
 
-2. API Route Implementation (main.py):
+# Wipe database volume & reset completely (Re-runs init.sql on next startup)
+docker compose down -v
+```
 
-from fastapi import FastAPI, Depends, HTTPException
+> [!WARNING]
+> **Docker Volume Reset Rule:**  
+> If you update `init.sql` or change database credentials in `.env`, MySQL will **not** automatically apply them because existing data is stored in the `db_data` volume. You must run `docker compose down -v` to delete the volume before starting again.
+
+---
+
+## 4. Calling the AI Engine (vLLM Llama 3.1)
+
+The Llama 3.1 model is served via vLLM with an OpenAI-compatible API.
+
+* **Internal Endpoint (from Docker containers):** `http://llama_engine:8000/v1/chat/completions`
+* **External Endpoint (from Local Developer PC):** `http://192.168.100.112:8000/v1/chat/completions` (or `http://127.0.0.1:8000/v1/chat/completions`)
+
+### FastAPI Route Integration Example (`httpx`):
+
+```python
+import os
 import httpx
-from database import get_db
+from fastapi import FastAPI, Depends, HTTPException
 
 app = FastAPI()
 
-VLLM_ENDPOINT = "http://llama_engine:8000/v1/chat/completions"
+VLLM_ENDPOINT = os.getenv(
+    "VLLM_ENDPOINT",
+    "http://llama_engine:8000/v1/chat/completions"  # Use 127.0.0.1:8000 if running BE locally
+)
 MODEL_NAME = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
 
 @app.post("/api/v1/assistant/chat")
-async def chat_with_assistant(user_message: str, db=Depends(get_db)):
-    # 1. (Optional) Query the DB for student schedule/info here
-    # context = await db.execute(...)
-
-    # 2. Construct the OpenAI-compatible payload
+async def chat_with_assistant(user_message: str):
     payload = {
         "model": MODEL_NAME,
         "messages": [
-            {"role": "system", "content": "You are a helpful university assistant. Use the provided context to answer questions."},
+            {
+                "role": "system",
+                "content": "You are a helpful university assistant. Use the provided context to answer questions."
+            },
             {"role": "user", "content": user_message}
         ],
         "max_tokens": 512,
         "temperature": 0.3
     }
 
-    # 3. Call the local AI Engine
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(VLLM_ENDPOINT, json=payload, timeout=60.0)
             response.raise_for_status()
             ai_data = response.json()
-            
             return {
-                "status": "success", 
+                "status": "success",
                 "reply": ai_data["choices"][0]["message"]["content"]
             }
         except httpx.RequestError as exc:
             raise HTTPException(status_code=503, detail=f"AI Engine unreachable: {exc}")
+```
 
+---
 
-3. Testing Your Endpoints
+## 5. Testing & Verification
 
-When you push your FastAPI code to the host and the container is running, you can test your endpoints from your own machine using Postman or cURL.
-
-Since you are calling the Backend from the outside, you use the Host IP and the exposed Backend Port (8080).
-
-cURL Example:
-
+### Test Backend Endpoint via cURL
+```bash
 curl -X POST "http://192.168.100.112:8080/api/v1/assistant/chat" \
      -H "Content-Type: application/json" \
      -d '{"user_message": "What is my schedule for today?"}'
+```
 
+### Test MySQL Connection via PowerShell
+```powershell
+# Test TCP connectivity to port 3307
+Test-NetConnection -ComputerName 127.0.0.1 -Port 3307
+```
 
-*Important Rules for Backend Devs
+---
 
-Never expose the AI Engine directly to the Frontend. The Backend must act as the middleman to inject Database context.
+## 6. Troubleshooting & Common Errors
 
-If the AI times out, notify the Host Lead. The local GPU may be overloaded and require a VRAM flush.
+| Error Message | Root Cause | Solution |
+| :--- | :--- | :--- |
+| `Only one usage of each socket address (bind: 3306)` | Host port 3306 is already used by local MySQL/XAMPP. | Keep `"3307:3306"` in `docker-compose.yml` and connect via port **`3307`**. |
+| `Access denied for user 'schedule_...'` | Typo in username (e.g. `schedule_main`) or wrong password. | Verify username is exactly `schedule_admin` and matches `.env`. |
+| `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified` | Docker Desktop is closed or starting up. | Open Docker Desktop and wait until the whale icon turns green (**Engine running**). |
+| `socket.gaierror: getaddrinfo failed ('db')` | Python script running locally on PC tried to connect to hostname `db`. | Replace `db:3306` with `127.0.0.1:3307` or `192.168.100.112:3307`. |
+| `No route to host` / `Connection timed out` to `192.168.100.112` | Developer laptop is on a different Wi-Fi subnet or blocked by firewall. | Ensure all devices are on the same Wi-Fi, or allow inbound ports 3307/8080 on the host firewall. |
 
-Keep your system prompts concise. We are constrained by a strict 2048 maximum context length due to VRAM limitations.
+---
+
+## 7. Architectural Rules for Backend Developers
+
+1. **Zero Direct AI Database Mutations:** The AI Engine never writes directly to `events`. It must generate a `Proposal` (`status = PROPOSED`) for user confirmation.
+2. **Context Window Constraint:** System prompts must remain concise. The model context length is constrained to **2048 tokens** due to local GPU VRAM limits.
+3. **Timezone Awareness:** All timestamps stored in MySQL are UTC. Use `from_db_to_vn(dt)` to serialize timestamps into `+07:00` (ISO 8601) for mobile clients.
+4. **Driver Consistency:** Stick to `pymysql` and SQLAlchemy 2.0 synchronous sessions as defined in `sourceCode/BE/database.py`.
+
