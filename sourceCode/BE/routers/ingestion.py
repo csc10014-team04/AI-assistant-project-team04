@@ -1,27 +1,46 @@
-# owners: Lam (step 1: upload & preview parsing) + Khoi (step 2: conflict resolution & db commit)
+import csv
+import io
 import sys
-from datetime import date, time
+from dataclasses import asdict
+from datetime import date, datetime, time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-# Ensure the BE directory is in sys.path so 'models' and 'services' can be imported
+# ensure be root directory is in sys.path so models, database, and services can be imported
 CURRENT_DIR = Path(__file__).resolve().parent
 BE_DIR = CURRENT_DIR.parent
 if str(BE_DIR) not in sys.path:
     sys.path.insert(0, str(BE_DIR))
 
-from models import CsvRowKind, InvalidCsvRow, ParsedCsvRow, Weekday
-from services.parser import export_valid_rows_to_csv, parse_timetable_content
+from database import active_events_stmt, from_db_to_vn, get_db  # noqa: E402
+from models import (  # noqa: E402
+    CsvRowKind,
+    EventDomain,
+    EventKind,
+    EventSource,
+    InvalidCsvRow,
+    ParsedCsvRow,
+    User,
+    Weekday,
+)
+from services.parser import (  # noqa: E402
+    _parse_and_validate_row,
+    _split_line_into_cells,
+    export_valid_rows_to_csv,
+    parse_timetable_content,
+)
+from services.security import get_current_user  # noqa: E402
+from services.validator import commit_resolved_import, detect_import_conflicts  # noqa: E402
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
 
 # ============================================================================
-# PYDANTIC SCHEMAS
-# Separate from models.py dataclasses — these are JSON input/output schemas only
+# PART 1: PYDANTIC SCHEMAS FOR STEP 1 (parse-preview) & STEP 2 (resolve-preview)
 # ============================================================================
 
 
@@ -117,8 +136,8 @@ class ResolvePreviewRequest(BaseModel):
 class ResolvePreviewResponse(BaseModel):
     """
     Response contract for resolve-preview.
-    all_valid_rows is the unified, 100% clean list that Khoi's module
-    (detect_import_conflicts) will consume in Step 2.3.
+    all_valid_rows is the unified, 100% clean list that detect_import_conflicts
+    will consume in Step 3.
     exported_csv is the normalized CSV string ready for any downstream processing.
     """
     import_batch_id: str
@@ -128,7 +147,75 @@ class ResolvePreviewResponse(BaseModel):
 
 
 # ============================================================================
-# HELPER FUNCTIONS
+# PART 2: PYDANTIC SCHEMAS FOR STEP 3 (check-conflicts) & STEP 4 (commit)
+# ============================================================================
+
+
+class CsvRowPayload(BaseModel):
+    line_number: int = Field(default=1, ge=1)
+    course_code: str
+    title: str
+    kind: CsvRowKind
+    start_time: time
+    end_time: time
+    first_date: date
+    last_date: date
+    weekday: Weekday | None = None
+    room: str | None = None
+
+    def to_domain(self) -> ParsedCsvRow:
+        """convert request payload item into ParsedCsvRow dataclass"""
+        return ParsedCsvRow(
+            line_number=self.line_number,
+            course_code=self.course_code,
+            title=self.title,
+            kind=self.kind,
+            start_time=self.start_time,
+            end_time=self.end_time,
+            first_date=self.first_date,
+            last_date=self.last_date,
+            weekday=self.weekday,
+            room=self.room,
+        )
+
+
+class CheckConflictsRequest(BaseModel):
+    incoming_rows: list[CsvRowPayload]
+    replace_previous_imports: bool = False
+
+
+class CommitImportRequest(BaseModel):
+    import_batch_id: str = Field(..., min_length=1, max_length=64)
+    resolved_rows: list[CsvRowPayload]
+    replace_previous_imports: bool = False
+
+
+class EventResponseItem(BaseModel):
+    id: int | None
+    owner_id: int
+    title: str
+    start_time: datetime
+    end_time: datetime
+    kind: EventKind
+    source: EventSource
+    is_hard: bool
+    priority: int
+    room: str | None = None
+    course_id: int | None = None
+    task_id: int | None = None
+    proposal_id: int | None = None
+    import_batch_id: str | None = None
+    is_important: bool = False
+
+
+class CommitImportResponse(BaseModel):
+    import_batch_id: str
+    created_count: int
+    events: list[EventResponseItem]
+
+
+# ============================================================================
+# PART 3: HELPER FUNCTIONS
 # ============================================================================
 
 
@@ -174,7 +261,7 @@ def _invalid_to_schema(row: InvalidCsvRow) -> InvalidCsvRowSchema:
 def _corrected_payload_to_csv_line(payload: CorrectedRowPayload) -> str:
     """
     Input:
-        payload (CorrectedRowPayload): A user-edited row submitted by the Android app.
+        payload (CorrectedRowPayload): A user-edited row submitted by the frontend app.
     Output:
         str: A single CSV-formatted line with 9 fields, ready to be re-parsed
              by parse_timetable_content to enforce the same validation rules.
@@ -182,9 +269,6 @@ def _corrected_payload_to_csv_line(payload: CorrectedRowPayload) -> str:
         - weekday and room are optional: written as empty string when None.
         - Uses csv.writer to safely quote values containing commas or special chars.
     """
-    import csv
-    import io
-
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow([
@@ -198,7 +282,6 @@ def _corrected_payload_to_csv_line(payload: CorrectedRowPayload) -> str:
         payload.last_date,
         payload.kind,
     ])
-    # csv.writer adds a trailing newline — strip it before returning
     return buffer.getvalue().strip()
 
 
@@ -213,14 +296,7 @@ def _revalidate_corrected_rows(
             - list[ParsedCsvRow]: Rows that passed re-validation.
             - list[InvalidCsvRowSchema]: Rows that still failed after the user's edit,
               returned to the caller so the API can report them clearly.
-    Edge Cases Handled:
-        - If the user corrects a row but still enters an invalid time format, the row
-          is re-isolated and returned in the still_invalid list rather than silently dropped.
-        - Each corrected row is rebuilt as a single CSV line and fed back through
-          parse_timetable_content to reuse all existing validation logic.
     """
-    from services.parser import _parse_and_validate_row, _split_line_into_cells
-
     accepted: list[ParsedCsvRow] = []
     still_invalid: list[InvalidCsvRowSchema] = []
 
@@ -238,7 +314,6 @@ def _revalidate_corrected_rows(
             continue
 
         if cells is None:
-            # Should never happen for a user-submitted row, but guard anyway
             still_invalid.append(InvalidCsvRowSchema(
                 line_number=corrected.line_number,
                 raw_text=csv_line,
@@ -251,7 +326,7 @@ def _revalidate_corrected_rows(
 
         if valid_row is not None:
             accepted.append(valid_row)
-        else:
+        elif invalid_row is not None:
             still_invalid.append(InvalidCsvRowSchema(
                 line_number=invalid_row.line_number,
                 raw_text=invalid_row.raw_text,
@@ -268,11 +343,6 @@ def _schema_to_domain(schema: ParsedCsvRowSchema) -> ParsedCsvRow:
         schema (ParsedCsvRowSchema): A validated Pydantic row schema from the request body.
     Output:
         ParsedCsvRow: Domain dataclass used by export_valid_rows_to_csv.
-    Edge Cases Handled:
-        - Parses time strings ("HH:MM") and date strings ("YYYY-MM-DD") safely.
-        - Converts weekday string to Weekday enum or None.
-        - Raises HTTPException 422 if any field is malformed (should not happen
-          since client echoes back what the server sent, but guards against tampering).
     """
     try:
         parsed_start = time.fromisoformat(schema.start_time)
@@ -310,8 +380,30 @@ def _schema_to_domain(schema: ParsedCsvRowSchema) -> ParsedCsvRow:
     )
 
 
+def _serialize_conflict_option(option: ParsedCsvRow | EventDomain) -> dict[str, Any]:
+    """serialize either a ParsedCsvRow or EventDomain with vn_tz timestamps"""
+    if isinstance(option, ParsedCsvRow):
+        data = asdict(option)
+        data["option_type"] = "incoming_row"
+        return data
+    return {
+        "option_type": "existing_event",
+        "id": option.id,
+        "owner_id": option.owner_id,
+        "title": option.title,
+        "start_time": from_db_to_vn(option.start_time).isoformat(),
+        "end_time": from_db_to_vn(option.end_time).isoformat(),
+        "kind": option.kind,
+        "source": option.source,
+        "is_hard": option.is_hard,
+        "priority": option.priority,
+        "room": option.room,
+        "course_id": option.course_id,
+    }
+
+
 # ============================================================================
-# LAM'S ENDPOINTS: STEP 2.1 (parse-preview) & STEP 2.2 (resolve-preview)
+# PART 4: ENDPOINTS 1 & 2 (PARSE-PREVIEW & RESOLVE-PREVIEW)
 # ============================================================================
 
 
@@ -320,7 +412,7 @@ def _schema_to_domain(schema: ParsedCsvRowSchema) -> ParsedCsvRow:
     response_model=ParsePreviewResponse,
     summary="Upload a timetable file and get a preview with valid and invalid rows",
     description=(
-        "Accepts either a file upload (multipart/form-data) or a raw text JSON body. "
+        "Accepts either a file upload (multipart/form-data) or a raw text form field. "
         "Returns valid rows (green) and invalid rows (yellow) for the student to review "
         "before confirming import. Never crashes on malformed lines."
     ),
@@ -329,25 +421,10 @@ async def parse_preview(
     file: Optional[UploadFile] = File(default=None, description="Upload a .csv, .md, or .txt timetable file"),
     raw_content: Optional[str] = Form(default=None, description="Alternative: paste raw timetable text"),
 ) -> ParsePreviewResponse:
-    """
-    Input:
-        file (UploadFile, optional): Uploaded timetable file (.csv, .md, .txt).
-        raw_content (str, optional): Raw timetable text sent as a form field.
-        Exactly one of these two must be provided.
-    Output:
-        ParsePreviewResponse: Contains import_batch_id, valid_rows, and invalid_rows.
-    Edge Cases Handled:
-        - Both file and raw_content absent: returns HTTP 422.
-        - File too large to read: returns HTTP 413 with a clear message.
-        - File encoding other than UTF-8: attempts latin-1 fallback before failing.
-        - Completely empty file or content: returns valid/invalid lists both empty,
-          still with a valid import_batch_id (so the client can render an empty preview).
-    """
     # 1. Resolve content source: file upload takes priority over raw_content form field
     if file is not None:
         file_bytes = await file.read()
 
-        # Guard against suspiciously large files (10 MB limit)
         MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
         if len(file_bytes) > MAX_FILE_BYTES:
             raise HTTPException(
@@ -355,7 +432,6 @@ async def parse_preview(
                 detail="File size exceeds the 10 MB limit. Please split the timetable into smaller files.",
             )
 
-        # Attempt UTF-8 decoding first, then fall back to latin-1 for older exports
         try:
             content_str = file_bytes.decode("utf-8")
         except UnicodeDecodeError:
@@ -405,40 +481,16 @@ async def parse_preview(
     description=(
         "Accepts the batch ID from parse-preview, the unchanged valid rows, user-corrected rows, "
         "and line numbers the user chose to skip. Re-validates all corrected rows through the same "
-        "parser logic. Returns a unified list[ParsedCsvRow] and exported CSV ready for Khoi's "
-        "conflict detection step (Step 2.3)."
+        "parser logic. Returns a unified list[ParsedCsvRow] and exported CSV ready for "
+        "conflict detection (Step 3)."
     ),
 )
 async def resolve_preview(body: ResolvePreviewRequest) -> ResolvePreviewResponse:
-    """
-    Input:
-        body (ResolvePreviewRequest): JSON containing import_batch_id, valid_rows,
-                                      corrected_rows, and skipped_line_numbers.
-    Output:
-        ResolvePreviewResponse: A unified 100% clean list of ParsedCsvRow objects
-                                and their exported CSV string for Khoi's module.
-    Edge Cases Handled:
-        - corrected_rows that still fail validation after user's edit are rejected with
-          a 422 error listing which specific lines are still invalid and why — never
-          silently merges a bad row into the clean output.
-        - skipped_line_numbers are filtered out of both valid_rows and corrected_rows,
-          giving the user the ability to permanently discard garbage comment lines.
-        - Duplicate line_numbers between valid_rows and corrected_rows: corrected row
-          takes precedence (the user's edited version overrides the original).
-        - Rows are sorted by line_number in the final output for predictable ordering.
-        - Empty corrected_rows and empty skipped_line_numbers are valid inputs
-          (user accepted everything or rejected everything).
-    """
-    # 1. Build a set of line numbers to skip — O(1) lookup
     skip_set: set[int] = set(body.skipped_line_numbers)
 
-    # 2. Re-validate all corrected rows through the same parser validator
     corrected_non_skipped = [row for row in body.corrected_rows if row.line_number not in skip_set]
     revalidated_rows, still_invalid = _revalidate_corrected_rows(corrected_non_skipped)
 
-    # If any corrected row is still invalid after the user's edit, reject the entire
-    # resolve request and tell the user exactly which lines need more attention.
-    # Why: We must guarantee 100% data quality at this handoff point to Khoi's module.
     if still_invalid:
         details = [
             f"Line {err.line_number}: [{err.error_code}] {err.error_message}"
@@ -455,32 +507,20 @@ async def resolve_preview(body: ResolvePreviewRequest) -> ResolvePreviewResponse
             },
         )
 
-    # 3. Collect line numbers provided by successfully re-validated corrected rows
-    # These line numbers "override" any original valid row with the same line number
     corrected_line_numbers: set[int] = {row.line_number for row in revalidated_rows}
 
-    # 4. Convert the unchanged valid_rows from Pydantic schema back to domain dataclasses,
-    # but filter out: (a) skipped lines and (b) lines already replaced by a corrected row
     confirmed_original: list[ParsedCsvRow] = []
     for schema_row in body.valid_rows:
         if schema_row.line_number in skip_set:
-            # User explicitly skipped this line — discard
             continue
         if schema_row.line_number in corrected_line_numbers:
-            # This line was also submitted as a corrected row — let the corrected version win
             continue
         confirmed_original.append(_schema_to_domain(schema_row))
 
-    # 5. Merge: original confirmed rows + re-validated corrected rows
     all_clean_rows = confirmed_original + revalidated_rows
-
-    # 6. Sort by original line_number for deterministic, predictable output ordering
     all_clean_rows.sort(key=lambda row: row.line_number)
 
-    # 7. Serialize to the standard 9-column CSV string for Khoi's module
     exported_csv = export_valid_rows_to_csv(all_clean_rows)
-
-    # 8. Convert domain dataclasses back to Pydantic schema for JSON response
     all_schemas = [_domain_to_schema(row) for row in all_clean_rows]
 
     return ResolvePreviewResponse(
@@ -488,4 +528,82 @@ async def resolve_preview(body: ResolvePreviewRequest) -> ResolvePreviewResponse
         total_accepted=len(all_clean_rows),
         all_valid_rows=all_schemas,
         exported_csv=exported_csv,
+    )
+
+
+# ============================================================================
+# PART 5: ENDPOINTS 3 & 4 (CHECK-CONFLICTS & COMMIT TO MYSQL)
+# ============================================================================
+
+
+@router.post("/check-conflicts")
+def check_conflicts_endpoint(
+    payload: CheckConflictsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """detect series-level time conflicts among incoming rows and existing user events"""
+    db_events = db.scalars(active_events_stmt(current_user.id)).all()
+    existing_domains = [
+        ev.to_domain()
+        for ev in db_events
+        if not (payload.replace_previous_imports and ev.source == EventSource.IMPORTED)
+    ]
+    incoming_domains = [row.to_domain() for row in payload.incoming_rows]
+    result = detect_import_conflicts(incoming_domains, existing_domains)
+
+    serialized_cards = [
+        {
+            "conflict_id": card["conflict_id"],
+            "option_a": _serialize_conflict_option(card["option_a"]),
+            "option_b": _serialize_conflict_option(card["option_b"]),
+            "overlap_description": card["overlap_description"],
+        }
+        for card in result["conflict_cards"]
+    ]
+    return {
+        "non_conflicting_rows": [asdict(r) for r in result["non_conflicting_rows"]],
+        "conflict_cards": serialized_cards,
+    }
+
+
+@router.post("/commit", response_model=CommitImportResponse)
+def commit_import_endpoint(
+    payload: CommitImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CommitImportResponse:
+    """persist resolved timetable rows into courses and events in a single transaction"""
+    resolved_domains = [row.to_domain() for row in payload.resolved_rows]
+    created_domains = commit_resolved_import(
+        db=db,
+        owner_id=current_user.id,
+        import_batch_id=payload.import_batch_id,
+        resolved_rows=resolved_domains,
+        replace_previous_imports=payload.replace_previous_imports,
+    )
+    items = [
+        EventResponseItem(
+            id=ev.id,
+            owner_id=ev.owner_id,
+            title=ev.title,
+            start_time=from_db_to_vn(ev.start_time),
+            end_time=from_db_to_vn(ev.end_time),
+            kind=ev.kind,
+            source=ev.source,
+            is_hard=ev.is_hard,
+            priority=ev.priority,
+            room=ev.room,
+            course_id=ev.course_id,
+            task_id=ev.task_id,
+            proposal_id=ev.proposal_id,
+            import_batch_id=ev.import_batch_id,
+            is_important=ev.is_important,
+        )
+        for ev in created_domains
+    ]
+    return CommitImportResponse(
+        import_batch_id=payload.import_batch_id,
+        created_count=len(items),
+        events=items,
     )
