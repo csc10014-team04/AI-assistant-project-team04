@@ -32,8 +32,8 @@ Use these credentials to connect your database manager to the central host:
 
 * **Host:** `192.168.100.112` *(or `127.0.0.1` / `localhost` if running Docker locally)*
 * **Port:** `3307`
-* **Database / Default Schema:** `university_assistant`
-* **Username:** `schedule_admin` *(careful: avoid typos like `schedule_main`)*
+* **Database / Default Schema:** `assistant_uni`
+* **Username:** `schedule_main` 
 * **Password:** *(Defined in `assistant_deploy/.env` — ask Host Lead via Discord/Zalo)*
 
 ---
