@@ -34,11 +34,16 @@ sourceCode/BE/
 │   ├── auth.py              # (Khôi) API Đăng ký, Đăng nhập
 │   ├── ingestion.py         # (Lâm + Khôi) API Upload file, Xem trước, Giải quyết trùng giờ & Lưu DB
 │   └── search.py            # (P.Nguyên) API Tìm kiếm lịch trình & Tìm khung giờ trống
-└── services/                # Tầng xử lý thuật toán và nghiệp vụ (tách biệt với HTTP)
-    ├── security.py          # (Khôi) Băm mật khẩu bcrypt, tạo/kiểm tra JWT Token
-    ├── parser.py            # (Lâm) Đọc file thời khóa biểu thô -> tách dòng đúng / dòng lỗi
-    ├── validator.py         # (Khôi) Kiểm tra trùng lịch cứng, gom nhóm Conflict & Lưu xuống MySQL
-    └── search_engine.py     # (P.Nguyên) Chuẩn hóa câu search, tìm kiếm MySQL & Tìm slot trống <200ms
+├── services/                # Tầng xử lý thuật toán và nghiệp vụ (tách biệt với HTTP)
+│   ├── security.py          # (Khôi) Băm mật khẩu bcrypt, tạo/kiểm tra JWT Token
+│   ├── parser.py            # (Lâm) Đọc file thời khóa biểu thô -> tách dòng đúng / dòng lỗi
+│   ├── validator.py         # (Khôi) Kiểm tra trùng lịch cứng, gom nhóm Conflict & Lưu xuống MySQL
+│   └── search_engine.py     # (P.Nguyên) Chuẩn hóa câu search, tìm kiếm MySQL & Tìm slot trống <200ms
+└── tests/                   # Kiểm thử độc lập từng module riêng lẻ của BE (mở sourceCode/BE/tests/README.md để xem chi tiết)
 ```
+
+> **Lưu ý**
+> * **`sourceCode/BE/tests/` (nằm bên trong thư mục `BE`):** Dành riêng để **kiểm thử độc lập từng module riêng lẻ** của từng thành viên (`auth` & `security`, `parser`, `validator`, `search_engine`) ngay khi vừa code xong module đó mà không phụ thuộc vào phần việc của người khác hay máy chủ MySQL bên ngoài. **Mọi thành viên bắt buộc vào thư mục `sourceCode/BE/tests/` đọc tiếp file `README.md` để nắm rõ tiêu chuẩn viết test, cách chạy và cách phân tích kết quả.**
+> * **`tests/` (nằm ở cấp gốc của repo, cùng cấp với `sourceCode/`):** Dành cho **kiểm thử tích hợp tổng hợp (Integration & End-to-End Tests)** sau khi đã ghép toàn bộ các module của hệ thống lại với nhau để kiểm tra luồng chạy xuyên suốt toàn ứng dụng.
 
 > **NGUYÊN TẮC BẤT BIẾN:** Ba file `models.py`, `database.py` và `AGENTS.md` là hợp đồng chung của cả nhóm. **Không ai được tự ý sửa hoặc định nghĩa lại các class/enum đã có trong `models.py`**. Mọi file code đều phải `from models import ...` và `from database import ...`.
