@@ -21,7 +21,7 @@ services:
     image: vllm/vllm-openai:latest
     container_name: local_llama_inference
     restart: always
-    shm_size: '8gb'
+    shm_size: '4gb'
     environment:
       - CUDA_VISIBLE_DEVICES=0
       - HF_TOKEN=${HF_TOKEN}

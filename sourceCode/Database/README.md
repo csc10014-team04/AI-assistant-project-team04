@@ -30,11 +30,16 @@ Services run inside a private Docker bridge network (`internal_bridge`). When co
 
 Use these credentials to connect your database manager to the central host:
 
-* **Host:** `192.168.100.112` *(or `127.0.0.1` / `localhost` if running Docker locally)*
+* **Host:** `192.168.100.112` *(or `127.0.0.1` / `localhost` if running DBeaver on the host laptop)*
 * **Port:** `3307`
-* **Database / Default Schema:** `assistant_uni`
-* **Username:** `schedule_main` 
+* **Database / Default Schema:** `university_assistant`
+* **Username:** `schedule_admin` *(must match `DB_USER` in `assistant_deploy/.env`)*
 * **Password:** *(Defined in `assistant_deploy/.env` — ask Host Lead via Discord/Zalo)*
+
+> [!TIP]
+> **Connecting from Developer Laptop vs. Host Laptop:**
+> - If running DBeaver/Backend on the **same laptop hosting Docker**, always set Host to **`127.0.0.1`** (or `localhost`).
+> - If connecting across the **local Wi-Fi network**, verify the host laptop's current IPv4 address via `ipconfig` (DHCP may reassign it).
 
 ---
 
@@ -181,17 +186,30 @@ async def chat_with_assistant(user_message: str):
 
 ## 5. Testing & Verification
 
-### Test Backend Endpoint via cURL
+### Test Docker Backend Endpoints via cURL
 ```bash
-curl -X POST "http://192.168.100.112:8080/api/v1/assistant/chat" \
+# Check Backend service status
+curl "http://192.168.100.112:8080/health"
+
+# Test MySQL database connection from inside Backend
+curl "http://192.168.100.112:8080/db_test"
+
+# Test AI engine probe from inside Backend
+curl "http://192.168.100.112:8080/ai_test"
+
+# Test Chat inference
+curl -X POST "http://192.168.100.112:8080/chat" \
      -H "Content-Type: application/json" \
-     -d '{"user_message": "What is my schedule for today?"}'
+     -d '{"prompt": "What is my schedule for today?"}'
 ```
 
-### Test MySQL Connection via PowerShell
+### Test MySQL Connectivity via PowerShell
 ```powershell
-# Test TCP connectivity to port 3307
+# From local host:
 Test-NetConnection -ComputerName 127.0.0.1 -Port 3307
+
+# From another developer's PC across Wi-Fi:
+Test-NetConnection -ComputerName 192.168.100.112 -Port 3307
 ```
 
 ---
@@ -200,11 +218,13 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 3307
 
 | Error Message | Root Cause | Solution |
 | :--- | :--- | :--- |
+| `Communications link failure` / `Connect timed out` (DBeaver / GUI) | 1. Docker Desktop is closed or `schedule_db` container is stopped.<br>2. Host Wi-Fi IP changed via DHCP.<br>3. Host Windows Firewall / Wi-Fi profile set to **Public**.<br>4. Connecting via external IP from host laptop. | 1. Run `docker compose ps` to ensure `schedule_db` is Up.<br>2. Run `ipconfig` on host to check current IPv4 address.<br>3. Set Wi-Fi network profile to **Private** on host laptop, or allow port 3307 inbound.<br>4. If running DBeaver on the **host laptop**, use `127.0.0.1:3307`. |
+| `Unknown database 'assistant_uni'` | Wrong database name entered in DBeaver or connection URL. | The schema is **`university_assistant`**. Update the Database field in DBeaver/Workbench. |
+| `Access denied for user 'schedule_...'` | Username or password does not match `assistant_deploy/.env`. | Verify username is **`schedule_admin`** (or matches `DB_USER` in `.env`) with correct password. |
 | `Only one usage of each socket address (bind: 3306)` | Host port 3306 is already used by local MySQL/XAMPP. | Keep `"3307:3306"` in `docker-compose.yml` and connect via port **`3307`**. |
-| `Access denied for user 'schedule_...'` | Typo in username (e.g. `schedule_main`) or wrong password. | Verify username is exactly `schedule_admin` and matches `.env`. |
 | `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified` | Docker Desktop is closed or starting up. | Open Docker Desktop and wait until the whale icon turns green (**Engine running**). |
-| `socket.gaierror: getaddrinfo failed ('db')` | Python script running locally on PC tried to connect to hostname `db`. | Replace `db:3306` with `127.0.0.1:3307` or `192.168.100.112:3307`. |
-| `No route to host` / `Connection timed out` to `192.168.100.112` | Developer laptop is on a different Wi-Fi subnet or blocked by firewall. | Ensure all devices are on the same Wi-Fi, or allow inbound ports 3307/8080 on the host firewall. |
+| `socket.gaierror: getaddrinfo failed ('db')` | Python script running locally on PC tried to connect to hostname `db`. | Replace `db:3306` with `127.0.0.1:3307` or `[Host_IP]:3307`. |
+| `No route to host` / `Connection timed out` to `192.168.100.112` | Developer laptop is on a different Wi-Fi subnet or blocked by firewall. | Ensure all devices are on the same Wi-Fi, or allow inbound ports 3307/8000/8080 on the host firewall. |
 
 ---
 
