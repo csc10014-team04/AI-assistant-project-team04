@@ -1,3 +1,4 @@
+# unified P1-4 router: step 1-2 (parse & resolve preview) + step 3-4 (conflict check & db commit)
 import csv
 import io
 import sys
