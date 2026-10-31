@@ -65,3 +65,5 @@ ERR_EXAM_MULTI,Thi 2 ngay,SUN,08:00,10:00,C12,2026-10-10,2026-10-11,EXAM
     assert "INVALID_DATE_RANGE" in error_codes
     assert "INVALID_KIND" in error_codes
     print("\n[SUCCESS] All 3 verification test cases passed with zero errors!")
+
+    

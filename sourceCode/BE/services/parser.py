@@ -152,7 +152,8 @@ def _parse_and_validate_row(
         tuple[Optional[ParsedCsvRow], Optional[InvalidCsvRow]]: Exactly one of the two will be non-None.
     Edge Cases Handled:
         - Incorrect column counts (must be exactly 9 columns).
-        - Missing mandatory fields (course_code, title, kind, dates, times).
+        - course_code is optional — an empty string is accepted and stored as "".
+        - Missing mandatory fields (title, kind, dates, times).
         - Invalid enum kinds (must be CLASS, EXAM, DEADLINE, EVENT).
         - DEADLINE rows with empty start_time (auto-copied from end_time).
         - DEADLINE rows with non-matching start/end time or differing dates.
@@ -180,16 +181,8 @@ def _parse_and_validate_row(
     first_date_raw = cells[6].strip()
     last_date_raw = cells[7].strip()
     kind_raw = cells[8].strip().upper()
-
-    # 1. Validate mandatory course_code and title
-    if not course_code:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_COURSE_CODE",
-            error_message="Course code cannot be empty",
-        )
-
+   
+    # 1. Validate title against CsvRowKind
     if not title:
         return None, InvalidCsvRow(
             line_number=line_number,
@@ -502,3 +495,6 @@ def export_valid_rows_to_csv(rows: list[ParsedCsvRow]) -> str:
         ])
 
     return output_buffer.getvalue()
+
+
+
