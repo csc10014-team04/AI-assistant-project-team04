@@ -32,6 +32,7 @@ from services.parser import (  # noqa: E402
     _parse_and_validate_row,
     _split_line_into_cells,
     export_valid_rows_to_csv,
+    extract_raw_text_from_file,
     parse_timetable_content,
 )
 from services.security import get_current_user  # noqa: E402
@@ -434,15 +435,12 @@ async def parse_preview(
             )
 
         try:
-            content_str = file_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            try:
-                content_str = file_bytes.decode("latin-1")
-            except UnicodeDecodeError:
-                raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    detail="Could not decode file. Please save the file as UTF-8 and re-upload.",
-                )
+            content_str = extract_raw_text_from_file(file_bytes, filename)
+        except ValueError as extraction_err:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(extraction_err),
+            )
 
         filename = file.filename or ""
 

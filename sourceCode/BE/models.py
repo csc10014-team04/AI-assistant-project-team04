@@ -192,13 +192,13 @@ class EventDomain:
 class ParsedCsvRow:
     """a single validated row extracted by the timetable parser"""
     line_number: int
-    course_code: Optional[str] = None
     title: str
     kind: CsvRowKind
     start_time: time
     end_time: time
     first_date: date
     last_date: date
+    course_code: Optional[str] = None  # optional: empty str or None accepted
     weekday: Optional[Weekday] = None
     room: Optional[str] = None
 

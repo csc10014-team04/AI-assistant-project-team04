@@ -8,6 +8,22 @@ from datetime import date, time
 from pathlib import Path
 from typing import Optional
 
+# Third-party imports for PDF and image extraction (installed via pip)
+# pdfplumber: structured PDF table + text extraction
+# pytesseract + Pillow: OCR for scanned images
+try:
+    import pdfplumber
+    _PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    _PDFPLUMBER_AVAILABLE = False
+
+try:
+    from PIL import Image
+    import pytesseract
+    _OCR_AVAILABLE = True
+except ImportError:
+    _OCR_AVAILABLE = False
+
 # Ensure parent directory is in sys.path so 'models' can be imported when running standalone
 CURRENT_DIR = Path(__file__).resolve().parent
 PARENT_DIR = CURRENT_DIR.parent
@@ -497,4 +513,272 @@ def export_valid_rows_to_csv(rows: list[ParsedCsvRow]) -> str:
     return output_buffer.getvalue()
 
 
+# ============================================================================
+# FILE-FORMAT EXTRACTION HELPERS (PDF, IMAGE OCR, PLAIN TEXT)
+# ============================================================================
 
+
+def _extract_text_from_pdf(file_bytes: bytes) -> str:
+    """
+    Input:
+        file_bytes (bytes): Raw bytes of a PDF file.
+    Output:
+        str: Concatenated text extracted from all pages of the PDF.
+             For pages that contain a structured table, each row is joined
+             by commas (CSV-style) so downstream parsing can recognize columns.
+             For pages without a table, raw text is used as a fallback.
+    Edge Cases Handled:
+        - pdfplumber not installed on server: raises ImportError with a clear message.
+        - Password-protected / encrypted PDFs: raises ValueError.
+        - PDFs where every page yields no text AND no table: raises ValueError.
+        - Partial pages: pages with no content are silently skipped, not crashed on.
+    """
+    if not _PDFPLUMBER_AVAILABLE:
+        raise ImportError(
+            "pdfplumber is not installed on the server. "
+            "Ask the administrator to run: pip install pdfplumber"
+        )
+
+    page_texts: list[str] = []
+
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page in pdf.pages:
+                # Try structured table extraction first (handles bordered/ruled tables)
+                table = page.extract_table()
+                if table:
+                    # Each table row is a list of cells (may contain None for empty cells)
+                    row_lines: list[str] = []
+                    for table_row in table:
+                        # Replace None cells with empty string, then join as CSV line
+                        cleaned_cells = [
+                            (cell.strip() if cell else "") for cell in table_row
+                        ]
+                        row_lines.append(",".join(cleaned_cells))
+                    page_texts.append("\n".join(row_lines))
+                else:
+                    # Fallback: plain text extraction for pages without a drawn table
+                    plain = page.extract_text()
+                    if plain:
+                        page_texts.append(plain.strip())
+    except Exception as exc:
+        exc_name = type(exc).__name__
+        # pdfminer raises PDFPasswordIncorrect for encrypted files
+        if "PDFPasswordIncorrect" in exc_name or "password" in str(exc).lower():
+            raise ValueError(
+                "PDF is password-protected. Please remove the password and re-upload."
+            ) from exc
+        # Re-raise unknown errors so the router can surface them
+        raise ValueError(f"Failed to read PDF: {exc_name}: {exc}") from exc
+
+    if not page_texts:
+        raise ValueError(
+            "No readable text found in PDF. "
+            "The file may be scanned or image-only. Try uploading the image directly."
+        )
+
+    return "\n".join(page_texts)
+
+
+def _extract_text_from_image(file_bytes: bytes) -> str:
+    """
+    Input:
+        file_bytes (bytes): Raw bytes of an image file (PNG, JPEG, BMP, WEBP, TIFF).
+    Output:
+        str: Text extracted from the image via Tesseract OCR.
+             Uses Vietnamese + English language models ('vie+eng') so that
+             course names and labels in Vietnamese are recognized correctly.
+    Edge Cases Handled:
+        - Pillow or pytesseract not installed: raises ImportError.
+        - Tesseract binary not found on the server: raises ValueError with admin guidance.
+        - Image file is corrupt or unreadable: raises ValueError.
+        - OCR finds no text (blank or non-text image): returns empty string
+          (the caller / parse_timetable_content will produce 0 valid rows, not crash).
+    """
+    if not _OCR_AVAILABLE:
+        raise ImportError(
+            "Pillow and pytesseract are not installed on the server. "
+            "Ask the administrator to run: pip install Pillow pytesseract"
+        )
+
+    try:
+        image = Image.open(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot open image file: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    try:
+        extracted = pytesseract.image_to_string(image, lang="vie+eng")
+    except pytesseract.TesseractNotFoundError as exc:
+        raise ValueError(
+            "Tesseract OCR engine is not installed on this server. "
+            "Contact the system administrator to install Tesseract."
+        ) from exc
+    except Exception as exc:
+        raise ValueError(
+            f"OCR failed on image: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    return extracted
+
+
+def extract_raw_text_from_file(file_bytes: bytes, filename: str) -> str:
+    """
+    Public dispatcher: reads file_bytes according to the file extension inferred
+    from filename and returns the raw text string for downstream timetable parsing.
+
+    Input:
+        file_bytes (bytes): Raw bytes of the uploaded file.
+        filename   (str):   Original filename including extension (e.g. 'schedule.pdf').
+                            Extension determines which extraction strategy is used.
+    Output:
+        str: Decoded/extracted text content of the file.
+    Edge Cases Handled:
+        - .pdf  → PDF table/text extraction via pdfplumber.
+        - .png, .jpg, .jpeg, .webp, .bmp, .tiff, .tif → OCR via pytesseract + Pillow.
+        - .csv, .txt, .md → UTF-8 decode with latin-1 fallback.
+        - Unknown / unsupported extension → raises ValueError immediately.
+        - Filename with no extension (or empty filename) → treated as plain text.
+    """
+    ext = Path(filename).suffix.lower()  # e.g. '' or '.pdf' or '.PNG'
+
+    # --- PDF ---
+    if ext == ".pdf":
+        return _extract_text_from_pdf(file_bytes)
+
+    # --- Image (OCR) ---
+    if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"):
+        return _extract_text_from_image(file_bytes)
+
+    # --- Plain text formats: CSV, Markdown, plain text ---
+    if ext in (".csv", ".txt", ".md", ""):
+        # Try UTF-8 first (most common), fall back to latin-1 for legacy Windows files
+        try:
+            return file_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return file_bytes.decode("latin-1")
+
+    # --- Everything else is unsupported ---
+    raise ValueError(
+        f"Unsupported file type '{ext}'. "
+        "Accepted formats: .csv, .txt, .md (plain text), .pdf, "
+        ".png, .jpg, .jpeg, .webp, .bmp, .tiff, .tif (image OCR)."
+    )
+
+
+
+
+# ============================================================================
+# SELF-VERIFICATION SUITE (run: python services/parser.py)
+# ============================================================================
+
+if __name__ == "__main__":
+    import traceback
+
+    total = 0
+    failed = 0
+
+    def check(label: str, condition: bool) -> None:
+        global total, failed
+        total += 1
+        if condition:
+            print(f"[PASS] {label}")
+        else:
+            print(f"[FAIL] {label}")
+            failed += 1
+
+    # ------------------------------------------------------------------
+    # Test 1: Happy-path CSV round-trip (existing test)
+    # ------------------------------------------------------------------
+    sample_csv = (
+        "course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind\n"
+        "CSC101,Intro to CS,MON,08:00,10:00,A101,2024-01-08,2024-05-06,CLASS\n"
+        "CSC102,Database,WED,13:00,15:00,B202,2024-01-10,2024-05-08,CLASS\n"
+    )
+    result1 = parse_timetable_content(sample_csv, "test.csv")
+    check("Test 1a: valid_rows count == 2", len(result1.valid_rows) == 2)
+    check("Test 1b: no invalid rows", len(result1.invalid_rows) == 0)
+    check("Test 1c: batch_id generated", len(result1.import_batch_id) == 16)
+
+    # ------------------------------------------------------------------
+    # Test 2: Optional course_code (empty string is allowed)
+    # ------------------------------------------------------------------
+    no_code_csv = (
+        ",Calculus Final,,,15:00,,2024-06-10,2024-06-10,EXAM\n"
+        ",Math Final,,,16:00,,2024-07-01,2024-07-01,DEADLINE\n"
+    )
+    result2 = parse_timetable_content(no_code_csv, "test.csv")
+    # EXAM row needs start_time and end_time; above EXAM row is missing start_time
+    # so it will be INVALID — that's expected.  DEADLINE row start_time == end_time auto-copy.
+    check("Test 2a: DEADLINE with empty course_code accepted",
+          any(r.course_code == "" for r in result2.valid_rows))
+
+    # ------------------------------------------------------------------
+    # Test 3: Malformed / boundary rows
+    # ------------------------------------------------------------------
+    bad_csv = (
+        "A,B,C\n"  # only 3 columns → INVALID_COLUMN_COUNT
+        "CSC999,Valid Event,,,23:59,,2024-12-25,2024-12-25,EVENT\n"  # missing start_time
+    )
+    result3 = parse_timetable_content(bad_csv, "test.csv")
+    check("Test 3a: short row isolated as invalid", len(result3.invalid_rows) >= 1)
+
+    # ------------------------------------------------------------------
+    # Test 4: extract_raw_text_from_file — .csv extension (happy path)
+    # ------------------------------------------------------------------
+    csv_bytes = b"course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind\n"
+    decoded = extract_raw_text_from_file(csv_bytes, "schedule.csv")
+    check("Test 4a: .csv bytes decoded correctly", "course_code" in decoded)
+
+    # ------------------------------------------------------------------
+    # Test 5: extract_raw_text_from_file — .txt extension with latin-1 content
+    # ------------------------------------------------------------------
+    latin1_bytes = "Lịch học – Môn Toán".encode("latin-1", errors="replace")
+    decoded_txt = extract_raw_text_from_file(latin1_bytes, "schedule.txt")
+    check("Test 5a: .txt with latin-1 bytes does not crash", isinstance(decoded_txt, str))
+
+    # ------------------------------------------------------------------
+    # Test 6: extract_raw_text_from_file — no extension treated as plain text
+    # ------------------------------------------------------------------
+    no_ext_bytes = b"CSC101,Intro,MON,08:00,10:00,A1,2024-01-01,2024-05-01,CLASS"
+    decoded_noext = extract_raw_text_from_file(no_ext_bytes, "my_schedule")
+    check("Test 6a: no-extension filename treated as plain text", "CSC101" in decoded_noext)
+
+    # ------------------------------------------------------------------
+    # Test 7: extract_raw_text_from_file — unsupported extension raises ValueError
+    # ------------------------------------------------------------------
+    try:
+        extract_raw_text_from_file(b"dummy", "timetable.xlsx")
+        check("Test 7a: .xlsx raises ValueError", False)  # should not reach here
+    except ValueError as exc:
+        check("Test 7a: .xlsx raises ValueError", "Unsupported file type" in str(exc))
+
+    # ------------------------------------------------------------------
+    # Test 8: extract_raw_text_from_file — .docx raises ValueError
+    # ------------------------------------------------------------------
+    try:
+        extract_raw_text_from_file(b"dummy", "schedule.docx")
+        check("Test 8a: .docx raises ValueError", False)
+    except ValueError as exc:
+        check("Test 8a: .docx raises ValueError", "Unsupported file type" in str(exc))
+
+    # ------------------------------------------------------------------
+    # Test 9: export_valid_rows_to_csv round-trip
+    # ------------------------------------------------------------------
+    if result1.valid_rows:
+        csv_str = export_valid_rows_to_csv(result1.valid_rows)
+        check("Test 9a: export produces CSV string", isinstance(csv_str, str))
+        check("Test 9b: export contains header row", "course_code" in csv_str)
+        check("Test 9c: export contains data row", "CSC101" in csv_str)
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
+    print(f"\n{'='*50}")
+    print(f"Results: {total - failed}/{total} passed, {failed} failed")
+    if failed > 0:
+        print("[FAIL] Some tests failed — check output above.")
+        sys.exit(1)
+    else:
+        print("[SUCCESS] All tests passed.")
