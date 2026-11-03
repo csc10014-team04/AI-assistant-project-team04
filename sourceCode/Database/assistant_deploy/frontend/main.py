@@ -13,7 +13,7 @@ class UniversityAssistantApp(MDApp):
         
         try:
             # Hướng tới backend đang mở trên cổng localhost 8080 của máy chủ
-            response = requests.get("http://127.0.0.1:8080/health", timeout=2.0)
+            response = requests.get("http://26.211.52.63:8080/health", timeout=2.0)
             status_text = f"Trạng thái Backend: {response.json().get('status')}"
         except requests.exceptions.RequestException:
             status_text = "Kết nối Backend Thất bại. Đảm bảo Docker daemon đang hoạt động."
