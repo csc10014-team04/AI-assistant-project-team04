@@ -45,7 +45,12 @@ def register_user(
     payload: RegisterRequest,
     db: Session = Depends(get_db),
 ) -> RegisterResponse:
-    """register a new user with password identity and default preferences"""
+    """
+    input: payload (RegisterRequest: username, password, display_name) and db (Session).
+    core logic: check duplicate username, atomically insert User + AuthIdentity + UserPreference, sign jwt.
+    output: RegisterResponse (HTTP 201) with user_id and bearer token, or HTTP 409 if username exists.
+    typical flow: new username -> insert 3 linked rows -> commit -> issue jwt; duplicate -> raise 409.
+    """
     existing_identity = db.scalar(
         select(AuthIdentity).where(
             AuthIdentity.provider == AuthProvider.PASSWORD,
@@ -60,15 +65,15 @@ def register_user(
 
     user = User(display_name=payload.display_name)
     db.add(user)
-    db.flush()  # obtain auto-generated user.id within current transaction
+    db.flush()  # obtain auto-generated user.id before committing transaction
 
     identity = AuthIdentity(
         user_id=user.id,
         provider=AuthProvider.PASSWORD,
         provider_user_id=payload.username,
-        hashed_password=hash_password(payload.password),
+        hashed_password=hash_password(payload.password),  # store bcrypt hash only
     )
-    preference = UserPreference(user_id=user.id)
+    preference = UserPreference(user_id=user.id)  # initialize 23:30-06:30 sleep & 15m grid defaults
     db.add_all([identity, preference])
     db.commit()
     db.refresh(user)
@@ -88,7 +93,12 @@ def login_user(
     payload: LoginRequest,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
-    """authenticate username and password and issue a bearer jwt"""
+    """
+    input: payload (LoginRequest: username, password) and db (Session).
+    core logic: look up password identity by username and verify plaintext password against bcrypt hash.
+    output: TokenResponse (HTTP 200) containing signed jwt token and user_id, or HTTP 401 on failure.
+    typical flow: valid credentials -> issue jwt (200); unknown user or wrong password -> raise 401.
+    """
     identity = db.scalar(
         select(AuthIdentity).where(
             AuthIdentity.provider == AuthProvider.PASSWORD,
@@ -106,10 +116,9 @@ def login_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = create_access_token(identity.user_id)
+    token = create_access_token(identity.user_id)  # sign fresh session token for user
     return TokenResponse(
         access_token=token,
         token_type="bearer",
         user_id=identity.user_id,
     )
-

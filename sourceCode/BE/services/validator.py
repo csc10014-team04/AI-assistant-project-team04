@@ -33,17 +33,27 @@ INDEX_TO_WEEKDAY: dict[int, Weekday] = {v: k for k, v in WEEKDAY_TO_INDEX.items(
 
 
 def _resolve_row_weekday(row: ParsedCsvRow) -> Weekday:
-    """return explicit weekday on row or infer from first_date"""
+    """
+    input: row (ParsedCsvRow) with optional weekday enum and mandatory first_date.
+    core logic: return row.weekday when present, otherwise map row.first_date.weekday() to Weekday.
+    output: Weekday enum (MON..SUN).
+    typical flow: CLASS row uses explicit weekday; single-day EXAM/EVENT falls back to first_date.
+    """
     if row.weekday is not None:
         return row.weekday
-    return INDEX_TO_WEEKDAY[row.first_date.weekday()]
+    return INDEX_TO_WEEKDAY[row.first_date.weekday()]  # infer weekday from calendar date
 
 
 def _iter_row_dates(row: ParsedCsvRow) -> list[date]:
-    """expand a parsed csv row into concrete calendar dates"""
+    """
+    input: row (ParsedCsvRow) describing either a weekly CLASS or a single-occurrence item.
+    core logic: step weekly (+7 days) from first matching weekday up to last_date for CLASS rows.
+    output: list[date] of concrete occurrence dates in chronological order.
+    typical flow: 15-week CLASS -> 15 dates; single-day EXAM/EVENT/DEADLINE -> [first_date].
+    """
     if row.kind == CsvRowKind.CLASS:
         target_idx = WEEKDAY_TO_INDEX[_resolve_row_weekday(row)]
-        days_ahead = (target_idx - row.first_date.weekday()) % 7
+        days_ahead = (target_idx - row.first_date.weekday()) % 7  # align start to target weekday
         current = row.first_date + timedelta(days=days_ahead)
         dates: list[date] = []
         while current <= row.last_date:
@@ -54,9 +64,14 @@ def _iter_row_dates(row: ParsedCsvRow) -> list[date]:
 
 
 def _expand_row_slots(row: ParsedCsvRow) -> list[TimeSlot]:
-    """convert a non-deadline parsed csv row into timezone-aware time slots in vn_tz"""
+    """
+    input: row (ParsedCsvRow) validated from timetable preview step.
+    core logic: skip zero-duration deadlines and combine each occurrence date with VN_TZ times.
+    output: list[TimeSlot] of timezone-aware intervals in +07:00.
+    typical flow: DEADLINE -> []; CLASS/EXAM/EVENT -> 1 or N TimeSlot objects for overlap checks.
+    """
     if row.kind == CsvRowKind.DEADLINE or row.start_time == row.end_time:
-        return []
+        return []  # deadlines have zero duration and never block availability
     slots: list[TimeSlot] = []
     for occ_date in _iter_row_dates(row):
         start_dt = datetime.combine(occ_date, row.start_time, tzinfo=VN_TZ)
@@ -67,14 +82,24 @@ def _expand_row_slots(row: ParsedCsvRow) -> list[TimeSlot]:
 
 
 def _format_time_range(start_t: time, end_t: time) -> str:
-    """format a time interval as HH:MM-HH:MM"""
+    """
+    input: start_t (time) and end_t (time).
+    core logic: format start and end clock times as 24-hour HH:MM strings joined by a hyphen.
+    output: str in 'HH:MM-HH:MM' format for human-readable conflict cards.
+    typical flow: time(8, 0), time(9, 30) -> '08:00-09:30'.
+    """
     return f"{start_t.strftime('%H:%M')}-{end_t.strftime('%H:%M')}"
 
 
 def check_hard_conflict(
     candidate_slot: TimeSlot, existing_events: list[EventDomain]
 ) -> list[EventDomain]:
-    """return list of hard-constraint events that overlap with candidate_slot"""
+    """
+    input: candidate_slot (TimeSlot) and existing_events (list[EventDomain]) of current user.
+    core logic: scan active events where is_hard and blocks_availability are True for interval overlap.
+    output: list[EventDomain] containing all hard-constraint events intersecting candidate_slot.
+    typical flow: overlaps CLASS/EXAM -> non-empty list; touches boundary or hits TASK/DEADLINE -> [].
+    """
     conflicts: list[EventDomain] = []
     for event in existing_events:
         if (
@@ -82,20 +107,25 @@ def check_hard_conflict(
             and event.blocks_availability is True
             and candidate_slot.overlaps(event.to_slot())
         ):
-            conflicts.append(event)
+            conflicts.append(event)  # record hard collision to enforce zero-overlap guarantee
     return conflicts
 
 
 def detect_import_conflicts(
     incoming_rows: list[ParsedCsvRow], existing_events: list[EventDomain]
 ) -> dict[str, Any]:
-    """group series-level conflicts and separate non-conflicting rows"""
+    """
+    input: incoming_rows (list[ParsedCsvRow]) from preview and existing_events (list[EventDomain]).
+    core logic: detect intra-batch and vs-existing overlaps, deduplicating weekly repeats into 1 card.
+    output: dict with 'non_conflicting_rows' (list[ParsedCsvRow]) and 'conflict_cards' (list[dict]).
+    typical flow: expand slots -> check incoming pairs & existing events -> group by series_key -> return.
+    """
     expanded_incoming: list[list[TimeSlot]] = [
         _expand_row_slots(row) for row in incoming_rows
     ]
     conflicting_row_indices: set[int] = set()
     conflict_cards: list[dict[str, Any]] = []
-    seen_series_pairs: set[tuple[Any, ...]] = set()
+    seen_series_pairs: set[tuple[Any, ...]] = set()  # prevent 15 duplicate cards for 15-week classes
 
     # 1. detect conflicts within incoming_rows grouped at series level
     for i in range(len(incoming_rows)):
@@ -227,14 +257,19 @@ def commit_resolved_import(
     resolved_rows: list[ParsedCsvRow],
     replace_previous_imports: bool = False,
 ) -> list[EventDomain]:
-    """expand recurring CLASS rows into weekly events and persist to mysql"""
+    """
+    input: db (Session), owner_id (int), import_batch_id (str), resolved_rows, replace_previous_imports.
+    core logic: optionally soft-delete prior IMPORTED rows, expand CLASS weeks, and persist to mysql.
+    output: list[EventDomain] of all newly created Event records converted to domain objects.
+    typical flow: soft-delete old imports if requested -> create Course & Event rows -> commit -> return.
+    """
     if replace_previous_imports:
         now_naive_utc = datetime.now(UTC_TZ).replace(tzinfo=None)
         db.execute(
             update(Event)
             .where(
                 Event.owner_id == owner_id,
-                Event.source == EventSource.IMPORTED,
+                Event.source == EventSource.IMPORTED,  # preserve MANUAL and AI_CREATED events
                 Event.deleted_at.is_(None),
             )
             .values(deleted_at=now_naive_utc)
@@ -254,13 +289,13 @@ def commit_resolved_import(
         if row.kind == CsvRowKind.CLASS:
             course = Course(
                 owner_id=owner_id,
-                course_code=row.course_code,
+                course_code=row.course_code or "GENERAL",
                 title=row.title,
                 default_room=row.room,
                 import_batch_id=import_batch_id,
             )
             db.add(course)
-            db.flush()  # populate course.id for child events
+            db.flush()  # populate course.id for linked weekly class events
 
             for occ_date in _iter_row_dates(row):
                 start_vn = datetime.combine(occ_date, row.start_time, tzinfo=VN_TZ)
@@ -313,7 +348,7 @@ def commit_resolved_import(
                 source=EventSource.IMPORTED,
                 import_batch_id=import_batch_id,
                 start_time=deadline_utc,
-                end_time=deadline_utc,
+                end_time=deadline_utc,  # zero-duration milestone
                 is_hard=False,
                 priority=int(PriorityLevel.HIGH),
             )
@@ -325,4 +360,3 @@ def commit_resolved_import(
         db.refresh(ev)
 
     return [ev.to_domain() for ev in created_events]
-

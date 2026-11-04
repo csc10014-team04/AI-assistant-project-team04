@@ -20,25 +20,40 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 def hash_password(plain_password: str) -> str:
-    """hash a plaintext password using bcrypt"""
-    salt = bcrypt.gensalt()
+    """
+    input: plain_password (str) submitted during account registration.
+    core logic: generate a random per-password salt and compute bcrypt digest.
+    output: str containing utf-8 bcrypt hash string safe for mysql storage.
+    typical flow: plain str -> encode utf-8 -> bcrypt.hashpw with salt -> decode utf-8.
+    """
+    salt = bcrypt.gensalt()  # random 16-byte salt prevents rainbow-table attacks
     hashed = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """verify a plaintext password against a bcrypt hash"""
+    """
+    input: plain_password (str) from login attempt and hashed_password (str) from db.
+    core logic: run constant-time bcrypt comparison while catching malformed hash formats.
+    output: bool (True when password matches digest, False on mismatch or corrupted hash).
+    typical flow: valid password -> True; wrong password -> False; invalid salt string -> False.
+    """
     try:
         return bcrypt.checkpw(
             plain_password.encode("utf-8"),
             hashed_password.encode("utf-8"),
         )
     except ValueError:
-        return False
+        return False  # avoid 500 crash if stored hash format is corrupted
 
 
 def create_access_token(user_id: int, expires_delta: timedelta | None = None) -> str:
-    """encode a signed hs256 jwt access token for user_id"""
+    """
+    input: user_id (int) and optional custom lifetime expires_delta (timedelta | None).
+    core logic: build jwt claims (sub, iat, exp) in utc and sign with HS256 secret key.
+    output: str containing compact signed jwt bearer token.
+    typical flow: compute utc now & exp -> pack sub=str(user_id) -> jwt.encode -> token str.
+    """
     now = datetime.now(UTC_TZ)
     expire = now + (
         expires_delta
@@ -46,7 +61,7 @@ def create_access_token(user_id: int, expires_delta: timedelta | None = None) ->
         else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload = {
-        "sub": str(user_id),
+        "sub": str(user_id),  # rfc 7519 requires subject claim as string
         "iat": now,
         "exp": expire,
     }
@@ -54,7 +69,12 @@ def create_access_token(user_id: int, expires_delta: timedelta | None = None) ->
 
 
 def decode_access_token(token: str) -> int:
-    """decode and verify jwt token, returning user_id or raising 401"""
+    """
+    input: token (str) extracted from HTTP Authorization Bearer header.
+    core logic: verify HS256 signature and expiration timestamp, then parse integer user_id.
+    output: int representing authenticated user_id (or raises HTTP 401 on any token flaw).
+    typical flow: valid token -> int(sub); expired/tampered/missing sub -> raise 401.
+    """
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="invalid or expired authentication token",
@@ -64,7 +84,7 @@ def decode_access_token(token: str) -> int:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         sub = payload.get("sub")
         if sub is None:
-            raise credentials_error
+            raise credentials_error  # reject token missing subject claim
         return int(sub)
     except (jwt.PyJWTError, ValueError, TypeError) as exc:
         raise credentials_error from exc
@@ -74,7 +94,12 @@ def get_current_user(
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
 ) -> User:
-    """fastapi dependency that resolves bearer token into the current user row"""
+    """
+    input: db (Session) and bearer token (str) injected by fastapi dependencies.
+    core logic: decode token to user_id and fetch corresponding User row from mysql.
+    output: User orm instance for the caller (or raises HTTP 401 if token/account invalid).
+    typical flow: request with Bearer token -> decode user_id -> query users table -> return User.
+    """
     user_id = decode_access_token(token)
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None:
@@ -84,4 +109,3 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
-
