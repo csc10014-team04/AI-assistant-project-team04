@@ -155,7 +155,7 @@ class ResolvePreviewResponse(BaseModel):
 
 class CsvRowPayload(BaseModel):
     line_number: int = Field(default=1, ge=1)
-    course_code: str
+    course_code: str = ""
     title: str
     kind: CsvRowKind
     start_time: time
@@ -166,7 +166,12 @@ class CsvRowPayload(BaseModel):
     room: str | None = None
 
     def to_domain(self) -> ParsedCsvRow:
-        """convert request payload item into ParsedCsvRow dataclass"""
+        """
+        input: self (CsvRowPayload) validated by pydantic from json request body.
+        core logic: map typed pydantic attributes onto pure domain dataclass ParsedCsvRow.
+        output: ParsedCsvRow instance ready for validator conflict checks and db commit.
+        typical flow: json row dict -> CsvRowPayload -> to_domain() -> ParsedCsvRow.
+        """
         return ParsedCsvRow(
             line_number=self.line_number,
             course_code=self.course_code,
@@ -232,7 +237,7 @@ def _domain_to_schema(row: ParsedCsvRow) -> ParsedCsvRowSchema:
     """
     return ParsedCsvRowSchema(
         line_number=row.line_number,
-        course_code=row.course_code,
+        course_code=row.course_code or "",
         title=row.title,
         kind=row.kind.value,
         start_time=row.start_time.strftime("%H:%M"),
@@ -383,7 +388,12 @@ def _schema_to_domain(schema: ParsedCsvRowSchema) -> ParsedCsvRow:
 
 
 def _serialize_conflict_option(option: ParsedCsvRow | EventDomain) -> dict[str, Any]:
-    """serialize either a ParsedCsvRow or EventDomain with vn_tz timestamps"""
+    """
+    input: option (ParsedCsvRow | EventDomain) from a detected conflict card.
+    core logic: tag incoming row vs existing db event and convert utc timestamps to +07:00 iso8601.
+    output: dict[str, Any] ready for json response rendering on conflict resolution screen.
+    typical flow: ParsedCsvRow -> dict with option_type='incoming_row'; EventDomain -> +07:00 dict.
+    """
     if isinstance(option, ParsedCsvRow):
         data = asdict(option)
         data["option_type"] = "incoming_row"
@@ -541,7 +551,12 @@ def check_conflicts_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """detect series-level time conflicts among incoming rows and existing user events"""
+    """
+    input: payload (CheckConflictsRequest), db (Session), and authenticated current_user (User).
+    core logic: load active user events (excluding old imports if replacing) and group series overlaps.
+    output: dict containing 'non_conflicting_rows' and serialized 'conflict_cards' in +07:00.
+    typical flow: query active_events_stmt -> run detect_import_conflicts -> serialize cards -> return.
+    """
     db_events = db.scalars(active_events_stmt(current_user.id)).all()
     existing_domains = [
         ev.to_domain()
@@ -572,7 +587,12 @@ def commit_import_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CommitImportResponse:
-    """persist resolved timetable rows into courses and events in a single transaction"""
+    """
+    input: payload (CommitImportRequest), db (Session), and authenticated current_user (User).
+    core logic: expand resolved rows into courses and utc events in mysql, then convert to +07:00.
+    output: CommitImportResponse with import_batch_id, created_count, and EventResponseItem list.
+    typical flow: convert payload to domain -> call commit_resolved_import -> map +07:00 items -> return.
+    """
     resolved_domains = [row.to_domain() for row in payload.resolved_rows]
     created_domains = commit_resolved_import(
         db=db,
