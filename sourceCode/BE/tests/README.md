@@ -43,10 +43,10 @@ Mọi hàm trong các file kiểm thử và module nghiệp vụ tuân thủ c�
 * `output`: Giá trị trả về hoặc các khẳng định (`assertions`) đầu ra.
 * `typical flow`: Luồng thực thi tuần tự trong trường hợp điển hình.
 
-### 2.1. File `test_auth_and_validator.py` (Khôi phụ trách)
-Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ tầng Cơ sở dữ liệu (`database.py`)**, **Hệ thống Xác thực (`services/security.py`, `routers/auth.py`)**, và **Bộ Kiểm thực Xung đột & Lưu Lịch (`services/validator.py`, nửa sau `routers/ingestion.py`)**.
+### 2.1. File `test_auth.py` (Khôi phụ trách)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ tầng Cơ sở dữ liệu (`database.py`)** và **Hệ thống Xác thực (`services/security.py`, `routers/auth.py`)**.
 
-**7 kịch bản kiểm chứng bắt buộc:**
+**4 kịch bản kiểm chứng:**
 1. **An toàn băm mật khẩu (`test_password_hashing_and_verification`):**
    * Cùng một mật khẩu băm 2 lần bằng `bcrypt` phải sinh ra 2 chuỗi digest khác nhau (nhờ muối ngẫu nhiên) và không bao giờ trùng chuỗi gốc.
    * Xác thực đúng mật khẩu trả về `True`, sai mật khẩu trả về `False`, và gặp chuỗi hash hỏng định dạng vẫn trả về `False` an toàn thay vì làm sập tiến trình (`ValueError`).
@@ -59,20 +59,27 @@ Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ t�
 4. **Chuẩn hóa múi giờ UTC/+07:00, Chống IDOR & Ràng buộc `CHECK` của MySQL 8.0 (`test_mysql_utc_roundtrip_check_constraints_and_owner_isolation`):**
    * Sự kiện lúc `07:30 +07:00` được lưu xuống cột `DATETIME` của MySQL thành `00:30` (UTC) và đọc ngược lên khớp đúng `07:30 +07:00`.
    * Hàm `active_events_stmt` cô lập tuyệt đối dữ liệu giữa hai tài khoản (`Sinh Viên A` và `Sinh Viên B`).
-   * Ghi thử `priority = 9` vào bảng `events` bị động cơ MySQL 8.0 chặn ngay bằng `IntegrityError` nhờ ràng buộc `chk_event_priority`.
-5. **Chốt chặn Ràng buộc cứng Zero-Overlap (`test_check_hard_conflict_boundary_cases`):**
+   * Ghi thử `priority = 9` vào bảng `events` bị động cơ MySQL 8.0 chặn ngay nhờ ràng buộc `chk_event_priority`.
+
+---
+
+### 2.2. File `test_validator.py` (Khôi phụ trách)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Bộ Kiểm thực Xung đột & Lưu Lịch (`services/validator.py`, nửa sau `routers/ingestion.py`)**.
+
+**3 kịch bản kiểm chứng:**
+1. **Chốt chặn Ràng buộc cứng Zero-Overlap (`test_check_hard_conflict_boundary_cases`):**
    * Báo trùng chính xác khi đè lên lịch cứng (`CLASS`, `is_hard = True`).
    * Không báo trùng nhầm khi chạm đúng biên phút kết thúc (`09:30`), khi giao với công việc mềm (`TASK`, `is_hard = False`), hoặc khi giao với hạn nộp bài thời lượng bằng 0 (`DEADLINE`, `blocks_availability = False`).
-6. **Gom nhóm Xung đột theo Chuỗi lặp qua API (`test_detect_import_conflicts_series_grouping_and_api`):**
+2. **Gom nhóm Xung đột theo Chuỗi lặp qua API (`test_detect_import_conflicts_series_grouping_and_api`):**
    * Gửi hai môn học kéo dài 15 tuần trùng giờ sáng Thứ Hai vào `POST /api/v1/ingestion/check-conflicts`; hệ thống gom gọn thành đúng 1 `ConflictCard` kèm mô tả khoảng giao `08:30-09:30` và giữ nguyên môn Thứ Tư trong `non_conflicting_rows`.
-7. **Bung tuần học & Thay thế Lịch an toàn khi Nạp lại trên MySQL (`test_commit_import_endpoint_and_safe_reimport_on_mysql`):**
+3. **Bung tuần học & Thay thế Lịch an toàn khi Nạp lại trên MySQL (`test_commit_import_endpoint_and_safe_reimport_on_mysql`):**
    * Gọi `POST /api/v1/ingestion/commit` bung dòng `CLASS` 3 tuần kèm `EXAM` và `DEADLINE` thành 5 bản ghi `events` trả giờ `+07:00`.
    * Khi nạp lại thời khóa biểu mới với `replace_previous_imports = True`, các lịch `IMPORTED` cũ bị đánh dấu xóa mềm (`deleted_at IS NOT NULL`), trong khi sự kiện cá nhân `MANUAL` của sinh viên trong MySQL được bảo toàn 100%.
 
 ---
 
-### 2.2. File `test_parser.py` (Lâm phụ trách)
-Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn bản, PDF, Ảnh) & Cách ly Lỗi Xem trước (`services/parser.py`, 2 API đầu của `routers/ingestion.py`)**, dùng chung fixture `client` từ `conftest.py`.
+### 2.3. File `parser_test.py` (Lâm phụ trách)
+Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn bản, PDF, Ảnh) & Cách ly Lỗi Xem trước (`services/parser.py`, 2 API đầu của `routers/ingestion.py`)**.
 
 **Các nhóm kịch bản bắt buộc phải bao phủ:**
 1. **Đa định dạng văn bản cấu trúc:**
@@ -90,7 +97,7 @@ Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn b
 
 ---
 
-### 2.3. File `test_search_engine.py` (P.Nguyên phụ trách)
+### 2.4. File `test_search_engine.py` (P.Nguyên phụ trách)
 Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Lịch trình Cục bộ 3 Bước & Động cơ Tìm Khung giờ trống `< 200ms` (`services/search_engine.py`, `routers/search.py`)**, sử dụng `db_session` và `client` từ `conftest.py`.
 
 **Các nhóm kịch bản bắt buộc phải bao phủ:**
@@ -124,14 +131,17 @@ Set-Location "sourceCode/BE"
 # 1. Chạy toàn bộ các bài kiểm thử trong sourceCode/BE/tests/
 python -m pytest tests/ -v
 
-# 2. Chạy riêng file kiểm thử Auth, Database & Validator
-python -m pytest tests/test_auth_and_validator.py -v
+# 2. Chạy riêng kiểm thử Auth & Security
+python -m pytest tests/test_auth.py -v
 
-# 3. Lọc riêng một nhóm kịch bản bằng cờ -k
-python -m pytest tests/test_auth_and_validator.py -k "register_login or mysql_utc" -v
+# 3. Chạy riêng kiểm thử Validator & Xung đột lịch
+python -m pytest tests/test_validator.py -v
 
-# 4. Chạy riêng file kiểm thử Parser (của Lâm) hoặc Search Engine (của P.Nguyên)
-python -m pytest tests/test_parser.py -v
+# 4. Lọc riêng một nhóm kịch bản bằng cờ -k
+python -m pytest tests/test_auth.py -k "register_login or mysql_utc" -v
+
+# 5. Chạy riêng file kiểm thử Parser (của Lâm) hoặc Search Engine (của P.Nguyên)
+python -m pytest tests/parser_test.py -v
 python -m pytest tests/test_search_engine.py -v
 ```
 
@@ -139,7 +149,7 @@ python -m pytest tests/test_search_engine.py -v
 Nếu muốn các dòng dữ liệu tạo ra trong lúc test được lưu thật xuống ổ cứng để bấm Refresh (F5) xem trực tiếp trên DBeaver:
 ```powershell
 $env:PERSIST_TEST_DATA="1"
-python -m pytest tests/test_auth_and_validator.py -v
+python -m pytest tests/test_auth.py tests/test_validator.py -v
 Remove-Item Env:PERSIST_TEST_DATA
 ```
 

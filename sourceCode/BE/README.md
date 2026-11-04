@@ -43,11 +43,14 @@ sourceCode/BE/
 └── tests/                           # Kiểm thử cấp module/API chạy trực tiếp trên Docker MySQL 8.0 (port 3307)
     ├── README.md                    # Hướng dẫn kiến trúc kiểm thử Savepoint Isolation & tiêu chuẩn viết test
     ├── conftest.py                  # Fixture dùng chung nối MySQL 3307 và tự động rollback sau mỗi hàm test
-    └── test_auth_and_validator.py   # Bộ kiểm thử MySQL cho Auth, Security, Timezone/CHECK và Validator
+    ├── test_auth.py                 # (Khôi) Bộ kiểm thử Đăng ký, Đăng nhập, JWT, UTC/+07:00 và ràng buộc MySQL
+    ├── test_validator.py            # (Khôi) Bộ kiểm thử Kiểm tra xung đột cứng, gom ConflictCard và lưu MySQL
+    ├── parser_test.py               # (Lâm) Bộ kiểm thử Đọc thời khóa biểu, PDF/ảnh OCR và cách ly lỗi
+    └── ingestion_test.py            # (Lâm) Bộ kiểm thử Xác thực sơ bộ các hàm xem trước và chuẩn hóa dữ liệu
 ```
 
 > **Lưu ý về Kiểm thử:**
-> * **`sourceCode/BE/tests/` (nằm bên trong thư mục `BE`):** Kiểm thử độc lập từng cụm module của từng thành viên (`auth` & `validator`, `parser`, `search_engine`) **trực tiếp trên container MySQL 8.0 (`localhost:3307`, schema `university_assistant`)** thông qua cơ chế cô lập giao dịch `create_savepoint` trong `conftest.py` (kiểm tra đủ mọi ràng buộc thật của MySQL InnoDB nhưng tự động rollback để không làm bẩn dữ liệu trên DBeaver). **Mọi thành viên bắt buộc đọc `sourceCode/BE/tests/README.md` trước khi viết và chạy test.**
+> * **`sourceCode/BE/tests/` (nằm bên trong thư mục `BE`):** Kiểm thử độc lập từng cụm module của từng thành viên (`test_auth.py`, `test_validator.py`, `parser_test.py`, `test_search_engine.py`) **trực tiếp trên container MySQL 8.0 (`localhost:3307`, schema `university_assistant`)** thông qua cơ chế cô lập giao dịch `create_savepoint` trong `conftest.py` (kiểm tra đủ mọi ràng buộc thật của MySQL InnoDB nhưng tự động rollback để không làm bẩn dữ liệu trên DBeaver). **Mọi thành viên bắt buộc đọc `sourceCode/BE/tests/README.md` trước khi viết và chạy test.**
 > * **`tests/` (nằm ở cấp gốc của repo, cùng cấp với `sourceCode/`):** Dành cho kiểm thử tích hợp toàn hệ thống (End-to-End Integration Tests) do thành viên phụ trách QA tổng thể đảm nhiệm sau khi ghép nối các phân hệ.
 
 > **NGUYÊN TẮC BẤT BIẾN:** Ba file `models.py`, `database.py` và `AGENTS.md` là hợp đồng chung của cả nhóm. **Không ai được tự ý sửa hoặc định nghĩa lại các class/enum đã có trong `models.py`**. Mọi file code đều phải `from models import ...` và `from database import ...`.
