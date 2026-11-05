@@ -1,0 +1,30 @@
+{"prompt": "Xếp cho mình 3 tiếng làm đồ án CTDL tuần này, không làm buổi tối nhé", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần này"}
+{"prompt": "xep lich 2 tieng hoc bai ngay mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "sap xep 90 phut on thi thu sau", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "thứ sáu"}
+{"prompt": "mình cần 1,5 tiếng làm bài tập hôm nay", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "hôm nay"}
+{"prompt": "xếp 45 phút đọc sách cuối tuần", "intent": "schedule_task", "duration_minutes": 45, "date_hint": "cuối tuần"}
+{"prompt": "xep 3h lam do an tuan sau ko buoi toi", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần sau"}
+{"prompt": "xếp giúp mình 2 giờ họp nhóm thứ 4", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ 4"}
+{"prompt": "sắp xếp 60 phút tập gym chiều mai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": null}
+{"prompt": "xếp 4 tiếng ôn thi gấp tuần này", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "tuần này"}
+{"prompt": "lam bai 30 phut ngay kia", "intent": "schedule_task", "duration_minutes": 30, "date_hint": "ngày kia"}
+{"prompt": "xếp 2 tiếng học tiếng Anh tuần sau 😀😀", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần sau"}
+{"prompt": "xếp 2 tiếng làm đồ án vcl hôm nay", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "hôm nay"}
+{"prompt": "xep 1 tieng nop bao cao thu hai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "thứ hai"}
+{"prompt": "xếp 120 phút code đồ án cuối tháng", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "cuối tháng"}
+{"prompt": "sắp xếp 2 tiếng học bài tháng sau", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tháng sau"}
+{"prompt": "xóa buổi gym ngày mai", "intent": "delete_event", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "xoa lich hop thu ba", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ ba"}
+{"prompt": "hủy buổi học nhóm hôm nay", "intent": "delete_event", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "dời buổi họp sang thứ 6", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ 6"}
+{"prompt": "doi lich gym sang chieu mai", "intent": "reschedule", "duration_minutes": null, "date_hint": null}
+{"prompt": "chuyển đồ án sang tuần sau", "intent": "reschedule", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "tuần này mình có lịch gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "ngay mai co lich gi khong", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "khi nào mình rảnh", "intent": "query_schedule", "duration_minutes": null, "date_hint": null}
+{"prompt": "hôm nay trời đẹp quá", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "asdf qwer", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp 3 tiếng học bài sớm", "intent": "schedule_task", "duration_minutes": 180, "date_hint": null}
+{"prompt": "xếp 2 tiếng đọc sách dạo này", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "xếp lịch học bài", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp 25 tiếng học", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}

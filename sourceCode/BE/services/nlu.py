@@ -1,0 +1,324 @@
+# owner: Database & AI (P1-7 natural language understanding: intent + entity extraction with deterministic fallback)
+import json
+import os
+import re
+import time
+from datetime import date, datetime
+from typing import Literal
+
+import httpx
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.orm import Session
+
+from database import VN_TZ
+from models import AiErrorLog, AiErrorType
+from services import rag
+from services.ai_logging import log_ai_failure
+from services.inference_queue import QueueWaitTimeout, broker
+from services.normalizer import normalize_text
+from services.privacy import assert_private_endpoint, sanitize_prompt
+from services.telemetry import record_latency_ms
+from services.temporal import resolve_date_hint
+
+VLLM_ENDPOINT = os.getenv("VLLM_ENDPOINT", "http://127.0.0.1:8000/v1/chat/completions")
+MODEL_NAME = os.getenv("LLM_MODEL", "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))  # architecture A1: fallback < 1s after 3s
+MAX_SCHEMA_RETRIES = 1
+
+Intent = Literal["schedule_task", "query_schedule", "delete_event", "reschedule", "unknown"]
+TimeOfDay = Literal["morning", "afternoon", "evening"]
+
+SYSTEM_PROMPT = (
+    "You extract scheduling info from a Vietnamese/English student message. "
+    "Reply with ONE JSON object only, no prose. Keys: "
+    'intent (schedule_task|query_schedule|delete_event|reschedule|unknown), '
+    "title (string|null), duration_minutes (int|null), priority (1-3|null, 1=highest), "
+    "preferred_time_of_day (morning|afternoon|evening|null), avoid_time_of_day "
+    "(morning|afternoon|evening|null), date_hint (copy the user's date words or null). "
+    "Never invent values the user did not state; use null instead. "
+    "Never output calendar dates, only copy the user's own date words."
+)
+
+FEW_SHOT: list[dict[str, str]] = [
+    {"role": "user", "content": "xếp 3 tiếng làm đồ án CTDL, không làm buổi tối"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"làm đồ án CTDL","duration_minutes":180,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":"evening","date_hint":null}'},
+    {"role": "user", "content": "mình cần học bài gấp 90 phút chiều thứ sáu"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":90,"priority":1,"preferred_time_of_day":"afternoon","avoid_time_of_day":null,"date_hint":"thứ sáu"}'},
+    {"role": "user", "content": "xóa buổi gym ngày mai"},
+    {"role": "assistant", "content": '{"intent":"delete_event","title":"gym","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"ngày mai"}'},
+    {"role": "user", "content": "hôm nay trời đẹp quá"},
+    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
+]
+
+
+class NluResult(BaseModel):
+    intent: Intent = "unknown"
+    title: str | None = Field(default=None, max_length=255)
+    duration_minutes: int | None = Field(default=None, ge=15, le=720)
+    priority: int | None = Field(default=None, ge=1, le=3)
+    preferred_time_of_day: TimeOfDay | None = None
+    avoid_time_of_day: TimeOfDay | None = None
+    date_hint: str | None = Field(default=None, max_length=100)
+    window_start: date | None = None  # resolved deterministically from date_hint (P2-3)
+    window_end: date | None = None
+    date_assumed: bool = False  # True when a default window was applied
+    needs_clarification: bool = False
+    clarification_question: str | None = None
+    profanity_found: bool = False
+    fallback_mode: bool = False  # True when the llm failed and rules produced this result
+    source: Literal["llm", "rules"] = "llm"
+
+
+# ---------------------------------------------------------------------------
+# deterministic rule-based extractor (also the zero-hallucination fallback)
+# ---------------------------------------------------------------------------
+
+_DURATION_RE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(tiếng|tieng|giờ|gio|h|hours?|hrs?|phút|phut|p|mins?|minutes?)\b",
+    re.IGNORECASE,
+)
+_DATE_HINT_RE = re.compile(
+    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
+    r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
+    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week)",
+    re.IGNORECASE,
+)
+_TIME_OF_DAY = {
+    "morning": ("sáng", "sang", "morning"),
+    "afternoon": ("chiều", "chieu", "afternoon"),
+    "evening": ("tối", "toi", "evening", "night"),
+}
+_NEGATION = ("không", "khong", "ko", "đừng", "dung", "tránh", "tranh", "not", "avoid", "no")
+_HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap", "deadline", "thi", "exam")
+
+
+def extract_duration_minutes(text: str) -> int | None:
+    """
+    input: text (str) sanitized prompt.
+    output: int minutes (15..720) from the first "<number> <unit>" phrase, else None.
+    typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180.
+    """
+    match = _DURATION_RE.search(text)
+    if not match:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    unit = match.group(2).lower()
+    minutes = round(value * (1 if unit in {"phút", "phut", "p", "min", "mins", "minute", "minutes"} else 60))
+    return minutes if 15 <= minutes <= 720 else None
+
+
+def _time_of_day_flags(text: str) -> tuple[TimeOfDay | None, TimeOfDay | None]:
+    """returns (preferred, avoided) by checking a negation word right before the period word."""
+    lowered = text.lower()
+    preferred: TimeOfDay | None = None
+    avoided: TimeOfDay | None = None
+    for period, words in _TIME_OF_DAY.items():
+        for word in words:
+            for m in re.finditer(rf"\b{word}\b", lowered):
+                before = lowered[: m.start()].split()[-3:]
+                if any(neg in before for neg in _NEGATION):
+                    avoided = period  # type: ignore[assignment]
+                else:
+                    preferred = period  # type: ignore[assignment]
+    return preferred, avoided
+
+
+def _extract_title(text: str) -> str | None:
+    """strip request boilerplate, duration and date words; what remains is the activity name."""
+    cleaned = _DURATION_RE.sub(" ", text)
+    cleaned = _DATE_HINT_RE.sub(" ", cleaned)
+    cleaned = re.sub(
+        r"\b(xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|"
+        r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:255] or None
+
+
+def rule_based_understand(text: str) -> NluResult:
+    """
+    input: text (str) sanitized prompt.
+    core logic: regex extraction of duration, time-of-day, date hint, priority and a coarse intent.
+    output: NluResult(source="rules"); every field is None when not literally present in the text.
+    """
+    lowered = text.lower()
+    duration = extract_duration_minutes(text)
+    preferred, avoided = _time_of_day_flags(text)
+    date_match = _DATE_HINT_RE.search(text)
+
+    if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
+        intent: Intent = "delete_event"
+    elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
+        intent = "reschedule"
+    elif duration is not None or re.search(r"\b(xếp|xep|sắp xếp|sap xep)\b", lowered):
+        intent = "schedule_task"
+    elif re.search(r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|schedule|what)\b", lowered):
+        intent = "query_schedule"
+    else:
+        intent = "unknown"
+
+    priority = 1 if any(re.search(rf"\b{w}\b", lowered) for w in _HIGH_PRIORITY) else None
+    return NluResult(
+        intent=intent,
+        title=_extract_title(text) if intent == "schedule_task" else None,
+        duration_minutes=duration,
+        priority=priority,
+        preferred_time_of_day=preferred,
+        avoid_time_of_day=avoided,
+        date_hint=date_match.group(0) if date_match and intent != "unknown" else None,
+        fallback_mode=False,
+        source="rules",
+    )
+
+
+# ---------------------------------------------------------------------------
+# llm call + schema validation + retry
+# ---------------------------------------------------------------------------
+
+def _extract_json_object(raw: str) -> dict:
+    """pull the first {...} block out of a model reply and parse it (raises ValueError / JSONDecodeError)."""
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("no json object in model output")
+    parsed = json.loads(raw[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("json root is not an object")
+    return parsed
+
+
+def log_ai_error(
+    db: Session | None,
+    user_id: int | None,
+    prompt: str,
+    raw_output: str | None,
+    error_type: AiErrorType,
+    retry_count: int,
+) -> None:
+    """persist one AiErrorLog row (flush only; the request owner commits). No-op when db is None."""
+    if db is None:
+        return
+    db.add(
+        AiErrorLog(
+            user_id=user_id,
+            prompt_text=prompt,
+            raw_output=(raw_output or "")[:4000] or None,
+            error_type=error_type,
+            retry_count=retry_count,
+            triggered_fallback=True,
+        )
+    )
+    db.flush()
+
+
+def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, norm_profanity: bool) -> NluResult:
+    """shared post-processing: literal-text guards, deterministic date window, clarification, profanity flag."""
+    if rules.duration_minutes is not None:
+        result.duration_minutes = rules.duration_minutes  # literal text wins over the model
+    elif not _DURATION_RE.search(prompt):
+        result.duration_minutes = None  # model invented a duration
+    # temporal hallucination guard: only a date phrase that literally occurs in the prompt is accepted
+    hint = rules.date_hint
+    if hint is None and result.date_hint and result.date_hint.lower() in prompt.lower():
+        hint = result.date_hint
+    result.date_hint = hint
+    if result.intent in {"schedule_task", "query_schedule", "reschedule"}:
+        window = resolve_date_hint(hint, now)
+        result.window_start, result.window_end = window.start, window.end
+        result.date_assumed = window.assumed
+        if window.clarification_question:
+            result.needs_clarification, result.clarification_question = True, window.clarification_question
+    if result.intent == "schedule_task" and result.duration_minutes is None:
+        result.needs_clarification = True
+        result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
+    if result.priority is None:
+        result.priority = rules.priority
+    result.profanity_found = norm_profanity
+    return result
+
+
+def understand_prompt(
+    prompt: str,
+    reference_now: datetime,
+    *,
+    db: Session | None = None,
+    user_id: int | None = None,
+    client: httpx.Client | None = None,
+) -> NluResult:
+    """
+    input: prompt (str) raw user message, reference_now (aware datetime), optional db/user_id for error logs.
+    core logic: sanitize + normalize (P2-6) -> RAG context (P2-2) -> few-shot llm call through the FIFO broker
+                (P2-10) -> strict json/pydantic validation with one retry (P2-1) -> deterministic date window
+                and clarification (P2-3). Any failure (TIMEOUT, INFRA_CRASH, JSON_PARSE/SCHEMA_VALIDATION,
+                SEMANTIC_FAILURE) is logged to ai_error_logs + the jsonl taxonomy file (P2-12) and the
+                rule-based result is returned with fallback_mode=True.
+    output: NluResult. Never raises for AI failures, so the mobile UI can always open the manual picker.
+    """
+    if reference_now.tzinfo is None:
+        raise ValueError("reference_now must be timezone-aware")
+    started = time.monotonic()
+    normalized = normalize_text(sanitize_prompt(prompt))
+    safe_prompt = normalized.text
+    if not safe_prompt:
+        return NluResult(intent="unknown", fallback_mode=True, source="rules", profanity_found=normalized.profanity_found)
+
+    base = rule_based_understand(safe_prompt)
+    rules = _finalize(base.model_copy(), base, safe_prompt, reference_now, normalized.profanity_found)
+    context: list[str] = []
+    if user_id is not None:
+        try:
+            context = [h.text for h in rag.retrieve(user_id, safe_prompt, k=2)]
+        except Exception:
+            context = []  # a corrupt/missing index must never block the request
+    now_vn = reference_now.astimezone(VN_TZ)
+    system = f"{SYSTEM_PROMPT} Now: {now_vn:%Y-%m-%d %A %H:%M} (+07:00)."
+    if context:
+        system += " Known schedule: " + " | ".join(c.replace("\n", "; ")[:200] for c in context)
+    messages = [{"role": "system", "content": system}, *FEW_SHOT, {"role": "user", "content": safe_prompt}]
+    payload = {"model": MODEL_NAME, "messages": messages, "max_tokens": 200, "temperature": 0.0}
+
+    http = client or httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
+    raw_output: str | None = None
+    retries = 0
+    category = "SEMANTIC_FAILURE"
+    reason = "unresolvable intent"
+    try:
+        assert_private_endpoint(VLLM_ENDPOINT)
+        while True:
+            try:
+                response = broker.run(
+                    lambda: http.post(VLLM_ENDPOINT, json=payload, timeout=LLM_TIMEOUT_SECONDS), user_id=user_id
+                )
+                response.raise_for_status()
+                raw_output = response.json()["choices"][0]["message"]["content"]
+                result = NluResult.model_validate(_extract_json_object(raw_output))
+            except (ValueError, ValidationError, KeyError, IndexError) as exc:
+                category = "SCHEMA_VALIDATION" if isinstance(exc, ValidationError) else "JSON_PARSE"
+                reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+                if retries < MAX_SCHEMA_RETRIES:
+                    retries += 1  # reject malformed output and retry once
+                    continue
+                break
+            if result.intent == "unknown" and rules.intent == "unknown":
+                category, reason = "SEMANTIC_FAILURE", "model and rules could not identify an intent"
+                break
+            result.source, result.fallback_mode = "llm", False
+            record_latency_ms((time.monotonic() - started) * 1000)
+            return _finalize(result, rules, safe_prompt, reference_now, normalized.profanity_found)
+    except (httpx.TimeoutException, QueueWaitTimeout) as exc:
+        category, reason = "TIMEOUT", f"{type(exc).__name__}: {exc}"
+    except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
+        category, reason = "INFRA_CRASH", f"{type(exc).__name__}: {str(exc)[:200]}"
+    finally:
+        if client is None:
+            http.close()
+
+    record = log_ai_failure(category, safe_prompt, reason, retrieved_context=context, raw_output=raw_output,
+                            user_id=user_id, retry_count=retries)
+    log_ai_error(db, user_id, safe_prompt, raw_output, AiErrorType(record["db_error_type"]), retries)
+    record_latency_ms((time.monotonic() - started) * 1000)
+    rules.fallback_mode = True
+    return rules

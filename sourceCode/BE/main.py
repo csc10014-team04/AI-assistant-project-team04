@@ -1,9 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, ingestion, search
+import os
+
+from routers import assistant, auth, ingestion, reminders, search
+from services.telemetry import collector
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    collector.start()  # no-op unless TELEMETRY_INTERVAL_SECONDS > 0
+    yield
+    collector.stop()
+
 
 app = FastAPI(
+    lifespan=lifespan,
     title="University Life Assistant API",
     version="1.0.0",
     description="Backend API for schedule ingestion, conflict validation, and local search",
@@ -11,13 +24,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o for o in os.getenv("CORS_ORIGINS", "").split(",") if o],  # native app needs no CORS; never "*" with credentials
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth.router)
+app.include_router(assistant.router)
+app.include_router(reminders.router)
 app.include_router(ingestion.router)
 app.include_router(search.router)
 

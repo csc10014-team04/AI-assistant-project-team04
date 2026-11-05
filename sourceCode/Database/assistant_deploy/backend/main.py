@@ -4,10 +4,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, Integer, String, text
 
 import os
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+aiomysql://root:secure_root_hash_2026@db:3306/university_assistant")
+DATABASE_URL = os.environ["DATABASE_URL"]  # no hard-coded credentials; injected by docker-compose from .env
 
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)  # echo=True would log schedule data
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
@@ -33,13 +33,15 @@ async def test_db_connection(db: AsyncSession = Depends(get_db)):
         version = result.scalar()
         return {"status": "connected", "mysql_version": version}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="database unreachable")
 
 from pydantic import BaseModel
 import httpx
 
+from pydantic import Field
+
 class PromptRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=1, max_length=500)
 
 # Định tuyến AI Engine: 'local_llama_inference' phân giải qua internal_bridge của Docker trên cổng 8000
 VLLM_API_BASE = "http://local_llama_inference:8000/v1"
@@ -53,7 +55,7 @@ async def test_ai_connection():
             response.raise_for_status()
             return {"status": "connected", "ai_engine": "vLLM", "data": response.json()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Engine connection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="AI engine unreachable")
 
 @app.post("/chat")
 async def chat_with_llama(request: PromptRequest):
@@ -72,4 +74,4 @@ async def chat_with_llama(request: PromptRequest):
             response.raise_for_status()
             return response.json()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=502, detail="AI engine error")
