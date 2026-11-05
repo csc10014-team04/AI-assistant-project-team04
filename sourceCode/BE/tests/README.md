@@ -2,36 +2,103 @@
 
 Thư mục `sourceCode/BE/tests/` chứa các bộ kiểm thử cấp module và API của riêng đội ngũ Backend, tách biệt với thư mục `tests/` ở cấp gốc của kho mã nguồn (vốn dùng cho kiểm thử tích hợp toàn hệ thống giữa Frontend, Backend, AI và Database).
 
-Kể từ khi hạ tầng Docker (`assistant_deploy`, container `schedule_db` chạy `mysql:8.0` tại cổng `127.0.0.1:3307`) và công cụ quản trị DBeaver đi vào vận hành, toàn bộ tư duy kiểm thử tại `sourceCode/BE/tests/` đã chuyển hẳn từ mô phỏng trên RAM (`sqlite:///:memory:`) sang **kiểm thử trực tiếp trên động cơ MySQL 8.0 InnoDB thực tế kết hợp cơ chế cô lập giao dịch bằng Savepoint (`join_transaction_mode="create_savepoint"`)**.
+Kể từ khi hạ tầng Docker (`assistant_deploy`, container `schedule_db` chạy `mysql:8.0` tại cổng `127.0.0.1:3307`) và công cụ quản trị DBeaver đi vào vận hành, toàn bộ kiểm thử tại `sourceCode/BE/tests/` chạy trực tiếp trên động cơ MySQL 8.0 InnoDB thật kết hợp cơ chế cô lập giao dịch bằng Savepoint (`conftest.py`).
 
 Tài liệu này quy định:
-1. **Đối với người chạy kiểm thử và người duyệt mã nguồn (Reviewer):** Kiến trúc vận hành bên dưới khi chạy `pytest` với Docker MySQL và danh mục các cam kết kỹ thuật mà mỗi module chứng minh được sau khi vượt qua bài kiểm thử.
-2. **Đối với người viết kiểm thử (Developer):** Bộ tiêu chuẩn bắt buộc về cấu trúc fixture, cách thức cô lập dữ liệu và quy ước chú thích hàm (`input`, `core logic`, `output`, `typical flow`).
+1. **Hướng dẫn sử dụng các Fixture dùng chung trong `conftest.py`:** Cách thức các thành viên Backend khai báo và sử dụng `db_session`, `client` trong hàm test của mình.
+2. **Quy chuẩn chú thích và tiêu chí kiểm chứng của từng file:** Chi tiết các kịch bản kiểm thử bắt buộc cho `test_auth.py`, `test_validator.py`, `parser_test.py`, và `test_search_engine.py`.
+3. **Cách thức thực thi và chẩn đoán lỗi trong PowerShell:** Các lệnh chạy kiểm thử và cách khắc phục khi gặp lỗi.
 
 ---
 
-## 1. Kiến trúc Kiểm thử Mới: Real MySQL 8.0 + Savepoint Rollback (`conftest.py`)
+## 1. Hướng dẫn Sử dụng Fixture Kiểm thử (`conftest.py`)
 
-### 1.1. Tại sao bỏ `sqlite:///:memory:` để chạy thẳng trên Docker MySQL `localhost:3307`?
-SQLite chạy trên bộ nhớ trong có cú pháp và cơ chế kiểm tra kiểu dữ liệu khác biệt đáng kể so với MySQL 8.0 InnoDB. Khi chuyển sang kết nối trực tiếp vào schema `university_assistant` trên cổng `3307`, bộ kiểm thử xác thực được các hành vi mà SQLite trước đây bỏ lọt:
-* Các ràng buộc `CHECK` nguyên bản của MySQL 8.0 trong `init.sql` như `chk_event_priority` (`priority BETWEEN 1 AND 3`), `chk_event_time` (`end_time >= start_time`), `chk_task_duration` (`duration_minutes > 0`).
-* Kiểu `ENUM`, khóa ngoại `FOREIGN KEY`, khóa duy nhất `UNIQUE (provider, provider_user_id)` và chỉ mục tổ hợp `idx_event_lookup`.
-* Chu trình lưu trữ `DATETIME` ở múi giờ chuẩn `UTC` (không gắn tzinfo trong cột MySQL) và khôi phục chính xác về múi giờ Việt Nam `+07:00` (`VN_TZ`).
-* Bảng mã `utf8mb4_unicode_ci` đối với họ tên sinh viên, tên môn học và từ khóa tìm kiếm tiếng Việt có dấu.
+File `conftest.py` chứa các công cụ dùng chung do `pytest` tự động nạp. Các thành viên khi viết test cho module của mình **không cần khởi tạo kết nối database thủ công**, mà chỉ cần truyền tên fixture vào tham số của hàm test.
 
-### 1.2. Cơ chế Savepoint Isolation giúp DBeaver luôn sạch dữ liệu rác
-Nếu các hàm kiểm thử ghi thẳng vào MySQL bằng `db.commit()` thông thường mà không thu hồi:
-* Lần chạy `pytest` thứ hai sẽ văng lỗi trùng khóa (`409 Conflict`) hoặc lệch số đếm sự kiện.
-* Ngược lại, nếu dùng lệnh xóa trắng bảng (`TRUNCATE` hoặc `DROP TABLE`) sau khi chạy test, toàn bộ dữ liệu mẫu mà thành viên đang nhập thử thủ công trên DBeaver sẽ bị xóa mất.
+### 1.1. Ba Fixture có sẵn và Khi nào cần dùng
 
-File `conftest.py` giải quyết triệt để bài toán này bằng 3 fixture dùng chung cho mọi thành viên:
-1. `mysql_engine` (`scope="session"`): Tự động đọc cấu hình từ `TEST_DATABASE_URL`, `sourceCode/BE/.env` hoặc `sourceCode/Database/assistant_deploy/.env` để kết nối vào `127.0.0.1:3307/university_assistant`, kiểm tra kết nối sống bằng `SELECT 1` và đảm bảo đủ 11 bảng.
-2. `db_session` (`scope="function"`): Trước mỗi hàm `test_*`, fixture mở một giao dịch ngoài (`outer_tx = connection.begin()`) và khởi tạo phiên làm việc với `join_transaction_mode="create_savepoint"`. Mọi lệnh `db.commit()` bên trong API được dịch thành `SAVEPOINT` thật trên MySQL InnoDB (vẫn kiểm tra đủ 100% ràng buộc khóa ngoại, `CHECK`, `UNIQUE`), và ngay khi hàm `test_*` kết thúc, `outer_tx.rollback()` hủy toàn bộ thay đổi của bài test đó trong vài mili-giây mà không chạm tới dữ liệu sẵn có trong DBeaver.
-3. `client` (`scope="function"`): Ghi đè dependency `get_db` của FastAPI sang `db_session` để mọi lời gọi HTTP qua `TestClient(app)` đi chung vào đúng phiên giao dịch cô lập của bài test hiện hành.
+| Tên Fixture | Kiểu dữ liệu | Phạm vi (`scope`) | Mục đích & Khi nào sử dụng |
+| :--- | :--- | :--- | :--- |
+| `mysql_engine` | `sqlalchemy.Engine` | `session` (toàn đợt chạy) | Tự động kết nối cổng `3307`, kiểm tra `SELECT 1` và tạo sẵn 11 bảng. Thường chỉ dùng nội bộ trong `conftest.py`, thành viên ít khi cần gọi trực tiếp. |
+| `db_session` | `sqlalchemy.orm.Session` | `function` (từng bài test) | **Dùng khi cần truy vấn, thêm, sửa, xóa dữ liệu MySQL trực tiếp bằng SQLAlchemy ORM.** Mỗi bài test được bọc trong một giao dịch độc lập, tự động rollback khi test xong nên không làm bẩn DBeaver. |
+| `client` | `fastapi.testclient.TestClient` | `function` (từng bài test) | **Dùng khi cần giả lập gửi request HTTP (`client.post`, `client.get`) vào các API Router.** `client` này đã được gắn sẵn với `db_session` cô lập ở trên. |
 
-**Hai lưu ý thực tế khi quan sát trên DBeaver:**
-* **Bộ đếm `AUTO_INCREMENT` vẫn tăng:** Trong kiến trúc MySQL InnoDB, giá trị tự tăng (`users.id`, `events.id`) được cấp phát ở tầng bộ nhớ bảng và không quay lùi khi giao dịch rollback. Vì vậy các bài kiểm thử luôn đối chiếu theo biến `user.id` động thay vì gán cứng `id == 1`.
-* **Chế độ giữ lại dữ liệu để xem trực quan trên DBeaver (`PERSIST_TEST_DATA=1`):** Khi muốn kiểm tra tận mắt các dòng vừa tạo trong bảng `users`, `courses`, `events` trên giao diện DBeaver, bật biến môi trường `PERSIST_TEST_DATA=1` khi chạy lệnh (xem Mục 3). Các hàm test dùng hậu tố định danh ngẫu nhiên (`_unique_username`) nên không bị đụng độ tên đăng nhập giữa nhiều lần chạy.
+---
+
+### 1.2. Hướng dẫn Cụ thể cho Thành viên Viết Test
+
+#### Trường hợp 1: Hàm test logic thuần (không đụng tới Database hay API)
+Không cần truyền bất kỳ fixture nào vào tham số:
+```python
+def test_password_hashing():
+    # kiểm tra hàm băm mật khẩu hoặc thuật toán thuần python
+    digest = hash_password("MyPassword123")
+    assert verify_password("MyPassword123", digest) is True
+```
+
+#### Trường hợp 2: Hàm test cần thao tác trực tiếp với bảng trong MySQL
+Khai báo tham số `db_session: Session`:
+```python
+from sqlalchemy.orm import Session
+from models import User
+
+def test_create_user_directly(db_session: Session):
+    # tạo và lưu trực tiếp qua ORM
+    new_user = User(display_name="Trần Văn A")
+    db_session.add(new_user)
+    db_session.commit()
+    db_session.refresh(new_user)
+
+    # kiểm tra dữ liệu đã vào MySQL
+    assert new_user.id is not None
+    # khi hàm test này kết thúc, giao dịch tự động rollback, dòng trên biến mất khỏi DBeaver
+```
+
+#### Trường hợp 3: Hàm test gọi qua đường API HTTP (FastAPI Endpoints)
+Khai báo tham số `client: TestClient`:
+```python
+from fastapi.testclient import TestClient
+
+def test_login_api(client: TestClient):
+    # gửi request json qua client
+    res = client.post("/api/v1/auth/login", json={"username": "test_user", "password": "123"})
+    assert res.status_code in (200, 401)
+```
+
+#### Trường hợp 4: Hàm test vừa gọi API vừa cần kiểm tra bảng MySQL
+Khai báo cả hai tham số `client: TestClient, db_session: Session`:
+```python
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from models import User
+
+def test_register_and_verify_database(client: TestClient, db_session: Session):
+    # 1. Gọi API đăng ký
+    res = client.post("/api/v1/auth/register", json={
+        "username": "sinhvien_01",
+        "password": "Password@123",
+        "display_name": "Nguyễn Văn B"
+    })
+    assert res.status_code == 201
+    user_id = res.json()["user_id"]
+
+    # 2. Dùng db_session truy vấn trực tiếp vào MySQL để kiểm tra tính toàn vẹn
+    saved_user = db_session.scalar(select(User).where(User.id == user_id))
+    assert saved_user is not None
+    assert saved_user.display_name == "Nguyễn Văn B"
+```
+
+---
+
+### 1.3. Hai Lưu ý Quan trọng khi Chạy Test trên MySQL Thật
+
+1. **Bộ đếm `AUTO_INCREMENT` vẫn tăng:**
+   Trong cơ chế của MySQL InnoDB, số tự tăng (`id`) được cấp phát độc lập ở bộ nhớ bảng để tối ưu hiệu năng và không quay lùi khi rollback. Do đó, khi viết câu lệnh `assert`, **luôn so sánh theo biến `saved_user.id` động**, không được gán cứng giả định `assert saved_user.id == 1`.
+2. **Cách giữ lại dữ liệu để mở DBeaver xem trực quan:**
+   Mặc định sau khi test xong, dữ liệu tự hủy để giữ sạch database. Nếu bạn muốn giữ lại dữ liệu vừa test để bấm F5 trên DBeaver xem tận mắt các dòng được ghi thế nào:
+   * Trên PowerShell, gõ: `$env:PERSIST_TEST_DATA="1"` trước khi chạy `pytest`.
+   * Xem xong, xóa biến môi trường: `Remove-Item Env:PERSIST_TEST_DATA`.
 
 ---
 
