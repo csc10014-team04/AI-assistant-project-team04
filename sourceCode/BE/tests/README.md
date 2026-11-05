@@ -113,7 +113,7 @@ Mọi hàm trong các file kiểm thử và module nghiệp vụ tuân thủ c�
 ### 2.1. File `test_auth.py` (Khôi phụ trách)
 Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ tầng Cơ sở dữ liệu (`database.py`)** và **Hệ thống Xác thực (`services/security.py`, `routers/auth.py`)**.
 
-**4 kịch bản kiểm chứng:**
+**5 kịch bản kiểm chứng:**
 1. **An toàn băm mật khẩu (`test_password_hashing_and_verification`):**
    * Cùng một mật khẩu băm 2 lần bằng `bcrypt` phải sinh ra 2 chuỗi digest khác nhau (nhờ muối ngẫu nhiên) và không bao giờ trùng chuỗi gốc.
    * Xác thực đúng mật khẩu trả về `True`, sai mật khẩu trả về `False`, và gặp chuỗi hash hỏng định dạng vẫn trả về `False` an toàn thay vì làm sập tiến trình (`ValueError`).
@@ -122,8 +122,12 @@ Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ t�
    * Từ chối bằng mã `HTTP 401` đối với cả 3 trường hợp: token hết hạn (`expires_delta < 0`), token bị sửa chữ ký, và token hợp lệ nhưng `user_id` không tồn tại trong bảng `users`.
 3. **Tính nguyên tử 3 bảng khi Đăng ký & Đăng nhập trên MySQL (`test_register_login_and_mysql_three_table_atomicity`):**
    * Gọi `POST /api/v1/auth/register` (mã `201`) tạo đồng bộ cả 3 bảng `users`, `auth_identities` (`provider = PASSWORD`) và `user_preferences` (`sleep_start = 23:30`, `sleep_end = 06:30`, `slot_step_minutes = 15`), bảo toàn tiếng Việt `utf8mb4`.
+   * Người dùng tự đặt `username` nguyên bản, hệ thống không tự ý gắn thêm bất kỳ tiền tố nào (`prefix`).
    * Đăng ký trùng `username` trả về `HTTP 409 Conflict`; đăng nhập đúng trả về `HTTP 200`, sai mật khẩu trả về `HTTP 401`.
-4. **Chuẩn hóa múi giờ UTC/+07:00, Chống IDOR & Ràng buộc `CHECK` của MySQL 8.0 (`test_mysql_utc_roundtrip_check_constraints_and_owner_isolation`):**
+4. **Đổi username bên trong app & Ràng buộc không trùng lặp (`test_update_username_and_uniqueness`):**
+   * Gọi `PATCH /api/v1/auth/username` để đổi username sau khi đã đăng nhập.
+   * Đổi sang tên chưa ai dùng thành công (mã `200`); đổi sang tên đã thuộc về tài khoản khác bị chặn ngay bằng mã `HTTP 409 Conflict`.
+5. **Chuẩn hóa múi giờ UTC/+07:00, Chống IDOR & Ràng buộc `CHECK` của MySQL 8.0 (`test_mysql_utc_roundtrip_check_constraints_and_owner_isolation`):**
    * Sự kiện lúc `07:30 +07:00` được lưu xuống cột `DATETIME` của MySQL thành `00:30` (UTC) và đọc ngược lên khớp đúng `07:30 +07:00`.
    * Hàm `active_events_stmt` cô lập tuyệt đối dữ liệu giữa hai tài khoản (`Sinh Viên A` và `Sinh Viên B`).
    * Ghi thử `priority = 9` vào bảng `events` bị động cơ MySQL 8.0 chặn ngay nhờ ràng buộc `chk_event_priority`.

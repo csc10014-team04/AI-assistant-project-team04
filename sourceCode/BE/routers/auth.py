@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import AuthIdentity, AuthProvider, User, UserPreference
-from services.security import create_access_token, hash_password, verify_password
+from services.security import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -36,6 +36,16 @@ class TokenResponse(BaseModel):
     user_id: int
 
 
+class UpdateUsernameRequest(BaseModel):
+    new_username: str = Field(..., min_length=3, max_length=255)
+
+
+class UpdateUsernameResponse(BaseModel):
+    user_id: int
+    username: str
+    message: str = "username updated successfully"
+
+
 @router.post(
     "/register",
     response_model=RegisterResponse,
@@ -53,7 +63,6 @@ def register_user(
     """
     existing_identity = db.scalar(
         select(AuthIdentity).where(
-            AuthIdentity.provider == AuthProvider.PASSWORD,
             AuthIdentity.provider_user_id == payload.username,
         )
     )
@@ -121,4 +130,51 @@ def login_user(
         access_token=token,
         token_type="bearer",
         user_id=identity.user_id,
+    )
+
+
+@router.patch("/username", response_model=UpdateUsernameResponse)
+def update_username(
+    payload: UpdateUsernameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UpdateUsernameResponse:
+    """
+    input: payload (UpdateUsernameRequest: new_username), db (Session), current_user (User).
+    core logic: verify new_username is not taken by another user, then update auth_identity.
+    output: UpdateUsernameResponse on success, or HTTP 409 Conflict if new_username is taken.
+    typical flow: check duplicate across all users -> update provider_user_id -> commit -> return.
+    """
+    existing_identity = db.scalar(
+        select(AuthIdentity).where(
+            AuthIdentity.provider_user_id == payload.new_username,
+            AuthIdentity.user_id != current_user.id,
+        )
+    )
+    if existing_identity is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="username is already taken by another account",
+        )
+
+    user_identity = db.scalar(
+        select(AuthIdentity).where(
+            AuthIdentity.user_id == current_user.id,
+            AuthIdentity.provider == AuthProvider.PASSWORD,
+        )
+    )
+    if user_identity is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="password identity not found for current user",
+        )
+
+    user_identity.provider_user_id = payload.new_username
+    db.commit()
+    db.refresh(user_identity)
+
+    return UpdateUsernameResponse(
+        user_id=current_user.id,
+        username=user_identity.provider_user_id,
+        message="username updated successfully",
     )

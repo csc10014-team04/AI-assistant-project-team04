@@ -1,4 +1,4 @@
-# owner: Khoi (mysql-backed module & api tests for security, jwt, registration, and login)
+# owner: Khoi (mysql-backed module & api tests for security, jwt, registration, login, and username uniqueness)
 import uuid
 from datetime import datetime, time, timedelta
 
@@ -29,14 +29,14 @@ from services.security import (
 )
 
 
-def _unique_username(prefix: str = "khoi_auth") -> str:
+def _unique_username(base_name: str = "minhkhoi") -> str:
     """
-    input: prefix (str) identifying the test scenario.
-    core logic: append an 8-char uuid suffix so usernames never collide.
-    output: str unique username safe for repeated test executions.
-    typical flow: prefix='khoi_auth' -> 'khoi_auth_a1b2c3d4'.
+    input: base_name (str) chosen by the user.
+    core logic: append a unique suffix to keep test runs isolated across repeated executions.
+    output: str username without system-forced prefixes.
+    typical flow: base_name='minhkhoi' -> 'minhkhoi_a1b2c3d4'.
     """
-    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+    return f"{base_name}_{uuid.uuid4().hex[:8]}"
 
 
 def test_password_hashing_and_verification() -> None:
@@ -96,15 +96,16 @@ def test_register_login_and_mysql_three_table_atomicity(
 ) -> None:
     """
     input: client (TestClient) and db_session (Session) connected to docker mysql 8.0.
-    core logic: register user via HTTP, verify 3 mysql tables + utf8mb4 + 409 duplicate + login 200/401.
-    output: assertions proving atomic 3-table creation and strict credential checking on mysql.
+    core logic: register user without prefixes, verify 3 mysql tables + 409 on duplicate + login 200/401.
+    output: assertions proving atomic 3-table creation and strict duplicate rejection on mysql.
     typical flow: POST /register (201) -> query 3 tables -> duplicate (409) -> POST /login (200 & 401).
     """
-    username = _unique_username("khoi_official")
+    # user chooses natural username without any application-forced prefix
+    chosen_username = _unique_username("minhkhoi")
     reg_res = client.post(
         "/api/v1/auth/register",
         json={
-            "username": username,
+            "username": chosen_username,
             "password": "MyStrongPassword123",
             "display_name": "Nguyễn Minh Khôi",
         },
@@ -112,6 +113,7 @@ def test_register_login_and_mysql_three_table_atomicity(
     assert reg_res.status_code == 201
     reg_data = reg_res.json()
     uid = reg_data["user_id"]
+    assert reg_data["username"] == chosen_username  # username preserved exactly as entered
 
     # verify all 3 user-related tables in mysql innodb were populated atomically
     user_row = db_session.scalar(select(User).where(User.id == uid))
@@ -120,27 +122,29 @@ def test_register_login_and_mysql_three_table_atomicity(
 
     assert user_row is not None and user_row.display_name == "Nguyễn Minh Khôi"
     assert identity_row is not None and identity_row.provider == AuthProvider.PASSWORD
+    assert identity_row.provider_user_id == chosen_username  # stored without any prefix
     assert identity_row.hashed_password != "MyStrongPassword123"
     assert pref_row is not None
     assert pref_row.sleep_start == time(23, 30)
     assert pref_row.sleep_end == time(6, 30)
     assert pref_row.slot_step_minutes == 15
 
-    # duplicate registration must return HTTP 409 Conflict
+    # registering duplicate username must return HTTP 409 Conflict
     dup_res = client.post(
         "/api/v1/auth/register",
         json={
-            "username": username,
+            "username": chosen_username,
             "password": "AnotherPassword456",
             "display_name": "Bản Sao",
         },
     )
     assert dup_res.status_code == 409
+    assert "already registered" in dup_res.json()["detail"]
 
     # valid login returns HTTP 200 and a working bearer token
     login_ok = client.post(
         "/api/v1/auth/login",
-        json={"username": username, "password": "MyStrongPassword123"},
+        json={"username": chosen_username, "password": "MyStrongPassword123"},
     )
     assert login_ok.status_code == 200
     assert login_ok.json()["user_id"] == uid
@@ -149,9 +153,62 @@ def test_register_login_and_mysql_three_table_atomicity(
     # wrong password returns HTTP 401 Unauthorized
     login_bad = client.post(
         "/api/v1/auth/login",
-        json={"username": username, "password": "WrongPassword999"},
+        json={"username": chosen_username, "password": "WrongPassword999"},
     )
     assert login_bad.status_code == 401
+
+
+def test_update_username_and_uniqueness(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: client (TestClient) and db_session (Session) with two distinct registered users.
+    core logic: change username via PATCH /username, reject collision with existing user, allow unique change.
+    output: assertions proving username can be updated and uniqueness is enforced across all accounts.
+    typical flow: user_a updates to unused name -> 200; user_a updates to user_b name -> 409 Conflict.
+    """
+    user_a_name = _unique_username("user_alpha")
+    user_b_name = _unique_username("user_beta")
+
+    # register user A
+    res_a = client.post(
+        "/api/v1/auth/register",
+        json={"username": user_a_name, "password": "Password123!", "display_name": "User Alpha"},
+    )
+    assert res_a.status_code == 201
+    headers_a = {"Authorization": f"Bearer {res_a.json()['access_token']}"}
+
+    # register user B
+    res_b = client.post(
+        "/api/v1/auth/register",
+        json={"username": user_b_name, "password": "Password123!", "display_name": "User Beta"},
+    )
+    assert res_b.status_code == 201
+
+    # case 1: user A tries to change username to user B's username -> must fail with 409 Conflict
+    conflict_res = client.patch(
+        "/api/v1/auth/username",
+        json={"new_username": user_b_name},
+        headers=headers_a,
+    )
+    assert conflict_res.status_code == 409
+    assert "already taken" in conflict_res.json()["detail"]
+
+    # case 2: user A changes username to an unused name -> succeeds with 200
+    updated_name = _unique_username("user_alpha_renamed")
+    ok_res = client.patch(
+        "/api/v1/auth/username",
+        json={"new_username": updated_name},
+        headers=headers_a,
+    )
+    assert ok_res.status_code == 200
+    assert ok_res.json()["username"] == updated_name
+
+    # verify database reflection in mysql
+    identity = db_session.scalar(
+        select(AuthIdentity).where(AuthIdentity.user_id == res_a.json()["user_id"])
+    )
+    assert identity is not None and identity.provider_user_id == updated_name
 
 
 def test_mysql_utc_roundtrip_check_constraints_and_owner_isolation(
