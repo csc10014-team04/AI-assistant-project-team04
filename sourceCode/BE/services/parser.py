@@ -665,8 +665,3 @@ def extract_raw_text_from_file(file_bytes: bytes, filename: str) -> str:
         "Accepted formats: .csv, .txt, .md (plain text), .pdf, "
         ".png, .jpg, .jpeg, .webp, .bmp, .tiff, .tif (image OCR)."
     )
-
-
-
-
-
