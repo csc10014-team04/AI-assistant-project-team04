@@ -34,12 +34,12 @@ sourceCode/BE/
 ├── routers/                         # Tầng API nhận HTTP Request từ Frontend và trả JSON
 │   ├── auth.py                      # (Khôi) API Đăng ký, Đăng nhập
 │   ├── ingestion.py                 # (Lâm + Khôi) API Upload file, Xem trước, Giải quyết trùng giờ & Lưu DB
-│   └── search.py                    # (P.Nguyên) API Tìm kiếm lịch trình & Tìm khung giờ trống
+│   └── search.py                    # (Khôi + Lâm) API Tìm kiếm lịch trình (SQL + Vector), Hỏi đáp học vụ (RAG) & Tìm khung giờ trống
 ├── services/                        # Tầng xử lý thuật toán và nghiệp vụ (tách biệt với HTTP)
 │   ├── security.py                  # (Khôi) Băm mật khẩu bcrypt, tạo/kiểm tra JWT Token, get_current_user
 │   ├── parser.py                    # (Lâm) Đọc file thời khóa biểu (.csv/.md/.pdf/ảnh), lọc edge cases & cách ly lỗi
 │   ├── validator.py                 # (Khôi) Kiểm tra trùng lịch cứng, gom nhóm Conflict & Lưu xuống MySQL
-│   └── search_engine.py             # (P.Nguyên) Chuẩn hóa câu search, tìm kiếm MySQL & Tìm slot trống <200ms
+│   └── search_engine.py             # (Khôi + Lâm) Tìm kiếm lai SQL & Vector, 6-bước RAG học vụ & Thuật toán quét slot trống <200ms
 └── tests/                           # Kiểm thử cấp module/API chạy trực tiếp trên Docker MySQL 8.0 (port 3307)
     ├── README.md                    # Hướng dẫn kiến trúc kiểm thử Savepoint Isolation & tiêu chuẩn viết test
     ├── conftest.py                  # Fixture dùng chung nối MySQL 3307 và tự động rollback sau mỗi hàm test
