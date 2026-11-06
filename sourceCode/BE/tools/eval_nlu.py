@@ -4,9 +4,13 @@ usage (live vLLM):  python tools/eval_nlu.py            # target: schema adheren
        (rules only): python tools/eval_nlu.py --rules   # deterministic fallback quality, no model needed
 """
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
+
+if "LLM_TIMEOUT_SECONDS" not in os.environ and "--rules" not in sys.argv:
+    os.environ["LLM_TIMEOUT_SECONDS"] = "20.0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

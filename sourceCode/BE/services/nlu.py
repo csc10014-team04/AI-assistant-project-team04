@@ -7,7 +7,7 @@ from datetime import date, datetime
 from typing import Literal
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 
 from database import VN_TZ
@@ -20,7 +20,23 @@ from services.privacy import assert_private_endpoint, sanitize_prompt
 from services.telemetry import record_latency_ms
 from services.temporal import resolve_date_hint
 
-VLLM_ENDPOINT = os.getenv("VLLM_ENDPOINT", "http://127.0.0.1:8000/v1/chat/completions")
+def _detect_default_vllm_endpoint() -> str:
+    env_val = os.getenv("VLLM_ENDPOINT")
+    if env_val:
+        return env_val
+    try:
+        import socket
+        for port in (8000, 11434):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.1)
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    return f"http://127.0.0.1:{port}/v1/chat/completions"
+    except Exception:
+        pass
+    return "http://127.0.0.1:8000/v1/chat/completions"
+
+
+VLLM_ENDPOINT = _detect_default_vllm_endpoint()
 MODEL_NAME = os.getenv("LLM_MODEL", "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))  # architecture A1: fallback < 1s after 3s
 MAX_SCHEMA_RETRIES = 1
@@ -36,7 +52,10 @@ SYSTEM_PROMPT = (
     "preferred_time_of_day (morning|afternoon|evening|null), avoid_time_of_day "
     "(morning|afternoon|evening|null), date_hint (copy the user's date words or null). "
     "Never invent values the user did not state; use null instead. "
-    "Never output calendar dates, only copy the user's own date words."
+    "Never output calendar dates, only copy the user's own date words. "
+    "Distinguish schedule_task vs query_schedule: 'xếp lịch', 'sắp xếp', or scheduling an activity is schedule_task; "
+    "'xem lịch', 'có lịch gì', 'khi nào rảnh' is query_schedule. "
+    "Do not include time of day words (sáng, chiều, tối) in date_hint."
 )
 
 FEW_SHOT: list[dict[str, str]] = [
@@ -46,6 +65,10 @@ FEW_SHOT: list[dict[str, str]] = [
     {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":90,"priority":1,"preferred_time_of_day":"afternoon","avoid_time_of_day":null,"date_hint":"thứ sáu"}'},
     {"role": "user", "content": "xóa buổi gym ngày mai"},
     {"role": "assistant", "content": '{"intent":"delete_event","title":"gym","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"ngày mai"}'},
+    {"role": "user", "content": "tuần này mình có lịch gì"},
+    {"role": "assistant", "content": '{"intent":"query_schedule","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"tuần này"}'},
+    {"role": "user", "content": "xếp lịch học bài"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
     {"role": "user", "content": "hôm nay trời đẹp quá"},
     {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
 ]
@@ -54,8 +77,8 @@ FEW_SHOT: list[dict[str, str]] = [
 class NluResult(BaseModel):
     intent: Intent = "unknown"
     title: str | None = Field(default=None, max_length=255)
-    duration_minutes: int | None = Field(default=None, ge=15, le=720)
-    priority: int | None = Field(default=None, ge=1, le=3)
+    duration_minutes: int | None = Field(default=None)
+    priority: int | None = Field(default=None)
     preferred_time_of_day: TimeOfDay | None = None
     avoid_time_of_day: TimeOfDay | None = None
     date_hint: str | None = Field(default=None, max_length=100)
@@ -67,6 +90,28 @@ class NluResult(BaseModel):
     profanity_found: bool = False
     fallback_mode: bool = False  # True when the llm failed and rules produced this result
     source: Literal["llm", "rules"] = "llm"
+
+    @field_validator("duration_minutes", mode="before")
+    @classmethod
+    def _validate_duration(cls, v: int | float | None) -> int | None:
+        if v is None:
+            return None
+        try:
+            val = round(float(v))
+        except (ValueError, TypeError):
+            return None
+        return val if 15 <= val <= 720 else None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _validate_priority(cls, v: int | None) -> int | None:
+        if v is None:
+            return None
+        try:
+            val = int(v)
+        except (ValueError, TypeError):
+            return None
+        return val if 1 <= val <= 3 else None
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +265,16 @@ def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, n
         result.duration_minutes = rules.duration_minutes  # literal text wins over the model
     elif not _DURATION_RE.search(prompt):
         result.duration_minutes = None  # model invented a duration
+    # literal text guard: arranging/scheduling words must never be treated as schedule query
+    if result.intent == "query_schedule" and rules.intent == "schedule_task":
+        result.intent = "schedule_task"
+        if not result.title:
+            result.title = rules.title
     # temporal hallucination guard: only a date phrase that literally occurs in the prompt is accepted
     hint = rules.date_hint
     if hint is None and result.date_hint and result.date_hint.lower() in prompt.lower():
-        hint = result.date_hint
+        if not any(tod in result.date_hint.lower() for tod in ("sáng", "sang", "chiều", "chieu", "tối", "toi")):
+            hint = result.date_hint
     result.date_hint = hint
     if result.intent in {"schedule_task", "query_schedule", "reschedule"}:
         window = resolve_date_hint(hint, now)
@@ -302,8 +353,8 @@ def understand_prompt(
                     retries += 1  # reject malformed output and retry once
                     continue
                 break
-            if result.intent == "unknown" and rules.intent == "unknown":
-                category, reason = "SEMANTIC_FAILURE", "model and rules could not identify an intent"
+            if result.intent == "unknown" and rules.intent != "unknown":
+                category, reason = "SEMANTIC_FAILURE", "model failed to detect intent recognized by rules"
                 break
             result.source, result.fallback_mode = "llm", False
             record_latency_ms((time.monotonic() - started) * 1000)

@@ -1,0 +1,2925 @@
+========== services/nlu.py ==========
+# owner: Database & AI (P1-7 natural language understanding: intent + entity extraction with deterministic fallback)
+import json
+import os
+import re
+import time
+from datetime import date, datetime
+from typing import Literal
+
+import httpx
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.orm import Session
+
+from database import VN_TZ
+from models import AiErrorLog, AiErrorType
+from services import rag
+from services.ai_logging import log_ai_failure
+from services.inference_queue import QueueWaitTimeout, broker
+from services.normalizer import normalize_text
+from services.privacy import assert_private_endpoint, sanitize_prompt
+from services.telemetry import record_latency_ms
+from services.temporal import resolve_date_hint
+
+VLLM_ENDPOINT = os.getenv("VLLM_ENDPOINT", "http://127.0.0.1:8000/v1/chat/completions")
+MODEL_NAME = os.getenv("LLM_MODEL", "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))  # architecture A1: fallback < 1s after 3s
+MAX_SCHEMA_RETRIES = 1
+
+Intent = Literal["schedule_task", "query_schedule", "delete_event", "reschedule", "unknown"]
+TimeOfDay = Literal["morning", "afternoon", "evening"]
+
+SYSTEM_PROMPT = (
+    "You extract scheduling info from a Vietnamese/English student message. "
+    "Reply with ONE JSON object only, no prose. Keys: "
+    'intent (schedule_task|query_schedule|delete_event|reschedule|unknown), '
+    "title (string|null), duration_minutes (int|null), priority (1-3|null, 1=highest), "
+    "preferred_time_of_day (morning|afternoon|evening|null), avoid_time_of_day "
+    "(morning|afternoon|evening|null), date_hint (copy the user's date words or null). "
+    "Never invent values the user did not state; use null instead. "
+    "Never output calendar dates, only copy the user's own date words."
+)
+
+FEW_SHOT: list[dict[str, str]] = [
+    {"role": "user", "content": "xếp 3 tiếng làm đồ án CTDL, không làm buổi tối"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"làm đồ án CTDL","duration_minutes":180,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":"evening","date_hint":null}'},
+    {"role": "user", "content": "mình cần học bài gấp 90 phút chiều thứ sáu"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":90,"priority":1,"preferred_time_of_day":"afternoon","avoid_time_of_day":null,"date_hint":"thứ sáu"}'},
+    {"role": "user", "content": "xóa buổi gym ngày mai"},
+    {"role": "assistant", "content": '{"intent":"delete_event","title":"gym","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"ngày mai"}'},
+    {"role": "user", "content": "hôm nay trời đẹp quá"},
+    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
+]
+
+
+class NluResult(BaseModel):
+    intent: Intent = "unknown"
+    title: str | None = Field(default=None, max_length=255)
+    duration_minutes: int | None = Field(default=None, ge=15, le=720)
+    priority: int | None = Field(default=None, ge=1, le=3)
+    preferred_time_of_day: TimeOfDay | None = None
+    avoid_time_of_day: TimeOfDay | None = None
+    date_hint: str | None = Field(default=None, max_length=100)
+    window_start: date | None = None  # resolved deterministically from date_hint (P2-3)
+    window_end: date | None = None
+    date_assumed: bool = False  # True when a default window was applied
+    needs_clarification: bool = False
+    clarification_question: str | None = None
+    profanity_found: bool = False
+    fallback_mode: bool = False  # True when the llm failed and rules produced this result
+    source: Literal["llm", "rules"] = "llm"
+
+
+# ---------------------------------------------------------------------------
+# deterministic rule-based extractor (also the zero-hallucination fallback)
+# ---------------------------------------------------------------------------
+
+_DURATION_RE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(tiếng|tieng|giờ|gio|h|hours?|hrs?|phút|phut|p|mins?|minutes?)\b",
+    re.IGNORECASE,
+)
+_DATE_HINT_RE = re.compile(
+    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
+    r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
+    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week)",
+    re.IGNORECASE,
+)
+_TIME_OF_DAY = {
+    "morning": ("sáng", "sang", "morning"),
+    "afternoon": ("chiều", "chieu", "afternoon"),
+    "evening": ("tối", "toi", "evening", "night"),
+}
+_NEGATION = ("không", "khong", "ko", "đừng", "dung", "tránh", "tranh", "not", "avoid", "no")
+_HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap", "deadline", "thi", "exam")
+
+
+def extract_duration_minutes(text: str) -> int | None:
+    """
+    input: text (str) sanitized prompt.
+    output: int minutes (15..720) from the first "<number> <unit>" phrase, else None.
+    typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180.
+    """
+    match = _DURATION_RE.search(text)
+    if not match:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    unit = match.group(2).lower()
+    minutes = round(value * (1 if unit in {"phút", "phut", "p", "min", "mins", "minute", "minutes"} else 60))
+    return minutes if 15 <= minutes <= 720 else None
+
+
+def _time_of_day_flags(text: str) -> tuple[TimeOfDay | None, TimeOfDay | None]:
+    """returns (preferred, avoided) by checking a negation word right before the period word."""
+    lowered = text.lower()
+    preferred: TimeOfDay | None = None
+    avoided: TimeOfDay | None = None
+    for period, words in _TIME_OF_DAY.items():
+        for word in words:
+            for m in re.finditer(rf"\b{word}\b", lowered):
+                before = lowered[: m.start()].split()[-3:]
+                if any(neg in before for neg in _NEGATION):
+                    avoided = period  # type: ignore[assignment]
+                else:
+                    preferred = period  # type: ignore[assignment]
+    return preferred, avoided
+
+
+def _extract_title(text: str) -> str | None:
+    """strip request boilerplate, duration and date words; what remains is the activity name."""
+    cleaned = _DURATION_RE.sub(" ", text)
+    cleaned = _DATE_HINT_RE.sub(" ", cleaned)
+    cleaned = re.sub(
+        r"\b(xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|"
+        r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:255] or None
+
+
+def rule_based_understand(text: str) -> NluResult:
+    """
+    input: text (str) sanitized prompt.
+    core logic: regex extraction of duration, time-of-day, date hint, priority and a coarse intent.
+    output: NluResult(source="rules"); every field is None when not literally present in the text.
+    """
+    lowered = text.lower()
+    duration = extract_duration_minutes(text)
+    preferred, avoided = _time_of_day_flags(text)
+    date_match = _DATE_HINT_RE.search(text)
+
+    if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
+        intent: Intent = "delete_event"
+    elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
+        intent = "reschedule"
+    elif duration is not None or re.search(r"\b(xếp|xep|sắp xếp|sap xep)\b", lowered):
+        intent = "schedule_task"
+    elif re.search(r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|schedule|what)\b", lowered):
+        intent = "query_schedule"
+    else:
+        intent = "unknown"
+
+    priority = 1 if any(re.search(rf"\b{w}\b", lowered) for w in _HIGH_PRIORITY) else None
+    return NluResult(
+        intent=intent,
+        title=_extract_title(text) if intent == "schedule_task" else None,
+        duration_minutes=duration,
+        priority=priority,
+        preferred_time_of_day=preferred,
+        avoid_time_of_day=avoided,
+        date_hint=date_match.group(0) if date_match and intent != "unknown" else None,
+        fallback_mode=False,
+        source="rules",
+    )
+
+
+# ---------------------------------------------------------------------------
+# llm call + schema validation + retry
+# ---------------------------------------------------------------------------
+
+def _extract_json_object(raw: str) -> dict:
+    """pull the first {...} block out of a model reply and parse it (raises ValueError / JSONDecodeError)."""
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("no json object in model output")
+    parsed = json.loads(raw[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("json root is not an object")
+    return parsed
+
+
+def log_ai_error(
+    db: Session | None,
+    user_id: int | None,
+    prompt: str,
+    raw_output: str | None,
+    error_type: AiErrorType,
+    retry_count: int,
+) -> None:
+    """persist one AiErrorLog row (flush only; the request owner commits). No-op when db is None."""
+    if db is None:
+        return
+    db.add(
+        AiErrorLog(
+            user_id=user_id,
+            prompt_text=prompt,
+            raw_output=(raw_output or "")[:4000] or None,
+            error_type=error_type,
+            retry_count=retry_count,
+            triggered_fallback=True,
+        )
+    )
+    db.flush()
+
+
+def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, norm_profanity: bool) -> NluResult:
+    """shared post-processing: literal-text guards, deterministic date window, clarification, profanity flag."""
+    if rules.duration_minutes is not None:
+        result.duration_minutes = rules.duration_minutes  # literal text wins over the model
+    elif not _DURATION_RE.search(prompt):
+        result.duration_minutes = None  # model invented a duration
+    # temporal hallucination guard: only a date phrase that literally occurs in the prompt is accepted
+    hint = rules.date_hint
+    if hint is None and result.date_hint and result.date_hint.lower() in prompt.lower():
+        hint = result.date_hint
+    result.date_hint = hint
+    if result.intent in {"schedule_task", "query_schedule", "reschedule"}:
+        window = resolve_date_hint(hint, now)
+        result.window_start, result.window_end = window.start, window.end
+        result.date_assumed = window.assumed
+        if window.clarification_question:
+            result.needs_clarification, result.clarification_question = True, window.clarification_question
+    if result.intent == "schedule_task" and result.duration_minutes is None:
+        result.needs_clarification = True
+        result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
+    if result.priority is None:
+        result.priority = rules.priority
+    result.profanity_found = norm_profanity
+    return result
+
+
+def understand_prompt(
+    prompt: str,
+    reference_now: datetime,
+    *,
+    db: Session | None = None,
+    user_id: int | None = None,
+    client: httpx.Client | None = None,
+) -> NluResult:
+    """
+    input: prompt (str) raw user message, reference_now (aware datetime), optional db/user_id for error logs.
+    core logic: sanitize + normalize (P2-6) -> RAG context (P2-2) -> few-shot llm call through the FIFO broker
+                (P2-10) -> strict json/pydantic validation with one retry (P2-1) -> deterministic date window
+                and clarification (P2-3). Any failure (TIMEOUT, INFRA_CRASH, JSON_PARSE/SCHEMA_VALIDATION,
+                SEMANTIC_FAILURE) is logged to ai_error_logs + the jsonl taxonomy file (P2-12) and the
+                rule-based result is returned with fallback_mode=True.
+    output: NluResult. Never raises for AI failures, so the mobile UI can always open the manual picker.
+    """
+    if reference_now.tzinfo is None:
+        raise ValueError("reference_now must be timezone-aware")
+    started = time.monotonic()
+    normalized = normalize_text(sanitize_prompt(prompt))
+    safe_prompt = normalized.text
+    if not safe_prompt:
+        return NluResult(intent="unknown", fallback_mode=True, source="rules", profanity_found=normalized.profanity_found)
+
+    base = rule_based_understand(safe_prompt)
+    rules = _finalize(base.model_copy(), base, safe_prompt, reference_now, normalized.profanity_found)
+    context: list[str] = []
+    if user_id is not None:
+        try:
+            context = [h.text for h in rag.retrieve(user_id, safe_prompt, k=2)]
+        except Exception:
+            context = []  # a corrupt/missing index must never block the request
+    now_vn = reference_now.astimezone(VN_TZ)
+    system = f"{SYSTEM_PROMPT} Now: {now_vn:%Y-%m-%d %A %H:%M} (+07:00)."
+    if context:
+        system += " Known schedule: " + " | ".join(c.replace("\n", "; ")[:200] for c in context)
+    messages = [{"role": "system", "content": system}, *FEW_SHOT, {"role": "user", "content": safe_prompt}]
+    payload = {"model": MODEL_NAME, "messages": messages, "max_tokens": 200, "temperature": 0.0}
+
+    http = client or httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
+    raw_output: str | None = None
+    retries = 0
+    category = "SEMANTIC_FAILURE"
+    reason = "unresolvable intent"
+    try:
+        assert_private_endpoint(VLLM_ENDPOINT)
+        while True:
+            try:
+                response = broker.run(
+                    lambda: http.post(VLLM_ENDPOINT, json=payload, timeout=LLM_TIMEOUT_SECONDS), user_id=user_id
+                )
+                response.raise_for_status()
+                raw_output = response.json()["choices"][0]["message"]["content"]
+                result = NluResult.model_validate(_extract_json_object(raw_output))
+            except (ValueError, ValidationError, KeyError, IndexError) as exc:
+                category = "SCHEMA_VALIDATION" if isinstance(exc, ValidationError) else "JSON_PARSE"
+                reason = f"{type(exc).__name__}: {str(exc)[:200]}"
+                if retries < MAX_SCHEMA_RETRIES:
+                    retries += 1  # reject malformed output and retry once
+                    continue
+                break
+            if result.intent == "unknown" and rules.intent == "unknown":
+                category, reason = "SEMANTIC_FAILURE", "model and rules could not identify an intent"
+                break
+            result.source, result.fallback_mode = "llm", False
+            record_latency_ms((time.monotonic() - started) * 1000)
+            return _finalize(result, rules, safe_prompt, reference_now, normalized.profanity_found)
+    except (httpx.TimeoutException, QueueWaitTimeout) as exc:
+        category, reason = "TIMEOUT", f"{type(exc).__name__}: {exc}"
+    except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
+        category, reason = "INFRA_CRASH", f"{type(exc).__name__}: {str(exc)[:200]}"
+    finally:
+        if client is None:
+            http.close()
+
+    record = log_ai_failure(category, safe_prompt, reason, retrieved_context=context, raw_output=raw_output,
+                            user_id=user_id, retry_count=retries)
+    log_ai_error(db, user_id, safe_prompt, raw_output, AiErrorType(record["db_error_type"]), retries)
+    record_latency_ms((time.monotonic() - started) * 1000)
+    rules.fallback_mode = True
+    return rules
+
+========== services/privacy.py ==========
+# owner: Database & AI (P1-2 data privacy isolation: payload sanitization, outbound allowlist, local encryption)
+import base64
+import hashlib
+import ipaddress
+import os
+import re
+import unicodedata
+from urllib.parse import urlparse
+
+from cryptography.fernet import Fernet, InvalidToken
+
+MAX_PROMPT_CHARS = 500  # keeps system+user prompt inside the 2048-token vllm context window
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)(?:[\s.-]?\d){8,10}(?!\d)")
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+_PRIVATE_HOST_SUFFIXES = (".local", ".internal", ".lan")
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+_DOCKER_SERVICE_HOSTS = {"llama_engine", "local_llama_inference", "localhost"}
+
+
+def sanitize_prompt(text: str, max_chars: int = MAX_PROMPT_CHARS) -> str:
+    """
+    input: text (str) raw user prompt and max_chars (int) hard length cap.
+    core logic: NFC-normalize, strip control chars, redact emails/phones/urls, collapse whitespace, truncate.
+    output: str safe to embed in an llm prompt or persist to ai_error_logs.
+    typical flow: "mail a@b.com 0901234567" -> "mail [email] [phone]".
+    """
+    cleaned = unicodedata.normalize("NFC", text)
+    cleaned = _CONTROL_CHARS_RE.sub(" ", cleaned)
+    cleaned = _EMAIL_RE.sub("[email]", cleaned)
+    cleaned = _URL_RE.sub("[url]", cleaned)
+    cleaned = _PHONE_RE.sub("[phone]", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:max_chars]
+
+
+def is_private_endpoint(url: str) -> bool:
+    """
+    input: url (str) of the llm / internal service endpoint.
+    core logic: accept only loopback, RFC1918/link-local ips, docker service names or *.local hosts.
+    output: bool, True when the host is not a public internet address.
+    typical flow: http://127.0.0.1:8000 -> True; https://api.openai.com -> False.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    if host in _DOCKER_SERVICE_HOSTS or host.endswith(_PRIVATE_HOST_SUFFIXES):
+        return True
+    allowed = [x.strip().lower() for x in os.getenv("LLM_ALLOWED_HOSTS", "").split(",") if x.strip()]
+    if host in allowed:
+        return True  # explicit opt-in for the team's own AI host (e.g. a Radmin/Hamachi 26.x.x.x address)
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False  # unknown public-looking dns name
+    if addr in _CGNAT:
+        return True  # tailscale range
+    for rule in allowed:
+        if "/" in rule and addr in ipaddress.ip_network(rule, strict=False):
+            return True  # allowlisted CIDR, e.g. 26.0.0.0/8
+    return addr.is_private or addr.is_loopback or addr.is_link_local
+
+
+def assert_private_endpoint(url: str) -> str:
+    """
+    input: url (str) outbound target for personal schedule data.
+    core logic: raise instead of letting schedule data leave the private network.
+    output: the same url when private; raises ValueError otherwise.
+    """
+    if not is_private_endpoint(url):
+        raise ValueError(f"refusing to send schedule data to non-private endpoint: {url}")
+    return url
+
+
+def _fernet() -> Fernet:
+    """derive a Fernet key from DATA_ENCRYPTION_KEY (falls back to a dev-only key)."""
+    secret = os.getenv("DATA_ENCRYPTION_KEY", "dev-encryption-key-change-in-production")
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_text(plain: str) -> str:
+    """
+    input: plain (str) sensitive text such as a stored prompt.
+    output: str urlsafe Fernet token (AES-128-CBC + HMAC) safe for a TEXT column.
+    """
+    return _fernet().encrypt(plain.encode("utf-8")).decode("ascii")
+
+
+def decrypt_text(token: str) -> str | None:
+    """
+    input: token (str) produced by encrypt_text.
+    output: original str, or None when the token is corrupted / key mismatched.
+    """
+    try:
+        return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        return None
+
+========== services/rag.py ==========
+# owner: Database & AI (P2-2 RAG pipeline: file text -> chunks -> embeddings -> per-user encrypted vector index)
+import json
+import math
+import os
+import re
+import threading
+import unicodedata
+import zlib
+from dataclasses import dataclass
+from pathlib import Path
+
+from services.ai_logging import log_ai_failure
+from services.privacy import decrypt_text, encrypt_text
+
+RAG_DIR = Path(os.getenv("RAG_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data" / "rag")))
+EMBED_DIM = 512
+CHUNK_CHARS = 400
+CHUNK_OVERLAP = 80
+MIN_SCORE = 0.12  # below this the retrieval is treated as a miss and logged for prompt tuning
+
+
+def fold(text: str) -> str:
+    """lowercase + strip Vietnamese diacritics so 'đồ án' and 'do an' embed identically."""
+    nfd = unicodedata.normalize("NFD", text.lower().replace("đ", "d"))
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def embed(text: str, dim: int = EMBED_DIM) -> list[float]:
+    """
+    deterministic offline embedding (feature hashing of word unigrams/bigrams + char trigrams, L2-normalised).
+    no network and no model download, so personal schedule text never leaves the host (P1-2). swap this one
+    function for a sentence-transformer if a GPU budget is available; the index format stays the same.
+    """
+    words = re.findall(r"\w+", fold(text))
+    feats = list(words) + [f"{a}_{b}" for a, b in zip(words, words[1:])]
+    for w in words:
+        padded = f"^{w}$"
+        feats += [padded[i : i + 3] for i in range(len(padded) - 2)]
+    vec = [0.0] * dim
+    for f in feats:
+        h = zlib.crc32(f.encode("utf-8"))
+        vec[h % dim] += 1.0 if (h >> 16) & 1 else -1.0
+    norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+    return [x / norm for x in vec]
+
+
+def chunk_text(text: str, size: int = CHUNK_CHARS, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    """
+    split extracted timetable text into chunks: whole lines are kept together (a timetable row is never cut),
+    lines are packed up to `size` chars, and the last `overlap` chars are repeated into the next chunk.
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    chunks: list[str] = []
+    current = ""
+    for line in lines:
+        line = line[:size]
+        if current and len(current) + len(line) + 1 > size:
+            chunks.append(current)
+            current = current[-overlap:].split("\n", 1)[-1] if overlap else ""
+        current = f"{current}\n{line}".strip("\n") if current else line
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+@dataclass
+class Hit:
+    text: str
+    score: float
+    source: str
+
+
+class VectorIndex:
+    """per-owner vector store persisted as one Fernet-encrypted JSON file (local encryption, P1-2)."""
+
+    _lock = threading.Lock()
+
+    def __init__(self, owner_id: int, directory: Path | None = None) -> None:
+        self.owner_id = owner_id
+        self.path = (directory or RAG_DIR) / f"owner_{int(owner_id)}.idx"
+        self._items: list[dict] = self._load()
+
+    def _load(self) -> list[dict]:
+        if not self.path.is_file():
+            return []
+        plain = decrypt_text(self.path.read_text(encoding="ascii"))
+        return json.loads(plain) if plain else []
+
+    def _save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(encrypt_text(json.dumps(self._items)), encoding="ascii")
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def replace_source(self, source: str, chunks: list[str]) -> int:
+        """re-import safe: drop all chunks previously indexed from `source`, then add the new ones."""
+        with self._lock:
+            self._items = [i for i in self._items if i["source"] != source]
+            self._items += [{"source": source, "text": c, "vec": embed(c)} for c in chunks]
+            self._save()
+        return len(chunks)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items = []
+            self.path.unlink(missing_ok=True)
+
+    def search(self, query: str, k: int = 3) -> list[Hit]:
+        q = embed(query)
+        scored = [Hit(i["text"], sum(a * b for a, b in zip(q, i["vec"])), i["source"]) for i in self._items]
+        return sorted(scored, key=lambda h: h.score, reverse=True)[:k]
+
+
+def ingest_file(owner_id: int, file_bytes: bytes, filename: str, directory: Path | None = None) -> int:
+    """
+    input: owner_id, raw bytes of a .pdf/.png/.jpg/.csv/.md/.txt timetable, original filename.
+    core logic: parser.extract_raw_text_from_file (pdf text layer / OCR for images) -> chunk -> embed -> index.
+    output: number of chunks indexed. Extraction failure or empty text is logged as RAG_EXTRACTION_FAILED and
+            raises ValueError so the API can tell the user instead of silently indexing nothing.
+    """
+    from services.parser import extract_raw_text_from_file  # lazy: pulls optional pdf/ocr deps
+
+    try:
+        text = extract_raw_text_from_file(file_bytes, filename)
+    except Exception as exc:  # parser raises on unsupported / OCR-less environments
+        log_ai_failure("RAG_EXTRACTION_FAILED", f"file:{filename}", f"{type(exc).__name__}: {exc}", user_id=owner_id)
+        raise ValueError(f"cannot extract text from {filename}: {exc}") from exc
+    chunks = chunk_text(text)
+    if not chunks:
+        log_ai_failure("RAG_EXTRACTION_FAILED", f"file:{filename}", "extracted text was empty", user_id=owner_id)
+        raise ValueError(f"no readable text found in {filename}")
+    return VectorIndex(owner_id, directory).replace_source(filename, chunks)
+
+
+def retrieve(owner_id: int, query: str, k: int = 3, directory: Path | None = None) -> list[Hit]:
+    """top-k chunks for `query`; logs RAG_EMPTY_RETRIEVAL / RAG_LOW_SCORE so prompts can be tuned later."""
+    index = VectorIndex(owner_id, directory)
+    if len(index) == 0:
+        return []  # user has not indexed anything; not a failure
+    hits = [h for h in index.search(query, k) if h.score >= MIN_SCORE]
+    if not hits:
+        best = index.search(query, 1)
+        log_ai_failure("RAG_LOW_SCORE" if best else "RAG_EMPTY_RETRIEVAL", query,
+                       f"best score {best[0].score:.3f} < {MIN_SCORE}" if best else "empty index", user_id=owner_id,
+                       retrieved_context=[b.text for b in best])
+    return hits
+
+========== services/temporal.py ==========
+# owner: Database & AI (P2-3 temporal ambiguity resolution: deterministic defaults + clarifying questions)
+import re
+import unicodedata
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+
+from database import VN_TZ
+
+_WEEKDAYS = {"hai": 0, "2": 0, "ba": 1, "3": 1, "tư": 2, "4": 2, "năm": 3, "5": 3,
+             "sáu": 4, "6": 4, "bảy": 5, "7": 5}
+_VAGUE = ("sớm", "lúc nào đó", "sắp tới", "dạo này", "khi nào rảnh", "một lúc nào", "soon", "sometime", "whenever")
+
+
+@dataclass
+class ResolvedWindow:
+    start: date
+    end: date  # inclusive
+    assumed: bool = False  # True when a default was applied instead of an explicit user statement
+    clarification_question: str | None = None
+    note: str | None = None
+
+
+def _week_monday(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWindow:
+    """
+    input: hint (str|None) literal date words from the prompt, reference_now (aware datetime).
+    core logic: map relative Vietnamese/English expressions to an inclusive VN-local date window using only
+                reference_now (no model involvement => zero temporal hallucination). Vague phrases produce a
+                clarifying question plus a safe default (next 7 days). Missing hint => default window, assumed.
+    output: ResolvedWindow.
+    """
+    if reference_now.tzinfo is None:
+        raise ValueError("reference_now must be timezone-aware")
+    today = reference_now.astimezone(VN_TZ).date()
+    default = ResolvedWindow(today, today + timedelta(days=6), assumed=True,
+                             note="no date given; searching the next 7 days")
+    if not hint or not hint.strip():
+        return default
+    h = unicodedata.normalize("NFC", hint).lower().strip()
+
+    if any(v in h for v in _VAGUE):
+        default.clarification_question = "Bạn muốn xếp vào ngày nào? (ví dụ: ngày mai, thứ sáu, tuần sau)"
+        default.note = "vague date; defaulted to next 7 days"
+        return default
+
+    m = re.search(r"(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{2,4}))?", h)
+    if m:
+        day, month = int(m.group(1)), int(m.group(2))
+        year = int(m.group(3)) if m.group(3) else today.year
+        if year < 100:
+            year += 2000
+        try:
+            d = date(year, month, day)
+        except ValueError:
+            default.clarification_question = f"Ngày {m.group(0)} không hợp lệ, bạn muốn ngày nào?"
+            return default
+        if not m.group(3) and d < today:
+            d = date(year + 1, month, day)
+        return ResolvedWindow(d, d)
+
+    if "hôm nay" in h or h == "today":
+        return ResolvedWindow(today, today)
+    if "ngày mai" in h or h == "tomorrow":
+        return ResolvedWindow(today + timedelta(days=1), today + timedelta(days=1))
+    if "ngày kia" in h:
+        return ResolvedWindow(today + timedelta(days=2), today + timedelta(days=2))
+
+    next_week = "tuần sau" in h or "next week" in h
+    wd = re.search(r"thứ\s*(hai|ba|tư|năm|sáu|bảy|[2-7])", h)
+    sunday = "chủ nhật" in h and not wd
+
+    if next_week and not wd and not sunday:
+        mon = _week_monday(today) + timedelta(days=7)
+        return ResolvedWindow(mon, mon + timedelta(days=6))
+    if "tuần này" in h or "this week" in h:
+        return ResolvedWindow(today, _week_monday(today) + timedelta(days=6))
+    if "cuối tuần" in h:
+        sat = _week_monday(today) + timedelta(days=5)
+        return ResolvedWindow(max(sat, today), sat + timedelta(days=1))
+    if "tháng sau" in h:
+        first = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        return ResolvedWindow(first, (first + timedelta(days=32)).replace(day=1) - timedelta(days=1))
+    if "cuối tháng" in h:
+        last = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        return ResolvedWindow(max(today, last - timedelta(days=6)), last)
+
+    if wd or sunday:
+        target = 6 if sunday else _WEEKDAYS[wd.group(1)]
+        if next_week:
+            d = _week_monday(today) + timedelta(days=7 + target)
+            return ResolvedWindow(d, d)
+        d = today + timedelta(days=(target - today.weekday()) % 7)
+        window = ResolvedWindow(d, d)
+        if d == today:
+            window.assumed = True
+            window.note = "weekday is today; assumed today (say 'tuần sau' for next week)"
+        return window
+
+    default.clarification_question = f'Mình chưa hiểu "{hint}". Bạn muốn xếp vào ngày nào?'
+    return default
+
+========== services/normalizer.py ==========
+# owner: Database & AI (P2-6 input normalization: non-diacritic Vietnamese, teencode, profanity, special chars)
+import re
+import unicodedata
+from dataclasses import dataclass, field
+
+# whole-word teencode / abbreviation -> canonical Vietnamese
+TEENCODE: dict[str, str] = {
+    "ko": "không", "k": "không", "hok": "không", "hong": "không", "khong": "không",
+    "dc": "được", "đc": "được", "duoc": "được", "vs": "với", "voi": "với",
+    "bik": "biết", "wa": "quá", "z": "vậy", "ntn": "như thế nào",
+    "hnay": "hôm nay", "hqua": "hôm qua",
+    "t2": "thứ 2", "t3": "thứ 3", "t4": "thứ 4", "t5": "thứ 5", "t6": "thứ 6", "t7": "thứ 7",
+    "cn": "chủ nhật", "dl": "deadline", "pls": "please", "plz": "please",
+    "mk": "mình", "trc": "trước",
+}
+
+# non-diacritic phrase -> diacritic phrase (longest keys applied first)
+RESTORE_PHRASES: dict[str, str] = {
+    "sap xep": "sắp xếp", "xep lich": "xếp lịch", "xep cho": "xếp cho", "xep": "xếp",
+    "lich": "lịch", "tieng": "tiếng", "gio": "giờ", "phut": "phút",
+    "do an": "đồ án", "bai tap": "bài tập", "hoc bai": "học bài", "on thi": "ôn thi",
+    "lam": "làm", "bai": "bài", "hoc": "học", "doc sach": "đọc sách", "hom nay": "hôm nay", "ngay mai": "ngày mai", "ngay kia": "ngày kia",
+    "tuan nay": "tuần này", "tuan sau": "tuần sau", "cuoi tuan": "cuối tuần",
+    "thang sau": "tháng sau", "cuoi thang": "cuối tháng", "chu nhat": "chủ nhật",
+    "thu hai": "thứ hai", "thu ba": "thứ ba", "thu tu": "thứ tư", "thu nam": "thứ năm",
+    "thu sau": "thứ sáu", "thu bay": "thứ bảy",
+    "buoi sang": "buổi sáng", "buoi chieu": "buổi chiều", "buoi toi": "buổi tối",
+    "nhe": "nhé", "giup": "giúp", "minh": "mình", "xoa": "xóa", "huy": "hủy",
+    "doi": "dời", "chuyen": "chuyển", "quan trong": "quan trọng", "gap": "gấp",
+    "nop": "nộp", "hop": "họp",
+}
+
+PROFANITY = {"dm", "đm", "dmm", "đmm", "vcl", "vl", "cc", "clm", "đéo", "deo", "cút", "đụ", "lồn", "cặc", "shit", "fuck"}
+
+_ALLOWED = re.compile(r"[^\w\s.,:;!?/()%+\-–']", re.UNICODE)
+_EMOJI_SYMBOLS = re.compile("[\U0001F000-\U0001FAFF☀-➿️]")
+_REPEAT = re.compile(r"(.)\1{2,}")  # "xếpppp" -> "xếpp"
+
+
+@dataclass
+class NormalizedText:
+    text: str
+    original: str
+    profanity_found: bool = False
+    changes: list[str] = field(default_factory=list)
+
+
+def _word_sub(text: str, mapping: dict[str, str], changes: list[str], tag: str) -> str:
+    """replace whole words/phrases (case-insensitive), longest keys first, recording each change."""
+    for key in sorted(mapping, key=len, reverse=True):
+        value = mapping[key]
+        if key == value:
+            continue
+        pattern = re.compile(rf"(?<![\w]){re.escape(key)}(?![\w])", re.IGNORECASE)
+        new_text, n = pattern.subn(value, text)
+        if n:
+            changes.append(f"{tag}:{key}->{value}")
+            text = new_text
+    return text
+
+
+def normalize_text(raw: str) -> NormalizedText:
+    """
+    input: raw (str) user prompt, possibly without diacritics, teencode, emoji or profanity.
+    core logic: NFC -> drop emoji/unsupported symbols -> squeeze repeated letters -> remove profanity ->
+                restore diacritics for known scheduling phrases -> teencode dictionary -> collapse spaces.
+    output: NormalizedText(text, original, profanity_found, changes). Never raises.
+    typical flow: "xep lich 3 tieng lam do an ko buoi toi nhe" -> "xếp lịch 3 tiếng làm đồ án không buổi tối nhé".
+    """
+    changes: list[str] = []
+    text = unicodedata.normalize("NFC", raw or "")
+    stripped = _ALLOWED.sub(" ", _EMOJI_SYMBOLS.sub(" ", text))
+    if stripped != text:
+        changes.append("special_chars_removed")
+    text = _REPEAT.sub(r"\1\1", stripped)
+
+    profanity = False
+    kept: list[str] = []
+    for word in text.split():
+        if word.lower().strip(".,!?") in PROFANITY:
+            profanity = True
+            continue
+        kept.append(word)
+    if profanity:
+        changes.append("profanity_removed")
+    text = " ".join(kept)
+
+    text = _word_sub(text, RESTORE_PHRASES, changes, "diacritics")
+    text = _word_sub(text, TEENCODE, changes, "teencode")
+    text = re.sub(r"\s+", " ", text).strip()
+    return NormalizedText(text=text, original=raw, profanity_found=profanity, changes=changes)
+
+========== services/inference_queue.py ==========
+# owner: Database & AI (P2-10 FIFO request broker serializing llm inference to avoid OOM / context switching)
+import threading
+import time
+import uuid
+from collections import deque
+from collections.abc import Callable
+from datetime import datetime
+from typing import TypeVar
+
+from database import UTC_TZ
+from models import InferenceQueueLog, QueueStatus
+
+T = TypeVar("T")
+
+QUEUE_MAX_WAIT_SECONDS = 1.0  # + 3.0s llm timeout keeps worst-case end-to-end latency at 4s
+
+
+class QueueWaitTimeout(Exception):
+    """raised when a request waited longer than max_wait before reaching the model."""
+
+
+class InferenceBroker:
+    """
+    strict first-in-first-out gate: exactly one inference runs at a time, the rest wait in arrival order.
+    a ticket deque + condition variable (not a plain Lock) guarantees FIFO fairness.
+    """
+
+    def __init__(self, recorder: Callable[[dict], None] | None = None) -> None:
+        self._cond = threading.Condition()
+        self._waiting: deque[str] = deque()
+        self._running: str | None = None
+        self.recorder = recorder
+        self.completed = 0
+
+    @property
+    def depth(self) -> int:
+        """requests currently waiting or running."""
+        with self._cond:
+            return len(self._waiting) + (1 if self._running else 0)
+
+    def run(self, fn: Callable[[], T], *, user_id: int | None = None, max_wait: float = QUEUE_MAX_WAIT_SECONDS) -> T:
+        """
+        input: fn (callable doing the model call), user_id for logging, max_wait seconds allowed in line.
+        core logic: enqueue ticket -> wait until it is at the head and the model is idle -> run fn -> release.
+        output: fn's return value; raises QueueWaitTimeout (status TIMEOUT) or re-raises fn's error (FAILED).
+        """
+        ticket = uuid.uuid4().hex
+        enq = datetime.now(UTC_TZ)
+        deadline = time.monotonic() + max_wait
+        with self._cond:
+            self._waiting.append(ticket)
+            while not (self._running is None and self._waiting[0] == ticket):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._waiting.remove(ticket)
+                    self._cond.notify_all()
+                    self._record(ticket, user_id, enq, None, datetime.now(UTC_TZ), QueueStatus.TIMEOUT)
+                    raise QueueWaitTimeout(f"waited more than {max_wait}s for the model")
+                self._cond.wait(timeout=remaining)
+            self._waiting.popleft()
+            self._running = ticket
+        started = datetime.now(UTC_TZ)
+        status = QueueStatus.COMPLETED
+        try:
+            return fn()
+        except BaseException:
+            status = QueueStatus.FAILED
+            raise
+        finally:
+            with self._cond:
+                self._running = None
+                self.completed += 1
+                self._cond.notify_all()
+            self._record(ticket, user_id, enq, started, datetime.now(UTC_TZ), status)
+
+    def _record(self, ticket: str, user_id: int | None, enq: datetime, start: datetime | None,
+                end: datetime, status: QueueStatus) -> None:
+        if self.recorder is None:
+            return
+        try:
+            self.recorder({"request_id": ticket, "user_id": user_id, "enqueued_at": enq,
+                           "started_at": start, "completed_at": end, "status": status})
+        except Exception:
+            pass  # telemetry must never break inference
+
+
+def db_recorder(entry: dict) -> None:
+    """persist one InferenceQueueLog row in its own short session (timestamps stored as naive utc)."""
+    from database import SessionLocal  # local import: keeps unit tests free of a db connection
+
+    with SessionLocal() as session:
+        row = {k: (v.replace(tzinfo=None) if isinstance(v, datetime) else v) for k, v in entry.items()}
+        session.add(InferenceQueueLog(**row))
+        session.commit()
+
+
+import os  # noqa: E402
+
+broker = InferenceBroker(recorder=db_recorder if os.getenv("INFERENCE_QUEUE_LOGGING", "0") == "1" else None)
+
+========== services/telemetry.py ==========
+# owner: Database & AI (P2-11 IT telemetry: latency, RAM, VRAM, queue depth -> telemetry_metric_logs)
+import os
+import shutil
+import subprocess
+import threading
+import time
+from collections import deque
+from collections.abc import Callable
+
+from services.inference_queue import broker
+
+try:  # optional dependency; sampler degrades gracefully without it
+    import psutil
+except ImportError:  # pragma: no cover
+    psutil = None
+
+_latencies: deque[float] = deque(maxlen=500)  # ms, end-to-end nlu latency
+
+
+def record_latency_ms(ms: float) -> None:
+    """call after each AI request; the sampler reports p50/p95 of the recent window."""
+    _latencies.append(ms)
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(round(pct / 100 * (len(ordered) - 1))))]
+
+
+def _gpu_memory_mb() -> tuple[float, float] | None:
+    """(used, total) VRAM in MB via nvidia-smi, or None when no NVIDIA GPU / tool."""
+    if shutil.which("nvidia-smi") is None:
+        return None
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2, check=True,
+        ).stdout.strip().splitlines()[0]
+        used, total = (float(x) for x in out.split(","))
+        return used, total
+    except (subprocess.SubprocessError, OSError, ValueError, IndexError):
+        return None
+
+
+def collect_sample() -> list[tuple[str, float, dict | None]]:
+    """
+    output: list of (metric_name, value, metadata) for this instant: queue_depth, ram_used_mb, ram_percent,
+            vram_used_mb, vram_percent, nlu_latency_p50_ms, nlu_latency_p95_ms (metrics are skipped when unavailable).
+    """
+    sample: list[tuple[str, float, dict | None]] = [("queue_depth", float(broker.depth), None)]
+    if psutil is not None:
+        mem = psutil.virtual_memory()
+        sample += [("ram_used_mb", mem.used / 1048576, None), ("ram_percent", float(mem.percent), None)]
+    gpu = _gpu_memory_mb()
+    if gpu:
+        sample += [("vram_used_mb", gpu[0], {"total_mb": gpu[1]}), ("vram_percent", 100 * gpu[0] / gpu[1], None)]
+    if _latencies:
+        data = list(_latencies)
+        sample += [("nlu_latency_p50_ms", _percentile(data, 50), {"n": len(data)}),
+                   ("nlu_latency_p95_ms", _percentile(data, 95), {"n": len(data)})]
+    return sample
+
+
+def write_sample_to_db() -> int:
+    """persist one sample to telemetry_metric_logs; returns the number of rows written."""
+    from database import SessionLocal
+    from models import TelemetryMetricLog
+
+    rows = collect_sample()
+    with SessionLocal() as session:
+        session.add_all(TelemetryMetricLog(metric_name=n, metric_value=v, metadata_json=m) for n, v, m in rows)
+        session.commit()
+    return len(rows)
+
+
+class TelemetryCollector:
+    """background daemon thread sampling every interval_seconds; start()/stop() are idempotent."""
+
+    def __init__(self, interval_seconds: float, writer: Callable[[], int] = write_sample_to_db) -> None:
+        self.interval = interval_seconds
+        self._writer = writer
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self.interval <= 0 or (self._thread and self._thread.is_alive()):
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._loop, name="telemetry", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._writer()
+            except Exception:
+                pass  # db down must not kill the sampler
+            self._stop.wait(self.interval)
+
+
+collector = TelemetryCollector(float(os.getenv("TELEMETRY_INTERVAL_SECONDS", "0")))  # 0 = disabled
+
+========== services/ai_logging.py ==========
+# owner: Database & AI (P2-12 AI error taxonomy: persistent developer-review log of failed RAG / parsing attempts)
+import json
+import os
+import threading
+from datetime import datetime
+from pathlib import Path
+
+from database import UTC_TZ
+from models import AiErrorType
+from services.privacy import sanitize_prompt
+
+LOG_PATH = Path(os.getenv("AI_ERROR_LOG_PATH", str(Path(__file__).resolve().parent.parent / "logs" / "ai_errors.jsonl")))
+_lock = threading.Lock()
+
+# fine-grained taxonomy -> coarse DB enum (models.py is locked, so the exact category lives in the file log)
+CATEGORY_TO_DB: dict[str, AiErrorType] = {
+    "TIMEOUT": AiErrorType.TIMEOUT,
+    "INFRA_CRASH": AiErrorType.INFRA_CRASH,
+    "JSON_PARSE": AiErrorType.SCHEMA_VALIDATION,
+    "SCHEMA_VALIDATION": AiErrorType.SCHEMA_VALIDATION,
+    "TEMPORAL_HALLUCINATION": AiErrorType.SEMANTIC_FAILURE,
+    "SEMANTIC_FAILURE": AiErrorType.SEMANTIC_FAILURE,
+    "RAG_EMPTY_RETRIEVAL": AiErrorType.SEMANTIC_FAILURE,
+    "RAG_LOW_SCORE": AiErrorType.SEMANTIC_FAILURE,
+    "RAG_EXTRACTION_FAILED": AiErrorType.SEMANTIC_FAILURE,
+}
+
+
+def log_ai_failure(
+    category: str,
+    prompt: str,
+    reason: str,
+    *,
+    retrieved_context: list[str] | None = None,
+    raw_output: str | None = None,
+    user_id: int | None = None,
+    retry_count: int = 0,
+) -> dict:
+    """
+    input: category (key of CATEGORY_TO_DB), the exact prompt, failure reason, retrieved RAG chunks, raw model output.
+    core logic: append one JSON line (utc timestamp) to LOG_PATH under a lock; failures to write never propagate.
+    output: the record dict that was written (also useful for tests).
+    """
+    if category not in CATEGORY_TO_DB:
+        raise ValueError(f"unknown ai error category: {category}")
+    record = {
+        "ts": datetime.now(UTC_TZ).isoformat(),
+        "category": category,
+        "db_error_type": CATEGORY_TO_DB[category].value,
+        "user_id": user_id,
+        "prompt": sanitize_prompt(prompt, max_chars=2000),
+        "retrieved_context": [sanitize_prompt(c, max_chars=600) for c in (retrieved_context or [])],
+        "raw_output": (raw_output or "")[:4000] or None,
+        "reason": reason[:500],
+        "retry_count": retry_count,
+    }
+    try:
+        with _lock:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with LOG_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        pass  # logging must never break a request
+    return record
+
+========== routers/assistant.py ==========
+# owner: Database & AI (P1-7 conversational scheduling entry point; authenticated only)
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from database import UTC_TZ, abandon_pending_proposals, get_db
+from models import User
+from services import rag
+from services.nlu import NluResult, understand_prompt
+from services.security import get_current_user
+
+router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
+
+
+class UnderstandRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    reschedule_proposal_id: int | None = None  # set when the user taps "Reschedule" on a proposal
+
+
+class UnderstandResponse(BaseModel):
+    nlu: NluResult
+    abandoned_proposals: int
+    message: str | None = None
+
+
+@router.post("/understand", response_model=UnderstandResponse)
+def understand(
+    body: UnderstandRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UnderstandResponse:
+    """
+    input: authenticated user's free-text prompt (optionally a reschedule follow-up).
+    core logic: a new root prompt abandons the user's pending proposals (AGENTS.md section 4), then NLU runs;
+                AI failures are logged to ai_error_logs and returned as fallback_mode=True, never as HTTP 500.
+    output: extracted intent/entities for the scheduling engine and the mobile manual picker.
+    """
+    abandoned = 0
+    if body.reschedule_proposal_id is None:
+        abandoned = abandon_pending_proposals(db, current_user.id)
+    result = understand_prompt(
+        body.prompt, datetime.now(UTC_TZ), db=db, user_id=current_user.id
+    )
+    db.commit()
+    message = (
+        "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp." if result.fallback_mode else None
+    )
+    return UnderstandResponse(nlu=result, abandoned_proposals=abandoned, message=message)
+
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/index-file")
+async def index_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int | str]:
+    """
+    input: authenticated upload of a timetable pdf / image / text file.
+    core logic: extract text (pdf layer or OCR) -> chunk -> embed -> replace this file's chunks in the
+                caller's own encrypted vector index (re-upload of the same filename replaces, never duplicates).
+    output: number of chunks indexed; 422 when nothing readable was found.
+    """
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "file too large (max 10 MB)")
+    try:
+        count = rag.ingest_file(current_user.id, data, file.filename or "upload")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"filename": file.filename or "upload", "chunks_indexed": count}
+
+========== routers/reminders.py ==========
+# owner: Database & AI (P2-13 reminder scheduler audit trail; notifications themselves fire locally on the phone)
+import json
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from database import UTC_TZ, active_events_stmt, from_db_to_vn, get_db, to_db_utc
+from models import Event, Reminder, User
+from services.security import get_current_user
+
+router = APIRouter(prefix="/api/v1/reminders", tags=["reminders"])
+
+AUDIT_LOG_PATH = Path(os.getenv("REMINDER_AUDIT_LOG_PATH", str(Path(__file__).resolve().parent.parent / "logs" / "reminder_audit.jsonl")))
+
+
+class ReminderUpsert(BaseModel):
+    offset_minutes: int = Field(default=30, ge=0, le=7 * 24 * 60)
+
+
+class DeviceReport(BaseModel):
+    at: datetime | None = None  # device-side timestamp (aware); defaults to server now
+
+
+class ReminderOut(BaseModel):
+    reminder_id: int
+    event_id: int
+    offset_minutes: int
+    fire_at: str  # ISO 8601 +07:00; the phone schedules its local alarm here
+    scheduled_on_device_at: str | None
+    delivered_at: str | None
+
+
+def _audit(action: str, reminder: Reminder, owner_id: int) -> None:
+    """append one line to the audit file; a disk error must never fail the request."""
+    record = {"ts": datetime.now(UTC_TZ).isoformat(), "action": action, "reminder_id": reminder.id,
+              "event_id": reminder.event_id, "owner_id": owner_id, "offset_minutes": reminder.offset_minutes}
+    try:
+        AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with AUDIT_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
+
+
+def _get_event(db: Session, owner_id: int, event_id: int) -> Event:
+    event = db.scalar(active_events_stmt(owner_id).where(Event.id == event_id))  # owner + soft-delete filtered
+    if event is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "event not found")
+    return event
+
+
+def _get_reminder(db: Session, owner_id: int, event_id: int) -> Reminder:
+    _get_event(db, owner_id, event_id)
+    reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == owner_id))
+    if reminder is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "reminder not found")
+    return reminder
+
+
+def _out(reminder: Reminder, event: Event) -> ReminderOut:
+    fire = from_db_to_vn(event.start_time) - timedelta(minutes=reminder.offset_minutes)
+    return ReminderOut(
+        reminder_id=reminder.id, event_id=reminder.event_id, offset_minutes=reminder.offset_minutes,
+        fire_at=fire.isoformat(),
+        scheduled_on_device_at=from_db_to_vn(reminder.scheduled_on_device_at).isoformat() if reminder.scheduled_on_device_at else None,
+        delivered_at=from_db_to_vn(reminder.delivered_at).isoformat() if reminder.delivered_at else None,
+    )
+
+
+@router.put("/{event_id}", response_model=ReminderOut)
+def upsert_reminder(event_id: int, body: ReminderUpsert, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)) -> ReminderOut:
+    """create or change the single reminder of an event; resets device timestamps so the phone must re-report."""
+    event = _get_event(db, current_user.id, event_id)
+    reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
+    action = "updated"
+    if reminder is None:
+        reminder, action = Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=body.offset_minutes), "created"
+        db.add(reminder)
+    else:
+        reminder.offset_minutes = body.offset_minutes
+        reminder.scheduled_on_device_at = reminder.delivered_at = None
+    db.commit()
+    db.refresh(reminder)
+    _audit(action, reminder, current_user.id)
+    return _out(reminder, event)
+
+
+def _report(field: str, action: str, event_id: int, body: DeviceReport, db: Session, user: User) -> ReminderOut:
+    reminder = _get_reminder(db, user.id, event_id)
+    setattr(reminder, field, to_db_utc(body.at or datetime.now(UTC_TZ)))
+    db.commit()
+    db.refresh(reminder)
+    _audit(action, reminder, user.id)
+    return _out(reminder, _get_event(db, user.id, event_id))
+
+
+@router.post("/{event_id}/scheduled", response_model=ReminderOut)
+def report_scheduled(event_id: int, body: DeviceReport, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_user)) -> ReminderOut:
+    """the phone confirms its local alarm was registered (AlarmManager / WorkManager)."""
+    return _report("scheduled_on_device_at", "scheduled", event_id, body, db, current_user)
+
+
+@router.post("/{event_id}/delivered", response_model=ReminderOut)
+def report_delivered(event_id: int, body: DeviceReport, db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_user)) -> ReminderOut:
+    """the phone confirms the notification was actually shown."""
+    return _report("delivered_at", "delivered", event_id, body, db, current_user)
+
+
+@router.get("/audit", response_model=list[ReminderOut])
+def audit_trail(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ReminderOut]:
+    """the caller's reminders with scheduled/delivered timestamps; delivered_at None past fire_at = missed."""
+    rows = db.execute(
+        select(Reminder, Event).join(Event, Event.id == Reminder.event_id)
+        .where(Reminder.owner_id == current_user.id, Event.owner_id == current_user.id, Event.deleted_at.is_(None))
+        .order_by(Event.start_time)
+    ).all()
+    return [_out(r, e) for r, e in rows]
+
+========== tests/data/nlu_eval.jsonl ==========
+{"prompt": "Xếp cho mình 3 tiếng làm đồ án CTDL tuần này, không làm buổi tối nhé", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần này"}
+{"prompt": "xep lich 2 tieng hoc bai ngay mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "sap xep 90 phut on thi thu sau", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "thứ sáu"}
+{"prompt": "mình cần 1,5 tiếng làm bài tập hôm nay", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "hôm nay"}
+{"prompt": "xếp 45 phút đọc sách cuối tuần", "intent": "schedule_task", "duration_minutes": 45, "date_hint": "cuối tuần"}
+{"prompt": "xep 3h lam do an tuan sau ko buoi toi", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần sau"}
+{"prompt": "xếp giúp mình 2 giờ họp nhóm thứ 4", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ 4"}
+{"prompt": "sắp xếp 60 phút tập gym chiều mai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": null}
+{"prompt": "xếp 4 tiếng ôn thi gấp tuần này", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "tuần này"}
+{"prompt": "lam bai 30 phut ngay kia", "intent": "schedule_task", "duration_minutes": 30, "date_hint": "ngày kia"}
+{"prompt": "xếp 2 tiếng học tiếng Anh tuần sau 😀😀", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần sau"}
+{"prompt": "xếp 2 tiếng làm đồ án vcl hôm nay", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "hôm nay"}
+{"prompt": "xep 1 tieng nop bao cao thu hai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "thứ hai"}
+{"prompt": "xếp 120 phút code đồ án cuối tháng", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "cuối tháng"}
+{"prompt": "sắp xếp 2 tiếng học bài tháng sau", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tháng sau"}
+{"prompt": "xóa buổi gym ngày mai", "intent": "delete_event", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "xoa lich hop thu ba", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ ba"}
+{"prompt": "hủy buổi học nhóm hôm nay", "intent": "delete_event", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "dời buổi họp sang thứ 6", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ 6"}
+{"prompt": "doi lich gym sang chieu mai", "intent": "reschedule", "duration_minutes": null, "date_hint": null}
+{"prompt": "chuyển đồ án sang tuần sau", "intent": "reschedule", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "tuần này mình có lịch gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "ngay mai co lich gi khong", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "khi nào mình rảnh", "intent": "query_schedule", "duration_minutes": null, "date_hint": null}
+{"prompt": "hôm nay trời đẹp quá", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "asdf qwer", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp 3 tiếng học bài sớm", "intent": "schedule_task", "duration_minutes": 180, "date_hint": null}
+{"prompt": "xếp 2 tiếng đọc sách dạo này", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "xếp lịch học bài", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp 25 tiếng học", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+
+========== tests/conftest.py ==========
+# owner: Khoi (shared pytest fixtures for real docker mysql 8.0 savepoint-isolated testing)
+import os
+import sys
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
+# add sourceCode/BE to sys.path so tests can import models, database, main, services, and routers
+BE_ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(BE_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(BE_ROOT_DIR))
+
+from database import get_db, resolve_database_url  # noqa: E402
+from main import app  # noqa: E402
+from models import Base  # noqa: E402
+
+
+def resolve_test_database_url() -> str:
+    """
+    input: optional TEST_DATABASE_URL env var, or project .env / DATABASE_URL settings.
+    core logic: prioritize TEST_DATABASE_URL, otherwise reuse resolve_database_url() on port 3307.
+    output: str containing mysql+pymysql url pointing to docker mysql 8.0 (university_assistant).
+    typical flow: check TEST_DATABASE_URL -> fallback to resolve_database_url() -> return url.
+    """
+    explicit_test_url = os.getenv("TEST_DATABASE_URL", "").strip()
+    if explicit_test_url:
+        return explicit_test_url.replace("mysql+aiomysql://", "mysql+pymysql://")
+    return resolve_database_url()
+
+
+@pytest.fixture(scope="session")
+def mysql_engine() -> Generator[Engine, None, None]:
+    """
+    input: session-wide pytest execution context.
+    core logic: connect to docker mysql 8.0 (127.0.0.1:3307), verify connectivity, ensure tables exist.
+    output: generator yielding a connected sqlalchemy Engine bound to university_assistant.
+    typical flow: create_engine -> execute SELECT 1 -> create missing tables -> yield -> dispose.
+    """
+    db_url = resolve_test_database_url()
+    eng = create_engine(db_url, pool_pre_ping=True)
+    try:
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))  # verify docker mysql container is reachable
+        Base.metadata.create_all(bind=eng, checkfirst=True)  # ensure 11 schema tables exist
+    except OperationalError as exc:
+        eng.dispose()
+        pytest.fail(
+            "cannot connect to docker mysql for testing. "
+            "ensure container 'schedule_db' is running on port 3307 and credentials in "
+            "sourceCode/Database/assistant_deploy/.env (or BE/.env) match. "
+            f"underlying driver error: {exc}"
+        )
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture()
+def db_session(mysql_engine: Engine) -> Generator[Session, None, None]:
+    """
+    input: mysql_engine (Engine) connected to real docker mysql 8.0.
+    core logic: wrap each test in an outer transaction with create_savepoint, then rollback at teardown.
+    output: generator yielding an isolated Session executing real mysql innodb constraints.
+    typical flow: begin outer tx -> yield savepoint session -> route calls db.commit() -> rollback outer tx.
+    """
+    persist_data = os.getenv("PERSIST_TEST_DATA", "0").strip() == "1"
+    if persist_data:
+        # optional visual inspection mode: commit rows permanently so they remain visible in dbeaver
+        session = Session(bind=mysql_engine)
+        try:
+            yield session
+        finally:
+            session.close()
+        return
+
+    connection = mysql_engine.connect()
+    outer_tx = connection.begin()  # open outer mysql transaction for complete test isolation
+    session = Session(
+        bind=connection,
+        join_transaction_mode="create_savepoint",  # translate inner db.commit() into mysql SAVEPOINT
+    )
+    try:
+        yield session
+    finally:
+        session.close()
+        if outer_tx.is_active:
+            outer_tx.rollback()  # discard test rows cleanly without touching existing dbeaver data
+        connection.close()
+
+
+@pytest.fixture()
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    """
+    input: db_session (Session) bound to the isolated mysql transaction of current test.
+    core logic: override fastapi get_db dependency so all HTTP endpoints share db_session.
+    output: generator yielding a FastAPI TestClient wired to real mysql 8.0.
+    typical flow: set dependency_overrides[get_db] -> yield TestClient(app) -> clear overrides.
+    """
+    def _override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db  # route HTTP calls through savepoint session
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+========== tests/ingestion_test.py ==========
+"""
+Standalone verification script for routers/ingestion.py
+Tests the core logic functions WITHOUT needing a live FastAPI server.
+
+Run from: sourceCode/BE/
+    python tests/verify_ingestion.py
+"""
+import sys
+from pathlib import Path
+
+# Add the BE directory to sys.path
+BE_DIR = Path(__file__).resolve().parent.parent / "sourceCode" / "BE"
+if str(BE_DIR) not in sys.path:
+    sys.path.insert(0, str(BE_DIR))
+
+from datetime import date, time
+
+from models import CsvRowKind, ParsedCsvRow, Weekday
+from routers.ingestion import (
+    CorrectedRowPayload,
+    ParsedCsvRowSchema,
+    ResolvePreviewRequest,
+    _corrected_payload_to_csv_line,
+    _domain_to_schema,
+    _revalidate_corrected_rows,
+    _schema_to_domain,
+)
+from services.parser import parse_timetable_content, export_valid_rows_to_csv
+
+print("=" * 60)
+print("  Ingestion Router Verification Suite")
+print("=" * 60)
+
+# ----------------------------------------------------------------
+# Test 1: _domain_to_schema round-trip
+# ----------------------------------------------------------------
+print("\n[Test 1] _domain_to_schema: domain dataclass -> Pydantic schema")
+
+sample_domain = ParsedCsvRow(
+    line_number=2,
+    course_code="CSC10001",
+    title="Nhap mon lap trinh",
+    kind=CsvRowKind.CLASS,
+    start_time=time(7, 30),
+    end_time=time(11, 0),
+    first_date=date(2026, 9, 1),
+    last_date=date(2026, 12, 15),
+    weekday=Weekday.MON,
+    room="C32",
+)
+
+schema = _domain_to_schema(sample_domain)
+assert schema.course_code == "CSC10001"
+assert schema.start_time == "07:30"
+assert schema.weekday == "MON"
+assert schema.kind == "CLASS"
+print("  PASS: domain -> schema conversion correct")
+
+# ----------------------------------------------------------------
+# Test 2: _schema_to_domain round-trip
+# ----------------------------------------------------------------
+print("\n[Test 2] _schema_to_domain: Pydantic schema -> domain dataclass")
+
+back_to_domain = _schema_to_domain(schema)
+assert back_to_domain.course_code == "CSC10001"
+assert back_to_domain.start_time == time(7, 30)
+assert back_to_domain.weekday == Weekday.MON
+assert back_to_domain.kind == CsvRowKind.CLASS
+print("  PASS: schema -> domain conversion correct")
+
+# ----------------------------------------------------------------
+# Test 3: _corrected_payload_to_csv_line
+# ----------------------------------------------------------------
+print("\n[Test 3] _corrected_payload_to_csv_line: payload -> CSV line string")
+
+corrected = CorrectedRowPayload(
+    line_number=5,
+    course_code="CSC10002",
+    title="Cau truc du lieu",
+    kind="CLASS",
+    start_time="07:30",
+    end_time="09:30",
+    first_date="2026-09-01",
+    last_date="2026-12-15",
+    weekday="WED",
+    room="A101",
+)
+
+csv_line = _corrected_payload_to_csv_line(corrected)
+assert "CSC10002" in csv_line
+assert "07:30" in csv_line
+assert "WED" in csv_line
+print(f"  PASS: Generated CSV line: {csv_line}")
+
+# ----------------------------------------------------------------
+# Test 4: _revalidate_corrected_rows — happy path
+# ----------------------------------------------------------------
+print("\n[Test 4] _revalidate_corrected_rows: valid corrections accepted")
+
+valid_correction = CorrectedRowPayload(
+    line_number=3,
+    course_code="MAT101",
+    title="Giai tich 1",
+    kind="CLASS",
+    start_time="07:30",
+    end_time="09:30",
+    first_date="2026-09-01",
+    last_date="2026-12-15",
+    weekday="THU",
+    room="B202",
+)
+
+accepted, still_invalid = _revalidate_corrected_rows([valid_correction])
+assert len(accepted) == 1
+assert len(still_invalid) == 0
+assert accepted[0].course_code == "MAT101"
+print("  PASS: Valid corrected row accepted successfully")
+
+# ----------------------------------------------------------------
+# Test 5: _revalidate_corrected_rows — user corrects wrongly again
+# ----------------------------------------------------------------
+print("\n[Test 5] _revalidate_corrected_rows: still-invalid correction isolated")
+
+bad_correction = CorrectedRowPayload(
+    line_number=7,
+    course_code="ERR001",
+    title="Van con sai",
+    kind="CLASS",        # CLASS requires weekday
+    start_time="10:00",
+    end_time="08:00",    # end < start — still invalid!
+    first_date="2026-09-01",
+    last_date="2026-12-15",
+    weekday="MON",
+    room="",
+)
+
+accepted_bad, still_invalid_bad = _revalidate_corrected_rows([bad_correction])
+assert len(accepted_bad) == 0
+assert len(still_invalid_bad) == 1
+assert still_invalid_bad[0].error_code == "INVALID_TIME_RANGE"
+print(f"  PASS: Still-invalid row isolated with code '{still_invalid_bad[0].error_code}'")
+
+# ----------------------------------------------------------------
+# Test 6: Full resolve-preview logic simulation (no HTTP server needed)
+# ----------------------------------------------------------------
+print("\n[Test 6] Full resolve-preview logic simulation")
+
+# Simulate parse-preview output
+raw_content = """course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind
+CSC10001,Nhap mon lap trinh,MON,07:30,11:00,C32,2026-09-01,2026-12-15,CLASS
+ERR_TIME,Sai gio hoc,TUE,10:00,08:00,A01,2026-09-01,2026-12-15,CLASS
+CSC10003,Thi cuoi ky,,09:00,11:00,F201,2026-12-20,2026-12-20,EXAM
+DL000001,Nop bao cao,,23:59,23:59,,2026-11-30,2026-11-30,DEADLINE
+GARBAGE_LINE,Ghi chu rac ruo,,,,,,,
+"""
+batch = parse_timetable_content(raw_content, "schedule.csv")
+assert len(batch.valid_rows) == 3   # CSC10001, CSC10003, DL000001
+assert len(batch.invalid_rows) == 2  # ERR_TIME, GARBAGE_LINE
+
+# User confirms valid rows unchanged
+valid_schemas = [_domain_to_schema(r) for r in batch.valid_rows]
+
+# User corrects ERR_TIME: fixes end_time to 11:00
+fixed_correction = CorrectedRowPayload(
+    line_number=3,  # original line number from the file
+    course_code="ERR_TIME",
+    title="Sai gio hoc",
+    kind="CLASS",
+    start_time="08:00",
+    end_time="10:00",   # now corrected
+    first_date="2026-09-01",
+    last_date="2026-12-15",
+    weekday="TUE",
+    room="A01",
+)
+
+# User skips the garbage line (line 6 = GARBAGE_LINE)
+# Find the actual line number of the garbage row
+garbage_line_number = batch.invalid_rows[1].line_number
+
+reaccepted, still_bad = _revalidate_corrected_rows([fixed_correction])
+assert len(reaccepted) == 1
+assert len(still_bad) == 0
+assert reaccepted[0].course_code == "ERR_TIME"
+
+# Merge: original valid + re-validated corrected, skipping garbage
+corrected_line_numbers = {r.line_number for r in reaccepted}
+skip_set = {garbage_line_number}
+
+confirmed_original = [
+    _schema_to_domain(s) for s in valid_schemas
+    if s.line_number not in skip_set and s.line_number not in corrected_line_numbers
+]
+
+all_clean = sorted(confirmed_original + reaccepted, key=lambda r: r.line_number)
+exported = export_valid_rows_to_csv(all_clean)
+
+assert len(all_clean) == 4   # CSC10001, ERR_TIME(fixed), CSC10003, DL000001
+assert "ERR_TIME" in exported
+assert "GARBAGE_LINE" not in exported
+print(f"  PASS: Final clean rows = {len(all_clean)}, CSV exported ({len(exported)} chars)")
+print(f"  Row order: {[r.course_code for r in all_clean]}")
+
+print("\n" + "=" * 60)
+print("  [SUCCESS] All 6 verification tests passed!")
+print("=" * 60)
+
+========== tests/parser_test.py ==========
+import parser
+# ============================================================================
+# SELF-VERIFICATION & EDGE-CASE TESTING SNIPPET
+# ============================================================================
+
+if __name__ == "__main__":
+    print("--- Running Timetable Parser Self-Verification Suite ---\n")
+
+    # 1. Happy Path: Standard timetable with CSV and Markdown rows for all 4 kinds
+    happy_path_input = """course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind
+CSC10001,Nhap mon lap trinh,MON,07:30,11:00,C32,2026-09-01,2026-12-15,CLASS
+CSC10002,Thi Giua Ky CTDL,,08:00,10:00,F201,2026-10-25,2026-10-25,EXAM
+EVT00001,Hoi thao Khoa hoc,,14:00,16:30,Auditorium,2026-11-10,2026-11-10,EVENT
+DL000001,Nop bai tap lon,,23:59,23:59,,2026-11-20,2026-11-20,DEADLINE
+"""
+    result_happy = parse_timetable_content(happy_path_input, "schedule_sample.csv")
+    print(f"[Happy Path] Valid rows: {len(result_happy.valid_rows)}, Invalid rows: {len(result_happy.invalid_rows)}")
+    assert len(result_happy.valid_rows) == 4, f"Expected 4 valid rows, got {len(result_happy.valid_rows)}"
+    assert len(result_happy.invalid_rows) == 0, f"Expected 0 invalid rows, got {len(result_happy.invalid_rows)}"
+
+    # Verify CSV export round-trip
+    exported_csv = export_valid_rows_to_csv(result_happy.valid_rows)
+    assert "CSC10001" in exported_csv and "DL000001" in exported_csv
+    print("[Happy Path] Exported CSV successfully verified.")
+
+    # 2. Boundary Case:
+    # - DEADLINE with empty start_time (should auto-copy end_time)
+    # - Single-day CLASS (first_date == last_date)
+    # - Day boundaries (00:00 start or 23:59 end)
+    boundary_markdown_input = """| course_code | title | weekday | start_time | end_time | room | first_date | last_date | kind |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| MAT101 | Dai so tuyen tinh | TUE | 00:00 | 02:00 | B11 | 2026-10-01 | 2026-10-01 | CLASS |
+| DL_AUTO | Nop bao cao tuan 1 | | | 23:59 | | 2026-10-05 | 2026-10-05 | DEADLINE |
+"""
+    result_boundary = parse_timetable_content(boundary_markdown_input, "boundary.md")
+    print(f"\n[Boundary Case] Valid rows: {len(result_boundary.valid_rows)}, Invalid rows: {len(result_boundary.invalid_rows)}")
+    assert len(result_boundary.valid_rows) == 2, f"Expected 2 valid rows, got {len(result_boundary.valid_rows)}"
+    assert len(result_boundary.invalid_rows) == 0, f"Expected 0 invalid rows, got {len(result_boundary.invalid_rows)}"
+
+    deadline_row = result_boundary.valid_rows[1]
+    assert deadline_row.start_time == time(23, 59), "DEADLINE empty start_time was not auto-copied from end_time"
+    assert deadline_row.start_time == deadline_row.end_time, "DEADLINE start_time must equal end_time"
+    print("[Boundary Case] DEADLINE auto-copy and single-day CLASS verified.")
+
+    # 3. Conflict/Failure Case: Malformed rows isolated without crashing valid rows
+    failure_input = """course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind
+CSC20001,Kien truc may tinh,WED,07:30,10:30,E105,2026-09-01,2026-12-15,CLASS
+ERR_COL,Thieu cot bi loi,MON,08:00,10:00
+ERR_TIME,Sai gio ket thuc som hon,THU,10:00,08:00,A12,2026-09-01,2026-12-15,CLASS
+ERR_DATE,Ngay bat dau sau ngay ket thuc,FRI,07:30,09:30,A12,2026-12-15,2026-09-01,CLASS
+ERR_KIND,Loai khong ton tai,SAT,08:00,10:00,B10,2026-10-10,2026-10-10,UNKNOWN_KIND
+ERR_EXAM_MULTI,Thi 2 ngay,SUN,08:00,10:00,C12,2026-10-10,2026-10-11,EXAM
+"""
+    result_failure = parse_timetable_content(failure_input, "mixed_errors.csv")
+    print(f"\n[Failure/Isolation Case] Valid rows: {len(result_failure.valid_rows)}, Invalid rows: {len(result_failure.invalid_rows)}")
+    assert len(result_failure.valid_rows) == 1, f"Expected 1 valid row, got {len(result_failure.valid_rows)}"
+    assert len(result_failure.invalid_rows) == 5, f"Expected 5 invalid rows, got {len(result_failure.invalid_rows)}"
+    assert result_failure.valid_rows[0].course_code == "CSC20001"
+
+    # Confirm distinct error codes are isolated
+    error_codes = [err.error_code for err in result_failure.invalid_rows]
+    print(f"[Failure/Isolation Case] Isolated error codes: {error_codes}")
+    assert "INVALID_COLUMN_COUNT" in error_codes
+    assert "INVALID_TIME_RANGE" in error_codes
+    assert "INVALID_DATE_RANGE" in error_codes
+    assert "INVALID_KIND" in error_codes
+    print("\n[SUCCESS] All 3 verification test cases passed with zero errors!")
+
+    
+========== tests/README.md ==========
+# Kiểm thử Module Backend trên MySQL 8.0 (Docker + Savepoint Isolation)
+
+Thư mục `sourceCode/BE/tests/` chứa các bộ kiểm thử cấp module và API của riêng đội ngũ Backend, tách biệt với thư mục `tests/` ở cấp gốc của kho mã nguồn (vốn dùng cho kiểm thử tích hợp toàn hệ thống giữa Frontend, Backend, AI và Database).
+
+Kể từ khi hạ tầng Docker (`assistant_deploy`, container `schedule_db` chạy `mysql:8.0` tại cổng `127.0.0.1:3307`) và công cụ quản trị DBeaver đi vào vận hành, toàn bộ kiểm thử tại `sourceCode/BE/tests/` chạy trực tiếp trên động cơ MySQL 8.0 InnoDB thật kết hợp cơ chế cô lập giao dịch bằng Savepoint (`conftest.py`).
+
+Tài liệu này quy định:
+1. **Hướng dẫn sử dụng các Fixture dùng chung trong `conftest.py`:** Cách thức các thành viên Backend khai báo và sử dụng `db_session`, `client` trong hàm test của mình.
+2. **Quy chuẩn chú thích và tiêu chí kiểm chứng của từng file:** Chi tiết các kịch bản kiểm thử bắt buộc cho `test_auth.py`, `test_validator.py`, `parser_test.py`, và `test_search_engine.py`.
+3. **Cách thức thực thi và chẩn đoán lỗi trong PowerShell:** Các lệnh chạy kiểm thử và cách khắc phục khi gặp lỗi.
+
+---
+
+## 1. Hướng dẫn Sử dụng Fixture Kiểm thử (`conftest.py`)
+
+File `conftest.py` chứa các công cụ dùng chung do `pytest` tự động nạp. Các thành viên khi viết test cho module của mình **không cần khởi tạo kết nối database thủ công**, mà chỉ cần truyền tên fixture vào tham số của hàm test.
+
+### 1.1. Ba Fixture có sẵn và Khi nào cần dùng
+
+| Tên Fixture | Kiểu dữ liệu | Phạm vi (`scope`) | Mục đích & Khi nào sử dụng |
+| :--- | :--- | :--- | :--- |
+| `mysql_engine` | `sqlalchemy.Engine` | `session` (toàn đợt chạy) | Tự động kết nối cổng `3307`, kiểm tra `SELECT 1` và tạo sẵn 11 bảng. Thường chỉ dùng nội bộ trong `conftest.py`, thành viên ít khi cần gọi trực tiếp. |
+| `db_session` | `sqlalchemy.orm.Session` | `function` (từng bài test) | **Dùng khi cần truy vấn, thêm, sửa, xóa dữ liệu MySQL trực tiếp bằng SQLAlchemy ORM.** Mỗi bài test được bọc trong một giao dịch độc lập, tự động rollback khi test xong nên không làm bẩn DBeaver. |
+| `client` | `fastapi.testclient.TestClient` | `function` (từng bài test) | **Dùng khi cần giả lập gửi request HTTP (`client.post`, `client.get`) vào các API Router.** `client` này đã được gắn sẵn với `db_session` cô lập ở trên. |
+
+---
+
+### 1.2. Hướng dẫn Cụ thể cho Thành viên Viết Test
+
+#### Trường hợp 1: Hàm test logic thuần (không đụng tới Database hay API)
+Không cần truyền bất kỳ fixture nào vào tham số:
+```python
+def test_password_hashing():
+    # kiểm tra hàm băm mật khẩu hoặc thuật toán thuần python
+    digest = hash_password("MyPassword123")
+    assert verify_password("MyPassword123", digest) is True
+```
+
+#### Trường hợp 2: Hàm test cần thao tác trực tiếp với bảng trong MySQL
+Khai báo tham số `db_session: Session`:
+```python
+from sqlalchemy.orm import Session
+from models import User
+
+def test_create_user_directly(db_session: Session):
+    # tạo và lưu trực tiếp qua ORM
+    new_user = User(display_name="Trần Văn A")
+    db_session.add(new_user)
+    db_session.commit()
+    db_session.refresh(new_user)
+
+    # kiểm tra dữ liệu đã vào MySQL
+    assert new_user.id is not None
+    # khi hàm test này kết thúc, giao dịch tự động rollback, dòng trên biến mất khỏi DBeaver
+```
+
+#### Trường hợp 3: Hàm test gọi qua đường API HTTP (FastAPI Endpoints)
+Khai báo tham số `client: TestClient`:
+```python
+from fastapi.testclient import TestClient
+
+def test_login_api(client: TestClient):
+    # gửi request json qua client
+    res = client.post("/api/v1/auth/login", json={"username": "test_user", "password": "123"})
+    assert res.status_code in (200, 401)
+```
+
+#### Trường hợp 4: Hàm test vừa gọi API vừa cần kiểm tra bảng MySQL
+Khai báo cả hai tham số `client: TestClient, db_session: Session`:
+```python
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from models import User
+
+def test_register_and_verify_database(client: TestClient, db_session: Session):
+    # 1. Gọi API đăng ký
+    res = client.post("/api/v1/auth/register", json={
+        "username": "sinhvien_01",
+        "password": "Password@123",
+        "display_name": "Nguyễn Văn B"
+    })
+    assert res.status_code == 201
+    user_id = res.json()["user_id"]
+
+    # 2. Dùng db_session truy vấn trực tiếp vào MySQL để kiểm tra tính toàn vẹn
+    saved_user = db_session.scalar(select(User).where(User.id == user_id))
+    assert saved_user is not None
+    assert saved_user.display_name == "Nguyễn Văn B"
+```
+
+---
+
+### 1.3. Hai Lưu ý Quan trọng khi Chạy Test trên MySQL Thật
+
+1. **Bộ đếm `AUTO_INCREMENT` vẫn tăng:**
+   Trong cơ chế của MySQL InnoDB, số tự tăng (`id`) được cấp phát độc lập ở bộ nhớ bảng để tối ưu hiệu năng và không quay lùi khi rollback. Do đó, khi viết câu lệnh `assert`, **luôn so sánh theo biến `saved_user.id` động**, không được gán cứng giả định `assert saved_user.id == 1`.
+2. **Cách giữ lại dữ liệu để mở DBeaver xem trực quan:**
+   Mặc định sau khi test xong, dữ liệu tự hủy để giữ sạch database. Nếu bạn muốn giữ lại dữ liệu vừa test để bấm F5 trên DBeaver xem tận mắt các dòng được ghi thế nào:
+   * Trên PowerShell, gõ: `$env:PERSIST_TEST_DATA="1"` trước khi chạy `pytest`.
+   * Xem xong, xóa biến môi trường: `Remove-Item Env:PERSIST_TEST_DATA`.
+
+---
+
+## 2. Quy chuẩn Chú thích và Tiêu chí của Từng File Kiểm thử
+
+Mọi hàm trong các file kiểm thử và module nghiệp vụ tuân thủ cấu trúc docstring tiếng Anh viết thường, ngắn gọn gồm 4 mục cố định:
+* `input`: Tham số đầu vào và kiểu dữ liệu.
+* `core logic`: Xử lý cốt lõi bên trong hàm.
+* `output`: Giá trị trả về hoặc các khẳng định (`assertions`) đầu ra.
+* `typical flow`: Luồng thực thi tuần tự trong trường hợp điển hình.
+
+### 2.1. File `test_auth.py` (Khôi phụ trách)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Hạ tầng Cơ sở dữ liệu (`database.py`)** và **Hệ thống Xác thực (`services/security.py`, `routers/auth.py`)**.
+
+**5 kịch bản kiểm chứng:**
+1. **An toàn băm mật khẩu (`test_password_hashing_and_verification`):**
+   * Cùng một mật khẩu băm 2 lần bằng `bcrypt` phải sinh ra 2 chuỗi digest khác nhau (nhờ muối ngẫu nhiên) và không bao giờ trùng chuỗi gốc.
+   * Xác thực đúng mật khẩu trả về `True`, sai mật khẩu trả về `False`, và gặp chuỗi hash hỏng định dạng vẫn trả về `False` an toàn thay vì làm sập tiến trình (`ValueError`).
+2. **Vòng đời JWT Token & Chốt chặn `get_current_user` (`test_jwt_lifecycle_and_current_user_guard`):**
+   * Lưu bản ghi `User` tiếng Việt có dấu vào MySQL, ký JWT và xác nhận `get_current_user` truy xuất đúng bản ghi từ MySQL.
+   * Từ chối bằng mã `HTTP 401` đối với cả 3 trường hợp: token hết hạn (`expires_delta < 0`), token bị sửa chữ ký, và token hợp lệ nhưng `user_id` không tồn tại trong bảng `users`.
+3. **Tính nguyên tử 3 bảng khi Đăng ký & Đăng nhập trên MySQL (`test_register_login_and_mysql_three_table_atomicity`):**
+   * Gọi `POST /api/v1/auth/register` (mã `201`) tạo đồng bộ cả 3 bảng `users`, `auth_identities` (`provider = PASSWORD`) và `user_preferences` (`sleep_start = 23:30`, `sleep_end = 06:30`, `slot_step_minutes = 15`), bảo toàn tiếng Việt `utf8mb4`.
+   * Người dùng tự đặt `username` nguyên bản, hệ thống không tự ý gắn thêm bất kỳ tiền tố nào (`prefix`).
+   * Đăng ký trùng `username` trả về `HTTP 409 Conflict`; đăng nhập đúng trả về `HTTP 200`, sai mật khẩu trả về `HTTP 401`.
+4. **Đổi username bên trong app & Ràng buộc không trùng lặp (`test_update_username_and_uniqueness`):**
+   * Gọi `PATCH /api/v1/auth/username` để đổi username sau khi đã đăng nhập.
+   * Đổi sang tên chưa ai dùng thành công (mã `200`); đổi sang tên đã thuộc về tài khoản khác bị chặn ngay bằng mã `HTTP 409 Conflict`.
+5. **Chuẩn hóa múi giờ UTC/+07:00, Chống IDOR & Ràng buộc `CHECK` của MySQL 8.0 (`test_mysql_utc_roundtrip_check_constraints_and_owner_isolation`):**
+   * Sự kiện lúc `07:30 +07:00` được lưu xuống cột `DATETIME` của MySQL thành `00:30` (UTC) và đọc ngược lên khớp đúng `07:30 +07:00`.
+   * Hàm `active_events_stmt` cô lập tuyệt đối dữ liệu giữa hai tài khoản (`Sinh Viên A` và `Sinh Viên B`).
+   * Ghi thử `priority = 9` vào bảng `events` bị động cơ MySQL 8.0 chặn ngay nhờ ràng buộc `chk_event_priority`.
+
+---
+
+### 2.2. File `test_validator.py` (Khôi phụ trách)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với cụm module: **Bộ Kiểm thực Xung đột & Lưu Lịch (`services/validator.py`, nửa sau `routers/ingestion.py`)**.
+
+**3 kịch bản kiểm chứng:**
+1. **Chốt chặn Ràng buộc cứng Zero-Overlap (`test_check_hard_conflict_boundary_cases`):**
+   * Báo trùng chính xác khi đè lên lịch cứng (`CLASS`, `is_hard = True`).
+   * Không báo trùng nhầm khi chạm đúng biên phút kết thúc (`09:30`), khi giao với công việc mềm (`TASK`, `is_hard = False`), hoặc khi giao với hạn nộp bài thời lượng bằng 0 (`DEADLINE`, `blocks_availability = False`).
+2. **Gom nhóm Xung đột theo Chuỗi lặp qua API (`test_detect_import_conflicts_series_grouping_and_api`):**
+   * Gửi hai môn học kéo dài 15 tuần trùng giờ sáng Thứ Hai vào `POST /api/v1/ingestion/check-conflicts`; hệ thống gom gọn thành đúng 1 `ConflictCard` kèm mô tả khoảng giao `08:30-09:30` và giữ nguyên môn Thứ Tư trong `non_conflicting_rows`.
+3. **Bung tuần học & Thay thế Lịch an toàn khi Nạp lại trên MySQL (`test_commit_import_endpoint_and_safe_reimport_on_mysql`):**
+   * Gọi `POST /api/v1/ingestion/commit` bung dòng `CLASS` 3 tuần kèm `EXAM` và `DEADLINE` thành 5 bản ghi `events` trả giờ `+07:00`.
+   * Khi nạp lại thời khóa biểu mới với `replace_previous_imports = True`, các lịch `IMPORTED` cũ bị đánh dấu xóa mềm (`deleted_at IS NOT NULL`), trong khi sự kiện cá nhân `MANUAL` của sinh viên trong MySQL được bảo toàn 100%.
+
+---
+
+### 2.3. File `parser_test.py` (Lâm phụ trách)
+Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn bản, PDF, Ảnh) & Cách ly Lỗi Xem trước (`services/parser.py`, 2 API đầu của `routers/ingestion.py`)**.
+
+**Các nhóm kịch bản bắt buộc phải bao phủ:**
+1. **Đa định dạng văn bản cấu trúc:**
+   * Đọc chính xác chuẩn CSV 9 cột, bảng Markdown (`| ... |` kèm dòng phân cách `| --- |`), và dòng phân cách bằng dấu chấm phẩy `;` hoặc phím `Tab`.
+2. **Đúng quy tắc nghiệp vụ của 4 loại `CsvRowKind` (`CLASS`, `EXAM`, `EVENT`, `DEADLINE`):**
+   * Tự động gán `start_time = end_time` cho `DEADLINE` khi khuyết một đầu mốc giờ; bắt lỗi chéo giữa `weekday`, khoảng giờ và khoảng ngày.
+3. **Đọc tệp `.pdf` và Ảnh thời khóa biểu (`.png`, `.jpg`, `.jpeg`, `.webp`):**
+   * Trích xuất bảng lịch học từ tệp PDF văn bản hoặc ảnh chụp màn hình cổng thông tin đào tạo về đúng lược đồ `ParseBatchResult` (`valid_rows` và `invalid_rows`).
+4. **Kiểm soát chặt các trường hợp biên phi thời khóa biểu (Edge Cases trên PDF/Ảnh):**
+   * **Tệp sai định dạng hoặc giả mạo phần mở rộng:** Đổi tên tệp `.exe` hoặc chuỗi byte ngẫu nhiên thành `.png`/`.pdf` phải bị chặn bằng mã lỗi `HTTP 415 Unsupported Media Type` hoặc `HTTP 400` mà không làm sập máy chủ.
+   * **Ảnh không chứa thời khóa biểu (ví dụ: ảnh chụp mèo, ảnh phong cảnh, ảnh trắng trơn, ảnh chụp hóa đơn):** Bộ lọc kiểm tra cấu trúc sau nhận dạng chữ (OCR Structural Gate) phát hiện không có tổ hợp mỏ neo thời khóa biểu (cặp khung giờ `HH:MM`/tiết học đi kèm thứ trong tuần hoặc ngày tháng) và trả về phản hồi từ chối tường minh (`HTTP 422` kèm mã lỗi `NO_TIMETABLE_DETECTED`), tuyệt đối không bịa ra dòng lịch ảo hay lưu rác xuống bảng tạm.
+   * **Ảnh bị mờ/nhiễu cục bộ một vài dòng:** Các dòng đọc rõ vẫn vào `valid_rows`, các dòng bị nhòe mất giờ học được đẩy vào `invalid_rows` để sinh viên sửa trên màn hình Preview.
+5. **Luồng API `/parse-preview` -> `/resolve-preview`:**
+   * Xác thực người dùng qua `client` (kèm Bearer Token từ MySQL), sửa dòng lỗi thành hợp lệ, chặn dòng sửa vẫn sai bằng `HTTP 422`, và loại bỏ dòng nằm trong `skipped_line_numbers`.
+
+---
+
+### 2.4. File `test_search_engine.py` (P.Nguyên phụ trách)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Lịch trình Cục bộ 3 Bước & Động cơ Tìm Khung giờ trống `< 200ms` (`services/search_engine.py`, `routers/search.py`)**, sử dụng `db_session` và `client` từ `conftest.py`.
+
+**Các nhóm kịch bản bắt buộc phải bao phủ:**
+1. **Chuẩn hóa truy vấn ngôn ngữ tự nhiên & Thời gian tương đối (`optimize_search_query`):**
+   * Ánh xạ từ viết tắt, không dấu và teencode (`"ctdl"`, `"mmt"`, `"gk"`, `"ck"`, `"dl"`, `"t2".."t7"`, `"cn"`).
+   * Quy đổi mốc thời gian tương đối (*"hôm nay"*, *"ngày mai"*, *"chiều thứ 7 tuần này"*, *"tuần sau"*) dựa trên `reference_now` thành khoảng `[start_from, end_until]` gắn múi giờ `+07:00`.
+2. **Truy vấn cục bộ trên MySQL `utf8mb4` & Chống lộ dữ liệu chéo (`execute_local_search` & `verify_and_format_search_results`):**
+   * Lưu dữ liệu thật vào bảng `events` qua `db_session`; xác nhận truy vấn tiếng Việt tìm đúng bản ghi thuộc `owner_id` hiện tại, bỏ qua các sự kiện đã xóa mềm (`deleted_at IS NOT NULL`) và không bao giờ trả về lịch của sinh viên khác.
+   * Mọi mốc thời gian trả ra JSON mang chuẩn ISO 8601 ở múi giờ `+07:00`, cam kết 0% ảo giác do không dùng mô hình sinh tự do để trả lời trực tiếp dữ liệu lịch.
+3. **Độ chính xác và Hiệu năng `< 200ms` của `find_free_slots`:**
+   * Trừ đúng các khoảng bận (`CLASS`, `EXAM`, `EVENT`, `TASK`), trừ khung giờ ngủ (`UserPreference.sleep_start` tới `sleep_end`), trừ danh sách các khung giờ người dùng đã từ chối trong phiên xếp lịch (`excluded_slots`), và cộng đúng khoảng nghỉ chuyển tiếp (`min_break_minutes = 15`).
+   * Không bị chặn bởi `DEADLINE` (thời lượng bằng 0, `blocks_availability = False`), làm tròn giờ bắt đầu lên lưới 15 phút (`:00`, `:15`, `:30`, `:45`).
+   * **Đo kiểm hiệu năng:** Trên tập 300 sự kiện của cả học kỳ 15 tuần truy vấn từ MySQL, thời gian tính toán của `find_free_slots` bắt buộc nhỏ hơn `200ms`.
+
+---
+
+## 3. Cách Chạy Kiểm thử trong PowerShell
+
+### Bước 0: Đảm bảo container MySQL đang chạy
+Kiểm tra trên Docker Desktop thấy stack `assistant_deploy` (container `schedule_db` gắn cổng `3307`) đang ở trạng thái xanh (`Running`). Nếu chưa bật, chạy:
+```powershell
+Set-Location "sourceCode/Database/assistant_deploy"
+docker compose up -d db
+```
+
+### Bước 1: Chạy kiểm thử ở chế độ chuẩn (Tự động Rollback, giữ sạch DBeaver)
+Mở PowerShell tại thư mục `sourceCode/BE/` và chạy:
+```powershell
+Set-Location "sourceCode/BE"
+
+# 1. Chạy toàn bộ các bài kiểm thử trong sourceCode/BE/tests/
+python -m pytest tests/ -v
+
+# 2. Chạy riêng kiểm thử Auth & Security
+python -m pytest tests/test_auth.py -v
+
+# 3. Chạy riêng kiểm thử Validator & Xung đột lịch
+python -m pytest tests/test_validator.py -v
+
+# 4. Lọc riêng một nhóm kịch bản bằng cờ -k
+python -m pytest tests/test_auth.py -k "register_login or mysql_utc" -v
+
+# 5. Chạy riêng file kiểm thử Parser (của Lâm) hoặc Search Engine (của P.Nguyên)
+python -m pytest tests/parser_test.py -v
+python -m pytest tests/test_search_engine.py -v
+```
+
+### Bước 2 (Tùy chọn): Chạy kiểm thử và giữ lại dữ liệu để quan sát trên DBeaver
+Nếu muốn các dòng dữ liệu tạo ra trong lúc test được lưu thật xuống ổ cứng để bấm Refresh (F5) xem trực tiếp trên DBeaver:
+```powershell
+$env:PERSIST_TEST_DATA="1"
+python -m pytest tests/test_auth.py tests/test_validator.py -v
+Remove-Item Env:PERSIST_TEST_DATA
+```
+
+---
+
+## 4. Chẩn đoán Kết quả Thực thi
+
+### Trường hợp 1: `PASSED`
+* Toàn bộ hàm nghiệp vụ, ràng buộc MySQL 8.0 InnoDB và API endpoint khớp 100% với các câu lệnh `assert`, đồng thời giao dịch thử nghiệm đã được rollback sạch sẽ. Module đạt chuẩn để tạo Pull Request hoặc đẩy lên nhánh chung.
+
+### Trường hợp 2: `FAILED` (Sai lệch logic nghiệp vụ)
+* Mã nguồn chạy không văng lỗi hệ thống nhưng giá trị trả về khác kỳ vọng (ví dụ `assert 200 == 409` hoặc sai lệch múi giờ). Xem số dòng báo lỗi trong `tests/test_*.py` để đối chiếu lại điều kiện xử lý tại `services/` hoặc `routers/`.
+
+### Trường hợp 3: `ERROR` hoặc `Failed: cannot connect to docker mysql` (Lỗi môi trường / kết nối)
+1. **Không kết nối được MySQL (`OperationalError: (2003, "Can't connect to MySQL server on '127.0.0.1'"`):**
+   * Container `schedule_db` chưa bật hoặc cổng `3307` chưa sẵn sàng. Mở Docker Desktop khởi động lại `assistant_deploy`.
+2. **Sai thông tin đăng nhập DB (`OperationalError: (1045, "Access denied for user ..."`):**
+   * Kiểm tra thông số `DB_USER` và `DB_PASSWORD` trong `sourceCode/Database/assistant_deploy/.env` (hoặc biến `DATABASE_URL` trong `sourceCode/BE/.env` nếu có tạo riêng) xem có khớp với thông số bạn đã dùng để kết nối thành công trên DBeaver hay không.
+3. **Thiếu gói thư viện Python (`ModuleNotFoundError` hoặc thiếu `cryptography` khi nối MySQL 8.0):**
+   * MySQL 8.0 sử dụng cơ chế xác thực `caching_sha2_password` nên `pymysql` bắt buộc cần gói `cryptography`. Chạy lệnh cài đặt đầy đủ:
+     `python -m pip install fastapi uvicorn sqlalchemy pymysql cryptography bcrypt pyjwt python-multipart pytest httpx`
+
+### Trường hợp 4: `DESELECTED` / `SKIPPED`
+* Xuất hiện khi dùng cờ `-k` để chỉ lọc chạy một vài hàm kiểm thử đang cần gỡ lỗi nhanh; các hàm còn lại được tạm bỏ qua theo đúng chủ đích của người chạy.
+
+========== tests/test_assistant_reminders_api.py ==========
+# owner: Database & AI (API tests for /assistant and /reminders; uses the shared mysql savepoint fixtures)
+from datetime import datetime, timedelta
+
+import pytest
+from sqlalchemy.orm import Session
+
+from database import UTC_TZ, to_db_utc
+from models import AiErrorLog, Event, EventKind, EventSource, Proposal, ProposalStatus, Task
+from routers import reminders as reminders_router
+from services import ai_logging, nlu
+
+
+@pytest.fixture(autouse=True)
+def _no_llm_and_isolated_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_logging, "LOG_PATH", tmp_path / "ai.jsonl")
+    monkeypatch.setattr(reminders_router, "AUDIT_LOG_PATH", tmp_path / "audit.jsonl")
+    monkeypatch.setattr(nlu, "VLLM_ENDPOINT", "http://127.0.0.1:1/v1/chat/completions")  # refused instantly
+
+
+def _register(client, name: str) -> dict:
+    res = client.post("/api/v1/auth/register", json={"username": name, "password": "secret12", "display_name": name})
+    assert res.status_code in (200, 201), res.text
+    body = res.json()
+    return {"id": body["user_id"], "h": {"Authorization": f"Bearer {body['access_token']}"}}
+
+
+def _event(db: Session, owner_id: int, hours_ahead: int = 48) -> Event:
+    start = datetime.now(UTC_TZ) + timedelta(hours=hours_ahead)
+    ev = Event(owner_id=owner_id, title="Giải tích", kind=EventKind.CLASS, source=EventSource.MANUAL,
+               start_time=to_db_utc(start), end_time=to_db_utc(start + timedelta(hours=2)), is_hard=True)
+    db.add(ev)
+    db.commit()
+    return ev
+
+
+def test_understand_requires_auth(client):
+    assert client.post("/api/v1/assistant/understand", json={"prompt": "xếp 2 tiếng"}).status_code == 401
+
+
+def test_understand_falls_back_logs_and_abandons(client, db_session):
+    u = _register(client, "ai_user_1")
+    task = Task(owner_id=u["id"], title="t", duration_minutes=60)
+    db_session.add(task)
+    db_session.flush()
+    now = to_db_utc(datetime.now(UTC_TZ))
+    p = Proposal(owner_id=u["id"], task_id=task.id, start_time=now, end_time=now, status=ProposalStatus.PROPOSED)
+    db_session.add(p)
+    db_session.commit()
+
+    res = client.post("/api/v1/assistant/understand", headers=u["h"], json={"prompt": "xep 3 tieng lam do an ngay mai"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["nlu"]["fallback_mode"] is True and body["nlu"]["duration_minutes"] == 180
+    assert body["abandoned_proposals"] == 1 and body["message"]
+    db_session.refresh(p)
+    assert p.status == ProposalStatus.ABANDONED
+    assert db_session.query(AiErrorLog).filter_by(user_id=u["id"]).count() == 1
+
+
+def test_reschedule_prompt_does_not_abandon(client, db_session):
+    u = _register(client, "ai_user_2")
+    res = client.post("/api/v1/assistant/understand", headers=u["h"],
+                      json={"prompt": "dời sang tối", "reschedule_proposal_id": 1})
+    assert res.json()["abandoned_proposals"] == 0
+
+
+def test_reminder_lifecycle_and_audit(client, db_session):
+    u = _register(client, "rem_user_1")
+    ev = _event(db_session, u["id"])
+    put = client.put(f"/api/v1/reminders/{ev.id}", headers=u["h"], json={"offset_minutes": 45})
+    assert put.status_code == 200 and put.json()["fire_at"].endswith("+07:00")
+    assert client.put(f"/api/v1/reminders/{ev.id}", headers=u["h"], json={"offset_minutes": 15}).json()["offset_minutes"] == 15
+    assert client.post(f"/api/v1/reminders/{ev.id}/scheduled", headers=u["h"], json={}).json()["scheduled_on_device_at"]
+    assert client.post(f"/api/v1/reminders/{ev.id}/delivered", headers=u["h"], json={}).json()["delivered_at"]
+    rows = client.get("/api/v1/reminders/audit", headers=u["h"]).json()
+    assert len(rows) == 1 and rows[0]["delivered_at"] and rows[0]["scheduled_on_device_at"]
+    lines = reminders_router.AUDIT_LOG_PATH.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4  # created, updated, scheduled, delivered
+
+
+def test_reminder_idor_blocked(client, db_session):
+    a, b = _register(client, "rem_a"), _register(client, "rem_b")
+    ev = _event(db_session, a["id"])
+    assert client.put(f"/api/v1/reminders/{ev.id}", headers=b["h"], json={"offset_minutes": 5}).status_code == 404
+    assert client.post(f"/api/v1/reminders/{ev.id}/delivered", headers=b["h"], json={}).status_code == 404
+    assert client.get("/api/v1/reminders/audit", headers=b["h"]).json() == []
+
+========== tests/test_auth.py ==========
+# owner: Khoi (mysql-backed module & api tests for security, jwt, registration, login, and username uniqueness)
+import uuid
+from datetime import datetime, time, timedelta
+
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
+
+from database import UTC_TZ, VN_TZ, active_events_stmt, from_db_to_vn, to_db_utc
+from models import (
+    AuthIdentity,
+    AuthProvider,
+    Event,
+    EventKind,
+    EventSource,
+    PriorityLevel,
+    User,
+    UserPreference,
+)
+from services.security import (
+    create_access_token,
+    decode_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
+
+
+def _unique_username(base_name: str = "minhkhoi") -> str:
+    """
+    input: base_name (str) chosen by the user.
+    core logic: append a unique suffix to keep test runs isolated across repeated executions.
+    output: str username without system-forced prefixes.
+    typical flow: base_name='minhkhoi' -> 'minhkhoi_a1b2c3d4'.
+    """
+    return f"{base_name}_{uuid.uuid4().hex[:8]}"
+
+
+def test_password_hashing_and_verification() -> None:
+    """
+    input: plaintext password strings and intentionally malformed hash strings.
+    core logic: verify bcrypt random salting, exact match True, wrong password False, bad hash False.
+    output: assertions confirming zero plaintext exposure and crash-free verification.
+    typical flow: hash same password twice -> digests differ -> checkpw True/False -> corrupt hash False.
+    """
+    raw_pwd = "FitHcmus@2026"
+    digest_1 = hash_password(raw_pwd)
+    digest_2 = hash_password(raw_pwd)
+
+    assert digest_1 != raw_pwd  # never store plaintext password
+    assert digest_1 != digest_2  # per-hash random salt must produce distinct digests
+    assert verify_password(raw_pwd, digest_1) is True
+    assert verify_password("WrongPass@2026", digest_1) is False
+    assert verify_password(raw_pwd, "not-a-valid-bcrypt-hash") is False  # graceful False, no ValueError
+
+
+def test_jwt_lifecycle_and_current_user_guard(db_session: Session) -> None:
+    """
+    input: db_session (Session) bound to real docker mysql 8.0.
+    core logic: insert real User in mysql, test valid jwt, expired jwt, tampered jwt, and missing user.
+    output: assertions confirming user_id resolution and HTTP 401 rejection on invalid tokens.
+    typical flow: insert User -> sign token -> get_current_user succeeds -> expired/missing raises 401.
+    """
+    user = User(display_name="Trần Văn Kiểm Thử")
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    valid_token = create_access_token(user.id, expires_delta=timedelta(minutes=30))
+    assert decode_access_token(valid_token) == user.id
+
+    resolved_user = get_current_user(db=db_session, token=valid_token)
+    assert resolved_user.id == user.id
+    assert resolved_user.display_name == "Trần Văn Kiểm Thử"  # utf8mb4 diacritics preserved in mysql
+
+    expired_token = create_access_token(user.id, expires_delta=timedelta(seconds=-10))
+    with pytest.raises(HTTPException) as exp_err:
+        decode_access_token(expired_token)
+    assert exp_err.value.status_code == 401  # expired token must be rejected
+
+    with pytest.raises(HTTPException) as bad_err:
+        decode_access_token(valid_token + "tampered")
+    assert bad_err.value.status_code == 401  # modified signature must be rejected
+
+    ghost_token = create_access_token(user_id=999_999_999)
+    with pytest.raises(HTTPException) as ghost_err:
+        get_current_user(db=db_session, token=ghost_token)
+    assert ghost_err.value.status_code == 401  # valid jwt for missing user must raise 401
+
+
+def test_register_login_and_mysql_three_table_atomicity(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: client (TestClient) and db_session (Session) connected to docker mysql 8.0.
+    core logic: register user without prefixes, verify 3 mysql tables + 409 on duplicate + login 200/401.
+    output: assertions proving atomic 3-table creation and strict duplicate rejection on mysql.
+    typical flow: POST /register (201) -> query 3 tables -> duplicate (409) -> POST /login (200 & 401).
+    """
+    # user chooses natural username without any application-forced prefix
+    chosen_username = _unique_username("minhkhoi")
+    reg_res = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": chosen_username,
+            "password": "MyStrongPassword123",
+            "display_name": "Nguyễn Minh Khôi",
+        },
+    )
+    assert reg_res.status_code == 201
+    reg_data = reg_res.json()
+    uid = reg_data["user_id"]
+    assert reg_data["username"] == chosen_username  # username preserved exactly as entered
+
+    # verify all 3 user-related tables in mysql innodb were populated atomically
+    user_row = db_session.scalar(select(User).where(User.id == uid))
+    identity_row = db_session.scalar(select(AuthIdentity).where(AuthIdentity.user_id == uid))
+    pref_row = db_session.scalar(select(UserPreference).where(UserPreference.user_id == uid))
+
+    assert user_row is not None and user_row.display_name == "Nguyễn Minh Khôi"
+    assert identity_row is not None and identity_row.provider == AuthProvider.PASSWORD
+    assert identity_row.provider_user_id == chosen_username  # stored without any prefix
+    assert identity_row.hashed_password != "MyStrongPassword123"
+    assert pref_row is not None
+    assert pref_row.sleep_start == time(23, 30)
+    assert pref_row.sleep_end == time(6, 30)
+    assert pref_row.slot_step_minutes == 15
+
+    # registering duplicate username must return HTTP 409 Conflict
+    dup_res = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": chosen_username,
+            "password": "AnotherPassword456",
+            "display_name": "Bản Sao",
+        },
+    )
+    assert dup_res.status_code == 409
+    assert "already registered" in dup_res.json()["detail"]
+
+    # valid login returns HTTP 200 and a working bearer token
+    login_ok = client.post(
+        "/api/v1/auth/login",
+        json={"username": chosen_username, "password": "MyStrongPassword123"},
+    )
+    assert login_ok.status_code == 200
+    assert login_ok.json()["user_id"] == uid
+    assert decode_access_token(login_ok.json()["access_token"]) == uid
+
+    # wrong password returns HTTP 401 Unauthorized
+    login_bad = client.post(
+        "/api/v1/auth/login",
+        json={"username": chosen_username, "password": "WrongPassword999"},
+    )
+    assert login_bad.status_code == 401
+
+
+def test_update_username_and_uniqueness(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: client (TestClient) and db_session (Session) with two distinct registered users.
+    core logic: change username via PATCH /username, reject collision with existing user, allow unique change.
+    output: assertions proving username can be updated and uniqueness is enforced across all accounts.
+    typical flow: user_a updates to unused name -> 200; user_a updates to user_b name -> 409 Conflict.
+    """
+    user_a_name = _unique_username("user_alpha")
+    user_b_name = _unique_username("user_beta")
+
+    # register user A
+    res_a = client.post(
+        "/api/v1/auth/register",
+        json={"username": user_a_name, "password": "Password123!", "display_name": "User Alpha"},
+    )
+    assert res_a.status_code == 201
+    headers_a = {"Authorization": f"Bearer {res_a.json()['access_token']}"}
+
+    # register user B
+    res_b = client.post(
+        "/api/v1/auth/register",
+        json={"username": user_b_name, "password": "Password123!", "display_name": "User Beta"},
+    )
+    assert res_b.status_code == 201
+
+    # case 1: user A tries to change username to user B's username -> must fail with 409 Conflict
+    conflict_res = client.patch(
+        "/api/v1/auth/username",
+        json={"new_username": user_b_name},
+        headers=headers_a,
+    )
+    assert conflict_res.status_code == 409
+    assert "already taken" in conflict_res.json()["detail"]
+
+    # case 2: user A changes username to an unused name -> succeeds with 200
+    updated_name = _unique_username("user_alpha_renamed")
+    ok_res = client.patch(
+        "/api/v1/auth/username",
+        json={"new_username": updated_name},
+        headers=headers_a,
+    )
+    assert ok_res.status_code == 200
+    assert ok_res.json()["username"] == updated_name
+
+    # verify database reflection in mysql
+    identity = db_session.scalar(
+        select(AuthIdentity).where(AuthIdentity.user_id == res_a.json()["user_id"])
+    )
+    assert identity is not None and identity.provider_user_id == updated_name
+
+
+def test_mysql_utc_roundtrip_check_constraints_and_owner_isolation(
+    db_session: Session,
+) -> None:
+    """
+    input: db_session (Session) executing directly against mysql 8.0 innodb engine.
+    core logic: verify +07:00 -> utc storage roundtrip, owner_id isolation, and mysql CHECK constraints.
+    output: assertions confirming exact timezone conversion, anti-idor filtering, and error on bad priority.
+    typical flow: create 2 users -> save +07:00 event as 00:30 utc -> query per owner -> test invalid priority=9.
+    """
+    user_a = User(display_name="Sinh Viên A")
+    user_b = User(display_name="Sinh Viên B")
+    db_session.add_all([user_a, user_b])
+    db_session.commit()
+
+    # 07:30 +07:00 on 2026-11-09 must be stored as 00:30 naive utc in mysql DATETIME
+    vn_start = datetime(2026, 11, 9, 7, 30, tzinfo=VN_TZ)
+    vn_end = datetime(2026, 11, 9, 9, 30, tzinfo=VN_TZ)
+    ev_a = Event(
+        owner_id=user_a.id,
+        title="Cấu trúc dữ liệu và giải thuật",
+        room="E201",
+        kind=EventKind.CLASS,
+        source=EventSource.IMPORTED,
+        start_time=to_db_utc(vn_start),
+        end_time=to_db_utc(vn_end),
+        is_hard=True,
+        priority=int(PriorityLevel.HIGH),
+    )
+    db_session.add(ev_a)
+    db_session.commit()
+    db_session.refresh(ev_a)
+
+    assert ev_a.start_time == datetime(2026, 11, 9, 0, 30)  # stored as naive utc in mysql
+    assert from_db_to_vn(ev_a.start_time) == vn_start  # restored to exact +07:00
+
+    # anti-idor check: user_b must see zero events from user_a
+    events_for_a = db_session.scalars(active_events_stmt(user_a.id)).all()
+    events_for_b = db_session.scalars(active_events_stmt(user_b.id)).all()
+    assert len(events_for_a) == 1
+    assert len(events_for_b) == 0
+
+    # mysql 8.0 native CHECK constraint chk_event_priority (priority BETWEEN 1 AND 3)
+    nested = db_session.begin_nested()
+    bad_event = Event(
+        owner_id=user_a.id,
+        title="Sự kiện sai độ ưu tiên",
+        kind=EventKind.EVENT,
+        source=EventSource.MANUAL,
+        start_time=to_db_utc(vn_start),
+        end_time=to_db_utc(vn_end),
+        is_hard=False,
+        priority=9,  # violates chk_event_priority on real mysql 8.0
+    )
+    db_session.add(bad_event)
+    with pytest.raises((IntegrityError, OperationalError)):
+        db_session.flush()
+    nested.rollback()
+
+========== tests/test_p2_ai.py ==========
+# owner: Database & AI (unit tests for P2-1/2/3/6/10/11/12; no mysql required)
+import json
+import threading
+import time
+from datetime import date, datetime
+
+import httpx
+import pytest
+
+from database import VN_TZ
+from services import ai_logging, nlu, rag, telemetry
+from services.inference_queue import InferenceBroker, QueueWaitTimeout
+from services.normalizer import normalize_text
+from services.temporal import resolve_date_hint
+
+NOW = datetime(2026, 10, 19, 9, 0, tzinfo=VN_TZ)  # Monday
+
+
+@pytest.fixture(autouse=True)
+def _isolate_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_logging, "LOG_PATH", tmp_path / "ai_errors.jsonl")
+    return tmp_path / "ai_errors.jsonl"
+
+
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _reply(obj) -> httpx.Response:
+    content = obj if isinstance(obj, str) else json.dumps(obj)
+    return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+
+# ---- P2-6 normalizer -------------------------------------------------------
+def test_normalizer_non_diacritic_and_teencode():
+    r = normalize_text("xep lich 3 tieng lam do an ko buoi toi nhe")
+    assert r.text == "xếp lịch 3 tiếng làm đồ án không buổi tối nhé"
+
+
+def test_normalizer_profanity_emoji_specials():
+    r = normalize_text("xếp vcl 2 tiếng học 😀😀 <script>###")
+    assert r.profanity_found
+    assert "vcl" not in r.text and "😀" not in r.text and "#" not in r.text and "<" not in r.text
+
+
+def test_normalizer_keeps_duration_h_and_empty():
+    assert "3h" in normalize_text("xếp 3h học").text
+    assert normalize_text("").text == ""
+
+
+# ---- P2-3 temporal ----------------------------------------------------------
+@pytest.mark.parametrize("hint,start,end", [
+    ("hôm nay", date(2026, 10, 19), date(2026, 10, 19)),
+    ("ngày mai", date(2026, 10, 20), date(2026, 10, 20)),
+    ("tuần này", date(2026, 10, 19), date(2026, 10, 25)),
+    ("tuần sau", date(2026, 10, 26), date(2026, 11, 1)),
+    ("thứ sáu", date(2026, 10, 23), date(2026, 10, 23)),
+    ("thứ 6 tuần sau", date(2026, 10, 30), date(2026, 10, 30)),
+    ("cuối tuần", date(2026, 10, 24), date(2026, 10, 25)),
+    ("tháng sau", date(2026, 11, 1), date(2026, 11, 30)),
+    ("25/10", date(2026, 10, 25), date(2026, 10, 25)),
+    ("5/10", date(2027, 10, 5), date(2027, 10, 5)),
+])
+def test_resolve_dates(hint, start, end):
+    w = resolve_date_hint(hint, NOW)
+    assert (w.start, w.end) == (start, end) and w.clarification_question is None
+
+
+def test_resolve_default_and_vague():
+    d = resolve_date_hint(None, NOW)
+    assert d.assumed and (d.end - d.start).days == 6 and d.clarification_question is None
+    v = resolve_date_hint("sớm", NOW)
+    assert v.assumed and v.clarification_question
+    assert resolve_date_hint("31/02", NOW).clarification_question
+
+
+def test_resolve_today_weekday_flagged():
+    w = resolve_date_hint("thứ hai", NOW)
+    assert w.start == NOW.date() and w.assumed
+
+
+# ---- P2-1 / P2-3 / P2-12 nlu integration ----------------------------------
+def test_llm_result_gets_window_and_few_shot_prompt():
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        return _reply({"intent": "schedule_task", "title": "học", "duration_minutes": 120, "date_hint": "ngày mai"})
+
+    r = nlu.understand_prompt("xep 2 tieng hoc ngay mai", NOW, client=_client(handler))
+    assert r.window_start == date(2026, 10, 20) and not r.needs_clarification and not r.date_assumed
+    assert len(seen["body"]["messages"]) == 2 + len(nlu.FEW_SHOT)
+    assert seen["body"]["messages"][-1]["content"] == "xếp 2 tiếng học ngày mai"  # normalized before the model
+
+
+def test_temporal_hallucination_dropped():
+    reply = {"intent": "schedule_task", "title": "học", "duration_minutes": 60, "date_hint": "ngày 5 tháng 12"}
+    r = nlu.understand_prompt("xếp 1 tiếng học", NOW, client=_client(lambda q: _reply(reply)))
+    assert r.date_hint is None and r.date_assumed
+
+
+def test_missing_duration_asks_clarification():
+    reply = {"intent": "schedule_task", "title": "học bài", "duration_minutes": 60}
+    r = nlu.understand_prompt("xếp lịch học bài", NOW, client=_client(lambda q: _reply(reply)))
+    assert r.needs_clarification and r.duration_minutes is None and "bao lâu" in r.clarification_question
+
+
+def test_failures_are_taxonomized(_isolate_logs):
+    nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(lambda q: _reply("garbage")))
+    nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(lambda q: _reply({"intent": "bogus"})))
+
+    def boom(q):
+        raise httpx.ReadTimeout("slow")
+
+    nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(boom))
+    lines = _isolate_logs.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(x)["category"] for x in lines] == ["JSON_PARSE", "SCHEMA_VALIDATION", "TIMEOUT"]
+    rec = json.loads(lines[0])
+    assert rec["prompt"] and rec["raw_output"] == "garbage" and rec["retry_count"] == 1
+
+
+def test_profanity_flagged_not_blocking():
+    reply = {"intent": "schedule_task", "title": "học", "duration_minutes": 60}
+    r = nlu.understand_prompt("xếp 1 tiếng học vcl", NOW, client=_client(lambda q: _reply(reply)))
+    assert r.profanity_found and r.intent == "schedule_task"
+
+
+def test_unknown_log_category_rejected():
+    with pytest.raises(ValueError):
+        ai_logging.log_ai_failure("NOPE", "p", "r")
+
+
+def test_eval_dataset_rules_quality():
+    from tools.eval_nlu import evaluate
+
+    s = evaluate(rules_only=True)
+    assert s["bad_dates"] == 0 and s["duration_acc_pct"] >= 95 and s["intent_acc_pct"] >= 95
+
+
+# ---- P2-10 FIFO broker -----------------------------------------------------
+def test_broker_is_fifo_and_serial():
+    broker, order, active, peak = InferenceBroker(), [], [0], [0]
+    gate = threading.Event()
+
+    def job(i):
+        def fn():
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+            if i == 0:
+                gate.wait(2)
+            order.append(i)
+            active[0] -= 1
+        return fn
+
+    threads = []
+    for i in range(5):
+        t = threading.Thread(target=lambda i=i: broker.run(job(i), max_wait=5))
+        t.start()
+        threads.append(t)
+        time.sleep(0.05)  # fix arrival order
+    assert broker.depth == 5
+    gate.set()
+    for t in threads:
+        t.join()
+    assert order == [0, 1, 2, 3, 4] and peak[0] == 1 and broker.depth == 0
+
+
+def test_broker_wait_timeout_and_records():
+    rec = []
+    broker = InferenceBroker(recorder=rec.append)
+    gate = threading.Event()
+    t = threading.Thread(target=lambda: broker.run(lambda: gate.wait(2)))
+    t.start()
+    time.sleep(0.05)
+    with pytest.raises(QueueWaitTimeout):
+        broker.run(lambda: None, max_wait=0.1)
+    gate.set()
+    t.join()
+    assert [r["status"].value for r in rec] == ["TIMEOUT", "COMPLETED"]
+    assert broker.depth == 0
+
+
+# ---- P2-11 telemetry -------------------------------------------------------
+def test_telemetry_sample_and_collector():
+    telemetry.record_latency_ms(100)
+    telemetry.record_latency_ms(300)
+    names = {n for n, _, _ in telemetry.collect_sample()}
+    assert {"queue_depth", "nlu_latency_p50_ms", "nlu_latency_p95_ms"} <= names
+    calls = []
+    c = telemetry.TelemetryCollector(0.05, writer=lambda: calls.append(1) or 1)
+    c.start()
+    time.sleep(0.3)
+    c.stop()
+    assert len(calls) >= 2
+    off = telemetry.TelemetryCollector(0)
+    off.start()
+    assert off._thread is None  # interval 0 = disabled
+
+
+# ---- P2-2 rag --------------------------------------------------------------
+TIMETABLE = "\n".join([
+    "CSC10014,Nhập môn tư duy tính toán,2,07:30,09:30,B11.02",
+    "MTH00003,Giải tích 1,4,13:30,15:30,E202",
+    "PHY00001,Vật lý đại cương,5,09:45,11:45,C301",
+] * 4)
+
+
+def test_chunking_keeps_rows_whole():
+    chunks = rag.chunk_text(TIMETABLE, size=120, overlap=0)
+    assert len(chunks) > 1 and all(len(c) <= 130 for c in chunks)
+    assert all(line in TIMETABLE for c in chunks for line in c.splitlines())
+
+
+def test_embedding_ignores_diacritics_and_ranks(tmp_path):
+    assert rag.embed("đồ án") == rag.embed("do an")
+    idx = rag.VectorIndex(7, tmp_path)
+    idx.replace_source("a.csv", ["Giải tích 1 thứ 4 phòng E202", "Vật lý đại cương thứ 5 phòng C301"])
+    assert "Giải tích" in idx.search("giai tich phong E202", 1)[0].text
+
+
+def test_index_encrypted_isolated_and_replaced(tmp_path):
+    a = rag.VectorIndex(1, tmp_path)
+    a.replace_source("t.csv", ["secret schedule row"])
+    assert b"secret" not in a.path.read_bytes()
+    assert len(rag.VectorIndex(2, tmp_path)) == 0  # other owner sees nothing
+    a.replace_source("t.csv", ["row one", "row two"])
+    assert len(rag.VectorIndex(1, tmp_path)) == 2  # re-import replaces, not appends
+
+
+def test_ingest_text_file_and_failures(tmp_path, _isolate_logs):
+    assert rag.ingest_file(5, TIMETABLE.encode(), "tt.csv", tmp_path) >= 1
+    assert rag.retrieve(5, "giai tich", 2, tmp_path)
+    assert rag.retrieve(5, "zzzzzz qqqqq", 1, tmp_path) == []
+    cats = [json.loads(x)["category"] for x in _isolate_logs.read_text(encoding="utf-8").splitlines()]
+    assert "RAG_LOW_SCORE" in cats
+    with pytest.raises(ValueError):
+        rag.ingest_file(5, b"   \n  ", "empty.txt", tmp_path)
+
+========== tests/test_privacy_nlu.py ==========
+# owner: Database & AI (unit tests for P1-2 privacy helpers and P1-7 NLU; no mysql required)
+import json
+from datetime import datetime
+
+import httpx
+import pytest
+
+from database import VN_TZ
+from services import nlu
+from services.privacy import (
+    decrypt_text, encrypt_text, is_private_endpoint, sanitize_prompt,
+)
+
+NOW = datetime(2026, 10, 19, 9, 0, tzinfo=VN_TZ)
+
+
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _llm_reply(obj_or_text) -> httpx.Response:
+    content = obj_or_text if isinstance(obj_or_text, str) else json.dumps(obj_or_text)
+    return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+
+def test_sanitize_redacts_pii_and_control_chars():
+    out = sanitize_prompt("gọi 0901234567 hoặc a.b@x.com\x00 http://evil.io/x   ok")
+    assert "[phone]" in out and "[email]" in out and "[url]" in out
+    assert "\x00" not in out and "  " not in out
+
+
+def test_sanitize_truncates():
+    assert len(sanitize_prompt("a" * 5000)) == 500
+
+
+@pytest.mark.parametrize("url,ok", [
+    ("http://127.0.0.1:8000/v1", True), ("http://llama_engine:8000/v1", True),
+    ("http://192.168.100.112:8000", True), ("https://api.openai.com/v1", False),
+    ("http://8.8.8.8/x", False),
+])
+def test_private_endpoint(url, ok):
+    assert is_private_endpoint(url) is ok
+
+
+def test_encrypt_roundtrip_and_tamper():
+    token = encrypt_text("xếp lịch học")
+    assert token != "xếp lịch học" and decrypt_text(token) == "xếp lịch học"
+    assert decrypt_text(token[:-4] + "AAAA") is None
+
+
+def test_rules_extract_duration_and_avoid_evening():
+    r = nlu.rule_based_understand("Xếp cho mình 3 tiếng làm đồ án CTDL tuần này, không làm buổi tối nhé")
+    assert r.intent == "schedule_task" and r.duration_minutes == 180
+    assert r.avoid_time_of_day == "evening" and r.preferred_time_of_day is None
+    assert r.date_hint == "tuần này" and "đồ án" in r.title
+
+
+def test_rules_decimal_and_minutes():
+    assert nlu.extract_duration_minutes("1,5 tiếng") == 90
+    assert nlu.extract_duration_minutes("45 phút") == 45
+    assert nlu.extract_duration_minutes("100 giờ") is None
+
+
+def test_llm_happy_path_and_duration_guard():
+    # model hallucinates 60 min; literal text says 2 hours -> text wins
+    reply = {"intent": "schedule_task", "title": "học bài", "duration_minutes": 60}
+    r = nlu.understand_prompt("xếp 2 tiếng học bài", NOW, client=_client(lambda req: _llm_reply(reply)))
+    assert r.source == "llm" and not r.fallback_mode and r.duration_minutes == 120
+
+
+def test_llm_invented_duration_dropped():
+    reply = {"intent": "schedule_task", "title": "gym", "duration_minutes": 90}
+    r = nlu.understand_prompt("xếp lịch đi gym", NOW, client=_client(lambda req: _llm_reply(reply)))
+    assert r.duration_minutes is None
+
+
+def test_malformed_json_retries_then_falls_back():
+    calls = []
+    def handler(req):
+        calls.append(1)
+        return _llm_reply("not json at all")
+    r = nlu.understand_prompt("xếp 2 tiếng học bài", NOW, client=_client(handler))
+    assert len(calls) == 2 and r.fallback_mode and r.source == "rules" and r.duration_minutes == 120
+
+
+def test_retry_recovers_on_second_attempt():
+    replies = iter(["oops", json.dumps({"intent": "schedule_task", "title": "x", "duration_minutes": 30})])
+    r = nlu.understand_prompt("30 phút đọc sách", NOW, client=_client(lambda req: _llm_reply(next(replies))))
+    assert r.source == "llm" and r.duration_minutes == 30
+
+
+def test_timeout_and_crash_fall_back():
+    def timeout(req): raise httpx.ReadTimeout("slow")
+    def refused(req): raise httpx.ConnectError("down")
+    assert nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(timeout)).fallback_mode
+    assert nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(refused)).fallback_mode
+
+
+def test_5xx_falls_back():
+    r = nlu.understand_prompt("xếp 2 tiếng học", NOW, client=_client(lambda req: httpx.Response(503)))
+    assert r.fallback_mode and r.duration_minutes == 120
+
+
+def test_naive_now_rejected():
+    with pytest.raises(ValueError):
+        nlu.understand_prompt("x", datetime(2026, 1, 1))
+
+
+def test_private_endpoint_allowlist_and_tailscale(monkeypatch):
+    assert is_private_endpoint("http://100.101.2.3:8000/v1")  # tailscale
+    assert not is_private_endpoint("http://26.211.52.63:8000/v1")
+    monkeypatch.setenv("LLM_ALLOWED_HOSTS", "26.211.52.63")
+    assert is_private_endpoint("http://26.211.52.63:8000/v1")
+    monkeypatch.setenv("LLM_ALLOWED_HOSTS", "26.0.0.0/8")
+    assert is_private_endpoint("http://26.9.9.9:8000/v1")
+    assert not is_private_endpoint("http://8.8.8.8:8000/v1")
+
+========== tests/test_validator.py ==========
+# owner: Khoi (mysql-backed tests for conflict detection, series grouping, and timetable commit)
+import uuid
+from datetime import datetime
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from database import VN_TZ, active_courses_stmt, active_events_stmt, to_db_utc
+from models import (
+    Course,
+    CsvRowKind,
+    Event,
+    EventDomain,
+    EventKind,
+    EventSource,
+    PriorityLevel,
+    TimeSlot,
+    User,
+)
+from services.validator import (
+    check_hard_conflict,
+    commit_resolved_import,
+    detect_import_conflicts,
+)
+
+
+def _unique_username(prefix: str = "khoi_validator") -> str:
+    """
+    input: prefix (str) identifying the test scenario.
+    core logic: append an 8-char uuid suffix so usernames never collide.
+    output: str unique username safe for repeated test executions.
+    typical flow: prefix='khoi_validator' -> 'khoi_validator_a1b2c3d4'.
+    """
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+def _register_and_get_headers(
+    client: TestClient, display_name: str = "Nguyễn Minh Khôi"
+) -> tuple[int, str, dict[str, str]]:
+    """
+    input: client (TestClient) and Vietnamese utf8mb4 display_name (str).
+    core logic: call POST /api/v1/auth/register and build HTTP Authorization Bearer header dict.
+    output: tuple of (user_id, username, auth_headers_dict).
+    typical flow: generate unique username -> POST /register (201) -> return (id, username, headers).
+    """
+    username = _unique_username("student")
+    res = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": username,
+            "password": "SecurePassword2026",
+            "display_name": display_name,
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+    return body["user_id"], username, headers
+
+
+def test_check_hard_conflict_boundary_cases() -> None:
+    """
+    input: candidate TimeSlot and domain events (hard CLASS, soft TASK, 0-min DEADLINE).
+    core logic: verify overlap triggers only on is_hard=True & blocks_availability=True intervals.
+    output: assertions proving zero false positives on soft tasks, deadlines, and touching boundaries.
+    typical flow: test interior overlap -> 1 conflict; test touching 09:30 edge / TASK / DEADLINE -> 0 conflicts.
+    """
+    hard_class = EventDomain(
+        id=1,
+        owner_id=10,
+        title="Mạng máy tính",
+        start_time=datetime(2026, 11, 9, 7, 30, tzinfo=VN_TZ),
+        end_time=datetime(2026, 11, 9, 9, 30, tzinfo=VN_TZ),
+        kind=EventKind.CLASS,
+        source=EventSource.IMPORTED,
+        is_hard=True,
+    )
+    soft_task = EventDomain(
+        id=2,
+        owner_id=10,
+        title="Ôn bài tự chọn",
+        start_time=datetime(2026, 11, 9, 10, 0, tzinfo=VN_TZ),
+        end_time=datetime(2026, 11, 9, 11, 30, tzinfo=VN_TZ),
+        kind=EventKind.TASK,
+        source=EventSource.AI_CREATED,
+        is_hard=False,
+    )
+    zero_deadline = EventDomain(
+        id=3,
+        owner_id=10,
+        title="Hạn nộp báo cáo",
+        start_time=datetime(2026, 11, 9, 10, 30, tzinfo=VN_TZ),
+        end_time=datetime(2026, 11, 9, 10, 30, tzinfo=VN_TZ),
+        kind=EventKind.DEADLINE,
+        source=EventSource.IMPORTED,
+        is_hard=True,
+    )
+    existing = [hard_class, soft_task, zero_deadline]
+
+    # case 1: candidate overlaps hard class (08:30 - 10:00 vs 07:30 - 09:30)
+    overlapping_slot = TimeSlot(
+        start=datetime(2026, 11, 9, 8, 30, tzinfo=VN_TZ),
+        end=datetime(2026, 11, 9, 10, 0, tzinfo=VN_TZ),
+    )
+    hits = check_hard_conflict(overlapping_slot, existing)
+    assert len(hits) == 1 and hits[0].id == 1
+
+    # case 2: candidate starts at exact minute hard class ends (09:30 - 11:30), overlaps soft task & deadline
+    touching_and_soft_slot = TimeSlot(
+        start=datetime(2026, 11, 9, 9, 30, tzinfo=VN_TZ),
+        end=datetime(2026, 11, 9, 11, 30, tzinfo=VN_TZ),
+    )
+    assert check_hard_conflict(touching_and_soft_slot, existing) == []
+
+
+def test_detect_import_conflicts_series_grouping_and_api(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: client (TestClient), db_session (Session), and two 15-week Monday rows + 1 Wednesday row.
+    core logic: verify 15 weekly Monday collisions collapse into 1 ConflictCard both in service and HTTP API.
+    output: assertions confirming 1 conflict card and 1 clean Wednesday row via /api/v1/ingestion/check-conflicts.
+    typical flow: register user -> seed existing event -> POST /check-conflicts -> verify grouped conflict_cards.
+    """
+    _, _, headers = _register_and_get_headers(client)
+
+    payload = {
+        "replace_previous_imports": False,
+        "incoming_rows": [
+            {
+                "line_number": 1,
+                "course_code": "CSC10004",
+                "title": "Cấu trúc dữ liệu",
+                "kind": "CLASS",
+                "weekday": "MON",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "first_date": "2026-09-07",
+                "last_date": "2026-12-14",
+                "room": "E201",
+            },
+            {
+                "line_number": 2,
+                "course_code": "PARTTIME",
+                "title": "Ca làm thêm sáng thứ Hai",
+                "kind": "CLASS",
+                "weekday": "MON",
+                "start_time": "08:30",
+                "end_time": "11:00",
+                "first_date": "2026-09-07",
+                "last_date": "2026-12-14",
+                "room": "Quận 5",
+            },
+            {
+                "line_number": 3,
+                "course_code": "CSC10006",
+                "title": "Cơ sở dữ liệu",
+                "kind": "CLASS",
+                "weekday": "WED",
+                "start_time": "13:30",
+                "end_time": "15:30",
+                "first_date": "2026-09-07",
+                "last_date": "2026-12-14",
+                "room": "F102",
+            },
+        ],
+    }
+
+    res = client.post("/api/v1/ingestion/check-conflicts", json=payload, headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+
+    # 15 weeks of Monday overlap must collapse into exactly 1 ConflictCard, leaving Wednesday clean
+    assert len(data["conflict_cards"]) == 1
+    assert len(data["non_conflicting_rows"]) == 1
+    assert data["non_conflicting_rows"][0]["course_code"] == "CSC10006"
+    assert "08:30-09:30" in data["conflict_cards"][0]["overlap_description"]
+
+
+def test_commit_import_endpoint_and_safe_reimport_on_mysql(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: client (TestClient) and db_session (Session) against real docker mysql 8.0.
+    core logic: commit 3-week CLASS + EXAM + DEADLINE, add MANUAL task, then re-import with replace=True.
+    output: assertions proving weekly expansion, +07:00 response, soft-delete of old imports, and survival of MANUAL task.
+    typical flow: POST /commit batch_1 -> add MANUAL event -> POST /commit batch_2 (replace=True) -> verify active rows.
+    """
+    uid, _, headers = _register_and_get_headers(client)
+
+    batch_1_payload = {
+        "import_batch_id": "batch_sem1_v1",
+        "replace_previous_imports": False,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "CSC10014",
+                "title": "Tư duy tính toán",
+                "kind": "CLASS",
+                "weekday": "MON",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "first_date": "2026-11-02",
+                "last_date": "2026-11-16",  # 3 Mondays: Nov 2, Nov 9, Nov 16
+                "room": "I42",
+            },
+            {
+                "line_number": 2,
+                "course_code": "CSC10014",
+                "title": "Thi giữa kỳ Tư duy tính toán",
+                "kind": "EXAM",
+                "start_time": "13:30",
+                "end_time": "15:00",
+                "first_date": "2026-11-20",
+                "last_date": "2026-11-20",
+                "room": "Hội trường I",
+            },
+            {
+                "line_number": 3,
+                "course_code": "CSC10014",
+                "title": "Nộp báo cáo nhóm",
+                "kind": "DEADLINE",
+                "start_time": "23:59",
+                "end_time": "23:59",
+                "first_date": "2026-11-22",
+                "last_date": "2026-11-22",
+            },
+        ],
+    }
+
+    commit_1 = client.post("/api/v1/ingestion/commit", json=batch_1_payload, headers=headers)
+    assert commit_1.status_code == 200
+    body_1 = commit_1.json()
+    assert body_1["created_count"] == 5  # 3 weekly classes + 1 exam + 1 deadline
+    assert body_1["events"][0]["start_time"].endswith("+07:00")  # response serialized in Vietnam timezone
+
+    # seed a personal MANUAL event in mysql that must survive timetable re-imports
+    personal_event = Event(
+        owner_id=uid,
+        title="Họp nhóm đồ án cuối kỳ",
+        kind=EventKind.TASK,
+        source=EventSource.MANUAL,
+        start_time=to_db_utc(datetime(2026, 11, 5, 19, 0, tzinfo=VN_TZ)),
+        end_time=to_db_utc(datetime(2026, 11, 5, 21, 0, tzinfo=VN_TZ)),
+        is_hard=False,
+        priority=int(PriorityLevel.HIGH),
+    )
+    db_session.add(personal_event)
+    db_session.commit()
+
+    # upload updated timetable with replace_previous_imports=True
+    batch_2_payload = {
+        "import_batch_id": "batch_sem1_v2",
+        "replace_previous_imports": True,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "CSC10009",
+                "title": "Hệ thống máy tính",
+                "kind": "CLASS",
+                "weekday": "FRI",
+                "start_time": "09:30",
+                "end_time": "11:30",
+                "first_date": "2026-11-06",
+                "last_date": "2026-11-13",  # 2 Fridays: Nov 6, Nov 13
+                "room": "E304",
+            }
+        ],
+    }
+    commit_2 = client.post("/api/v1/ingestion/commit", json=batch_2_payload, headers=headers)
+    assert commit_2.status_code == 200
+    assert commit_2.json()["created_count"] == 2
+
+    # verify active events in mysql: only 2 new imported Fridays + 1 preserved personal MANUAL event
+    active_events = db_session.scalars(active_events_stmt(uid)).all()
+    active_titles = [ev.title for ev in active_events]
+    assert len(active_events) == 3
+    assert "Họp nhóm đồ án cuối kỳ" in active_titles  # personal event preserved 100%
+    assert "Tư duy tính toán" not in active_titles  # old batch_1 soft-deleted
+
+    active_courses = db_session.scalars(active_courses_stmt(uid)).all()
+    assert len(active_courses) == 1 and active_courses[0].course_code == "CSC10009"
+
