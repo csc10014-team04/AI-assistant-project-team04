@@ -600,6 +600,13 @@ def commit_import_endpoint(
         resolved_rows=resolved_domains,
         replace_previous_imports=payload.replace_previous_imports,
     )
+    try:  # P1-4: make the confirmed timetable searchable for the AI; never fail the import because of it
+        from services import rag
+
+        rag.index_timetable_rows(current_user.id, payload.import_batch_id, payload.resolved_rows,
+                                 replace_previous=payload.replace_previous_imports)
+    except Exception:
+        pass
     items = [
         EventResponseItem(
             id=ev.id,

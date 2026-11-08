@@ -101,6 +101,16 @@ class VectorIndex:
             self._save()
         return len(chunks)
 
+    def drop_sources_starting_with(self, prefix: str) -> int:
+        """remove every chunk whose source name starts with `prefix`; returns how many were removed."""
+        with self._lock:
+            kept = [i for i in self._items if not i["source"].startswith(prefix)]
+            removed = len(self._items) - len(kept)
+            if removed:
+                self._items = kept
+                self._save()
+        return removed
+
     def clear(self) -> None:
         with self._lock:
             self._items = []
@@ -131,6 +141,36 @@ def ingest_file(owner_id: int, file_bytes: bytes, filename: str, directory: Path
         log_ai_failure("RAG_EXTRACTION_FAILED", f"file:{filename}", "extracted text was empty", user_id=owner_id)
         raise ValueError(f"no readable text found in {filename}")
     return VectorIndex(owner_id, directory).replace_source(filename, chunks)
+
+
+TIMETABLE_SOURCE_PREFIX = "timetable-"
+_WEEKDAY_VN = {"MON": "Thứ 2", "TUE": "Thứ 3", "WED": "Thứ 4", "THU": "Thứ 5", "FRI": "Thứ 6", "SAT": "Thứ 7", "SUN": "Chủ nhật"}
+
+
+def describe_timetable_row(row) -> str:
+    """one human-readable line for a committed timetable row (a duck-typed ParsedCsvRow / CsvRowPayload)."""
+    day = _WEEKDAY_VN.get(getattr(getattr(row, "weekday", None), "value", getattr(row, "weekday", None)) or "", "")
+    kind = getattr(row.kind, "value", row.kind)
+    where = f", phòng {row.room}" if getattr(row, "room", None) else ""
+    code = f"{row.course_code} " if getattr(row, "course_code", "") else ""
+    when = f"{day} " if day else ""
+    return (f"{code}{row.title} ({kind}): {when}{row.start_time:%H:%M}-{row.end_time:%H:%M}{where}, "
+            f"từ {row.first_date.isoformat()} đến {row.last_date.isoformat()}")
+
+
+def index_timetable_rows(owner_id: int, batch_id: str, rows: list, replace_previous: bool = False,
+                         directory: Path | None = None) -> int:
+    """
+    P1-4: index structured timetable data (the rows a student just confirmed) as searchable text so the AI can
+    retrieve "what classes do I have on Monday" context instead of relying on static parsing.
+    Each import batch is its own source, so importing a second file does not erase the first; a replacing
+    import first drops every earlier timetable source (same rule as the database re-import).
+    """
+    index = VectorIndex(owner_id, directory)
+    if replace_previous:
+        index.drop_sources_starting_with(TIMETABLE_SOURCE_PREFIX)
+    chunks = chunk_text(chr(10).join(describe_timetable_row(r) for r in rows))
+    return index.replace_source(f"{TIMETABLE_SOURCE_PREFIX}{batch_id}", chunks) if chunks else 0
 
 
 def retrieve(owner_id: int, query: str, k: int = 3, directory: Path | None = None) -> list[Hit]:
