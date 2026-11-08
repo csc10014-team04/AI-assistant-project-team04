@@ -40,8 +40,6 @@ Sinh viên chọn chế độ trên thanh Search (Step 0) + Nhập câu truy v�
 
 ## 1. Sơ đồ Kiến trúc Luồng Xử lý (Pipeline Flow Diagram) & Kịch bản Luồng chạy
 
-> **Ghi chú hiển thị sơ đồ:** Khuyến nghị xuất sơ đồ PlantUML (`schedule_query.puml`) ra định dạng vector **`.svg`** (thay vì `.png`) để khi phóng to trên GitHub hoặc tài liệu báo cáo không bị vỡ chữ ở các nhánh rẽ. Đặt file ảnh tại `sourceCode/BE/assets/schedule_query.svg`.
-
 ![Information Searching Pipeline Flow Diagram](./assets/schedule_query.svg)
 
 ### Mô tả chi tiết các luồng kịch bản trên sơ đồ (theo số thứ tự mũi tên):
@@ -136,15 +134,15 @@ Nguyên lý đánh giá: Chấm điểm **Kết quả Đầu ra Cuối cùng c�
 
 ### 4.1. Thang đánh giá Hướng 1 - Schedule Search (Tối đa 30 điểm / câu truy vấn)
 
-$$\text{SearchScore}_{\text{ModeA}}(q) = G_{\text{filter}}(q) \times \left( 10 + S_{\text{recall}}(q) + S_{\text{precision\_rank}}(q) \right)$$
+$$\text{SearchScore}_{\text{ModeA}}(q) = G_{\text{filter}}(q) \times \left( 10 + S_{\text{recall}}(q) + S_{\text{rank}}(q) \right)$$
 
 Trong đó:
 1. **Chốt chặn Tuân thủ Ràng buộc & Cô lập Dữ liệu (`+10` điểm; $G_{\text{filter}} \in \{0, 1\}$):** 100% sự kiện trả về phải thuộc đúng `owner_id`, `deleted_at IS NULL`, nằm trong đúng cửa sổ thời gian `[window_start, window_end]` quy đổi từ câu hỏi, đúng `kind` và `room`. Nếu lọt bất kỳ bản ghi sai ngày, sai loại sự kiện hoặc của người dùng khác -> $G_{\text{filter}} = 0$ (toàn câu nhận `0/30` điểm).
 2. **Độ phủ Ngữ nghĩa & Từ viết tắt - Semantic Recall@K ($S_{\text{recall}} \in [0, 10]$):**
    $$S_{\text{recall}}(q) = 10 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{gt}}|}$$
    Trong đó $E_{\text{gt}}$ là tập sự kiện đáp án chuẩn thực tế của câu hỏi $q$, và $E_{\text{returned}}$ là tập sự kiện hệ thống trả về.
-3. **Độ tinh khiết & Thứ hạng Đầu - Precision & Reciprocal Rank ($S_{\text{precision\_rank}} \in [0, 10]$):**
-   $$S_{\text{precision\_rank}}(q) = 5 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{returned}}|} + 5 \times \frac{1}{\text{rank}_{\text{first}}}$$
+3. **Độ tinh khiết & Thứ hạng Đầu - Precision & Reciprocal Rank ($S_{\text{rank}} \in [0, 10]$):**
+   $$S_{\text{rank}}(q) = 5 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{returned}}|} + 5 \times \frac{1}{\text{rank}_{\text{first}}}$$
    Trong đó thành phần đầu (`+5` điểm) đo độ tinh khiết chống kéo nhầm môn khác ngành, và thành phần thứ hai (`+5` điểm) thưởng cho việc xếp sự kiện đúng lên vị trí đầu tiên ($\text{rank}_{\text{first}} = 1$).
 
 #### Ví dụ minh họa cách tính điểm Hướng 1 (Kịch bản phức tạp đa điều kiện):
@@ -161,12 +159,12 @@ Trong đó:
   1. **Giả định 1 (Hệ thống chuẩn của nhóm):** Trả về `E_returned = [E1, E2]`:
      * Kiểm tra cổng $G_{\text{filter}}$: Cả `E1, E2` đều thuộc `owner_id = 7`, chưa xóa, đều là `EXAM` và nằm trong khung giờ chiều (`12:00..17:59`) của tuần sau -> **$G_{\text{filter}} = 1$** (đạt `+10` điểm nền).
      * Tính $S_{\text{recall}} = 10 \times \frac{|\{E1, E2\} \cap \{E1, E2\}|}{2} = 10 \times \frac{2}{2} = \mathbf{10.0}$ điểm.
-     * Tính $S_{\text{precision\_rank}} = 5 \times \frac{2}{2} + 5 \times \frac{1}{1} = 5 + 5 = \mathbf{10.0}$ điểm.
+     * Tính $S_{\text{rank}} = 5 \times \frac{2}{2} + 5 \times \frac{1}{1} = 5 + 5 = \mathbf{10.0}$ điểm.
      * **Tổng điểm Giả định 1:** $1 \times (10 + 10 + 10) = \mathbf{30 / 30}$ **điểm**.
   2. **Giả định 2 (Nếu chỉ tìm khớp chữ thuần túy, thiếu Vector cụm khái niệm và ngưỡng lọc kém):** Trả về `E_returned = [E5, E1]` (kéo nhầm môn `E5 - Mạng máy tính` lên vị trí số 1, tìm được `E1` ở vị trí số 2, và làm sót mất `E2 - Vi tích phân 2` vì tên môn không có chữ `"toán"`):
      * Kiểm tra cổng $G_{\text{filter}}$: Cả `E5, E1` đều đúng là `EXAM` vào buổi chiều tuần sau của `owner_id = 7` -> **$G_{\text{filter}} = 1$** (`+10` điểm nền).
      * Tính $S_{\text{recall}}$: Chỉ tìm đúng được `{E1}` trên tập chuẩn `{E1, E2}` -> $S_{\text{recall}} = 10 \times \frac{1}{2} = \mathbf{5.0}$ điểm.
-     * Tính $S_{\text{precision\_rank}}$: Độ tinh khiết chỉ đạt $\frac{1}{2}$ (vì `E5` sai môn), và sự kiện đúng đầu tiên `E1` nằm ở vị trí thứ 2 ($\text{rank}_{\text{first}} = 2$) -> $S_{\text{precision\_rank}} = 5 \times \frac{1}{2} + 5 \times \frac{1}{2} = 2.5 + 2.5 = \mathbf{5.0}$ điểm.
+     * Tính $S_{\text{rank}}$: Độ tinh khiết chỉ đạt $\frac{1}{2}$ (vì `E5` sai môn), và sự kiện đúng đầu tiên `E1` nằm ở vị trí thứ 2 ($\text{rank}_{\text{first}} = 2$) -> $S_{\text{rank}} = 5 \times \frac{1}{2} + 5 \times \frac{1}{2} = 2.5 + 2.5 = \mathbf{5.0}$ điểm.
      * **Tổng điểm Giả định 2:** $1 \times (10 + 5.0 + 5.0) = \mathbf{20 / 30}$ **điểm**.
   3. **Giả định 3 (Nếu bộ Query Optimizer tách sai chữ `"lich thi"` hoặc sai `"buoi chieu"`, trả lọt `E3` thi buổi sáng hoặc `E4` lớp học thường):**
      * Vi phạm bộ lọc thời gian/loại sự kiện -> **$G_{\text{filter}} = 0$**, tổng điểm lập tức bằng **$0 \times (\dots) = \mathbf{0 / 30}$ điểm**.

@@ -2,10 +2,13 @@ import calendar
 
 from mock_data import mock_events
 
-
 from datetime import datetime, date, timedelta
 from kivy.core.window import Window
 
+
+from collections import defaultdict
+
+from kivy.uix.widget import Widget
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.clock import Clock
@@ -29,6 +32,115 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 from kivymd.uix.card import MDCard
 from kivymd.uix.menu import MDDropdownMenu
 
+
+
+# -------------------------------------------------------------------
+# TIỀN XỬ LÝ DỮ LIỆU ĐỂ TRÁNH LAG KHI TẢI (INDEXING O(1))
+# -------------------------------------------------------------------
+events_index_by_date = defaultdict(list)
+def index_events_data():
+    """Nhóm sẵn sự kiện theo ngày để truy xuất O(1) thay vì duyệt O(N) liên tục"""
+    events_index_by_date.clear()
+    for ev in mock_events:
+        ev_date = datetime.fromisoformat(ev["start_time"]).date()
+        events_index_by_date[ev_date].append(ev)
+
+# Gọi 1 lần lúc init module hoặc sau khi tải API xong
+index_events_data()
+# -------------------------------------------------------------------
+# CẬP NHẬT 1: TỐI ƯU GIAO DIỆN TIMELINE CHỐNG ĐỨNG HÌNH LÚC KHỞI ĐỘNG
+# -------------------------------------------------------------------
+class WeekTimeSlotRow(MDBoxLayout):
+    """
+    Tối ưu hóa: Loại bỏ 7 MDBoxLayout rỗng cho mỗi hàng (7 * 48 = 336 widget thừa).
+    Dùng chung 1 Widget Canvas để vẽ đường kẻ ngang, siêu nhẹ bộ nhớ.
+    """
+    def __init__(self, hour, minute, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(60)
+        is_hour = (minute == 0)
+        
+        self.lbl_time = MDLabel(
+            text=f"{hour:02d}:{minute:02d}", size_hint_x=None, width=dp(50),
+            halign="center", valign="top",
+            theme_text_color="Custom", text_color=BLACK_COLOR if is_hour else GRAY_TEXT,
+            font_style="Label", role="large" if is_hour else "medium", bold=is_hour
+        )
+        self.add_widget(self.lbl_time)
+        
+        # Chỉ dùng 1 Widget để chứa đường kẻ ngang, không tạo Layout riêng cho từng cột ngày
+        self.line_canvas = Widget(size_hint_x=1)
+        with self.line_canvas.canvas.before:
+            Color(*LIGHT_GRAY)
+            line_width = 1.2 if is_hour else 0.5
+            self.bottom_line = Line(points=[0, 0, 0, 0], width=line_width)
+            
+        self.line_canvas.bind(pos=self.update_lines, size=self.update_lines)
+        self.add_widget(self.line_canvas)
+
+    def update_lines(self, instance, val):
+        x, y = instance.pos
+        w, h = instance.size
+        self.bottom_line.points = [x, y, x + w, y]
+
+
+# -------------------------------------------------------------------
+# CẬP NHẬT 2: TỐI ƯU LỌC DỮ LIỆU Ở LỚP CalendarHomeScreen
+# -------------------------------------------------------------------
+class CalendarHomeScreen(MDScreen):
+    # ... (Giữ nguyên các hàm __init__, build_ui, v.v.) ...
+
+    def render_month_view(self):
+        self.update_top_title()
+        cal = calendar.Calendar(firstweekday=0) 
+        month_days = cal.monthdatescalendar(self.display_year, self.display_month)
+        flat_days = [day_date for week in month_days for day_date in week]
+
+        for i, node in enumerate(self.day_nodes):
+            if i < len(flat_days):
+                day_date = flat_days[i]
+                node.update_data(day_date, day_date.month == self.display_month, day_date == self.today)
+                
+                # TỐI ƯU HÓA: Truy xuất trực tiếp O(1) từ Dictionary, không vòng lặp lồng
+                day_events = events_index_by_date.get(day_date, [])
+                node.set_events(day_events)
+            else:
+                node.opacity = 0
+                node.set_events([]) 
+
+    def load_mock_events(self):
+        """
+        TỐI ƯU HÓA HÀM LOAD: Bỏ vòng lặp toàn bộ database. 
+        Chỉ bốc đúng 7 ngày trong tuần từ index ra để render.
+        """
+        self.event_overlay.clear_widgets()
+        for dl_box in self.deadline_boxes:
+            dl_box.clear_widgets()
+            
+        # Thay vì lặp qua toàn bộ `mock_events`, ta chỉ truy xuất 7 ngày của tuần hiện tại
+        for col_index in range(7):
+            day_to_check = self.current_week_start + timedelta(days=col_index)
+            day_events = events_index_by_date.get(day_to_check, [])
+            
+            for raw_ev in day_events:
+                start_dt = datetime.fromisoformat(raw_ev["start_time"])
+                end_dt = datetime.fromisoformat(raw_ev["end_time"])
+                
+                processed_ev = raw_ev.copy()
+                processed_ev["col"] = col_index
+                processed_ev["start_h"] = start_dt.hour
+                processed_ev["start_m"] = start_dt.minute
+                processed_ev["duration"] = int((end_dt - start_dt).total_seconds() / 60)
+
+                if processed_ev["kind"] == "DEADLINE":
+                    self.deadline_boxes[col_index].add_widget(DeadlineBanner(title=processed_ev["title"]))
+                else:
+                    self.event_overlay.add_widget(EventBlock(event_data=processed_ev, col_index=col_index))
+                
+        Clock.schedule_once(lambda dt: self.recalculate_event_positions(self.event_overlay, self.event_overlay.size), 0)
+        
 # ==============================================================================
 # 1. HẰNG SỐ MÀU SẮC
 # ==============================================================================
@@ -73,6 +185,12 @@ class EventIndicatorLine(MDBoxLayout):
         super().__init__(**kwargs)
         self.size_hint_y = None
         self.height = dp(3) # Độ dày của vạch
+        
+        # --- THÊM 3 DÒNG NÀY ĐỂ FIX LỖI TRÊN PC ---
+        self.size_hint_x = None              # Tắt tính năng tự giãn ngang
+        self.width = dp(25)                  # Cố định chiều dài vạch (giống Android)
+        self.pos_hint = {"center_x": 0.5}    # Căn giữa vạch vào chính giữa ô ngày
+        
         with self.canvas.before:
             Color(*color)
             self.bg_rect = RoundedRectangle(radius=[dp(1.5)])
@@ -112,24 +230,25 @@ class HoverClickLabel(MDLabel):
 
 
 class NavTab(ButtonBehavior, MDBoxLayout):
-    """Tab điều hướng ở dưới cùng màn hình."""
     def __init__(self, text, target_screen, is_active=False, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
         self.size_hint_y = None
         self.height = dp(40)
         self.padding = dp(2)
-        self.target_screen = target_screen # Thuộc tính lưu tên màn hình
+        self.target_screen = target_screen
 
         bg_color = WHITE_COLOR if is_active else BLUE_COLOR
         txt_color = BLUE_COLOR if is_active else WHITE_COLOR
-        line_color = BLUE_COLOR
+        # Nếu active: viền xanh dương, nếu chưa active: viền đen
+        border_color = BLUE_COLOR if is_active else BLACK_COLOR
 
         with self.canvas.before:
             Color(*bg_color)
             self.bg_rect = RoundedRectangle(radius=[dp(4)])
-            Color(*line_color)
-            self.line = Line(rounded_rectangle=[0,0,0,0, dp(4)], width=1 if is_active else 0.001)
+            Color(*border_color)
+            # Độ dày viền luôn là 1dp cho cả nút active và chưa active
+            self.line = Line(rounded_rectangle=[0, 0, 0, 0, dp(4)], width=1.15)
 
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
@@ -146,29 +265,15 @@ class NavTab(ButtonBehavior, MDBoxLayout):
 
     def on_release(self):
         app = MDApp.get_running_app()
+        if not app or not app.root: return
         sm = app.root
         
         if sm.current != self.target_screen:
-            # 1. Định nghĩa thứ tự các tab (từ trái qua phải)
-            tab_indices = {
-                "calendar_home": 0,
-                "search_home": 1,
-                "chat_home": 2
-            }
-            
-            # Lấy vị trí của tab hiện tại và tab sắp chuyển tới
+            tab_indices = {"calendar_home": 0, "search_home": 1, "chat_home": 2}
             current_idx = tab_indices.get(sm.current, 0)
             target_idx = tab_indices.get(self.target_screen, 0)
             
-            # 2. Gán hiệu ứng trượt và hướng trượt
-            if target_idx > current_idx:
-                # Qua phải trên menu -> Màn hình mới đẩy từ phải sang trái
-                sm.transition = SlideTransition(direction='left')
-            else:
-                # Qua trái trên menu -> Màn hình mới đẩy từ trái sang phải
-                sm.transition = SlideTransition(direction='right')
-                
-            # 3. Chuyển trang
+            sm.transition = SlideTransition(direction='left' if target_idx > current_idx else 'right')
             sm.current = self.target_screen
 
 

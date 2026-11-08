@@ -42,7 +42,7 @@ def test_AI01_happy_path_extracts_intent_duration_and_window(client, alice, monk
     n = body["nlu"]
     assert n["intent"] == "schedule_task" and n["duration_minutes"] == 180 and n["source"] == "llm"
     assert n["avoid_time_of_day"] == "evening" and n["window_start"] and n["fallback_mode"] is False
-    assert body["message"] is None
+    assert "đang bận" not in (body["message"] or "")  # no AI-busy notice; a proposal message depends on free slots today
 
 
 def test_AI02_model_hallucinated_duration_is_overridden_by_the_users_words(client, alice, monkeypatch):
@@ -69,6 +69,7 @@ def test_AI05_llm_down_returns_200_fallback_never_500(client, alice):
     assert res.status_code == 200
     n = res.json()["nlu"]
     assert n["fallback_mode"] is True and n["duration_minutes"] == 180 and n["window_start"]
+    assert n["fallback_reason"].startswith("INFRA_CRASH")  # cause is returned so the host can diagnose it
 
 
 def test_AI06_every_failure_is_logged_in_db_and_in_taxonomy_file(client, alice, db, tmp_path):

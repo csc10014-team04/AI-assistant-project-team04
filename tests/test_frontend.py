@@ -134,19 +134,16 @@ def test_FE07_android_calendar_project_exists():
     assert any(FE_DIR.rglob("*.kt")) or any(FE_DIR.rglob("*.java")) or any(FE_DIR.rglob("AndroidManifest.xml"))
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-02 (P1-1): no code renders occupied blocks or suggested free slots")
 def test_FE08_calendar_renders_busy_and_free_slots():
     src = _fe_sources()
     assert "free" in src and ("calendar" in src or "timeblock" in src or "time_block" in src)
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-03 (P1-8): no chat UI with Accept / Reject / Reschedule buttons")
 def test_FE09_chat_has_accept_reject_reschedule_buttons():
     src = _fe_sources()
     assert all(word in src for word in ("accept", "reject", "reschedule"))
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-04 (P1-9): no client-side AI timeout that routes to the manual slot picker")
 def test_FE10_manual_picker_opens_on_ai_failure():
     src = _fe_sources()
     assert "fallback_mode" in src
