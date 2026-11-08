@@ -41,8 +41,6 @@ Câu lệnh tự nhiên (xếp mới hoặc xếp lại kèm reschedule_proposal
 
 ## 1. Sơ đồ Kiến trúc Luồng Xử lý (Pipeline Flow Diagram) & Kịch bản Luồng chạy
 
-> **Ghi chú hiển thị sơ đồ:** Khuyến nghị xuất sơ đồ PlantUML (`scheduling_with_AI.puml`) ra định dạng vector **`.svg`** (thay vì `.png`) và đặt tại `sourceCode/BE/assets/scheduling_with_AI.svg` để mọi nhánh số thứ tự hiển thị sắc nét khi thu phóng.
-
 ![Scheduling with AI Pipeline Flow Diagram](./assets/scheduling_with_AI.svg)
 
 ### Mô tả chi tiết các luồng kịch bản trên sơ đồ (theo đúng số thứ tự mũi tên):
@@ -78,7 +76,7 @@ Câu lệnh tự nhiên (xếp mới hoặc xếp lại kèm reschedule_proposal
 * **Tại sao `NluResult` bắt buộc phải tách riêng trường `deadline_hint` (và `deadline`) khỏi `date_hint`?**
   Sau khi tầng NLU chạy xong, đối tượng `NluResult` được truyền làm đầu vào điều khiển **hai thuật toán tất định kế tiếp**:
   1. **Thuật toán 1 - Bộ quy đổi cửa sổ và Quét giờ trống (`resolve_date_hint` + [`find_user_free_slots`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/services/search_engine.py#L906-L958)):** Thuật toán `sort-and-sweep` chỉ tìm các khoảng trống nằm trong đoạn `[window_start, window_end]`. Khi sinh viên nói câu ghép: *"Hạn nộp bài tập CTDL là thứ 6, xếp cho mình 2 tiếng làm bài trong tuần này"*, cụm `"tuần này"` mở rộng `window_end` đến hết tối Chủ Nhật. Nếu không có trường `deadline_hint = "thứ 6"` để khóa cận trên `window_end = min(window_end, deadline)` (tức tối Thứ Sáu) tại [`_finalize`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/services/nlu.py#L319-L326), thuật toán `find_user_free_slots` sẽ quét sang cả Thứ Bảy, Chủ Nhật và trả về các khung giờ trễ hạn nộp bài.
-  2. **Thuật toán 2 - Hàm chấm điểm xếp hạng khung giờ (`Slot Scorer` - thang 35 điểm):** Hàm chấm điểm cần biết chính xác mốc `deadline` để: (a) kiểm tra chốt chặn cứng **`No Missed Deadline (+10 điểm)`** ($\text{proposed\_end} \le \text{deadline}$), và (b) tính khoảng cách thời gian từ lúc hoàn thành công việc đến hạn chót ($\text{deadline} - \text{proposed\_end}$) nhằm chấm **Mục 2 - Khoảng đệm an toàn hạn chót ($S_{2,\text{margin}}$, tối đa `+5` điểm)**, giúp ưu tiên xếp việc sớm thay vì sát giờ nộp.
+  2. **Thuật toán 2 - Hàm chấm điểm xếp hạng khung giờ (`Slot Scorer` - thang 35 điểm):** Hàm chấm điểm cần biết chính xác mốc `deadline` để: (a) kiểm tra chốt chặn cứng **`No Missed Deadline (+10 điểm)`** ($t_{\text{end}} \le t_{\text{deadline}}$), và (b) tính khoảng cách thời gian từ lúc hoàn thành công việc đến hạn chót ($t_{\text{deadline}} - t_{\text{end}}$) nhằm chấm **Mục 2 - Khoảng đệm an toàn hạn chót ($S_{2,\text{margin}}$, tối đa `+5` điểm)**, giúp ưu tiên xếp việc sớm thay vì sát giờ nộp.
 
 ---
 
@@ -150,14 +148,14 @@ $$\text{ScheduleScore}(p_i) = G_{\text{overlap}}(p_i) \times G_{\text{deadline}}
 
 1. **Hai tiêu chí nền tảng bắt buộc (Mỗi tiêu chí `+10` điểm, đồng thời là cổng nhân cứng $G \in \{0, 1\}$):**
    * **Zero-Overlap (`+10` điểm; $G_{\text{overlap}} \in \{0, 1\}$):** Khung giờ đề xuất không chồng lấn bất kỳ tiết học (`CLASS`), lịch thi (`EXAM`), sự kiện (`EVENT`), công việc đã chốt (`TASK`), không vi phạm giờ ngủ, đảm bảo khoảng nghỉ đệm `min_break_minutes` (`15` phút) và không lặp lại khung giờ đã từ chối (`excluded_slots`). Vi phạm -> $G_{\text{overlap}} = 0$ (toàn phương án nhận `0/35` điểm).
-   * **No Missed Deadline (`+10` điểm; $G_{\text{deadline}} \in \{0, 1\}$):** Thời điểm hoàn thành công việc không vượt quá mốc hạn chót thực tế nêu trong câu gốc ($\text{proposed\_end} \le \text{ground\_truth\_deadline}$). Vi phạm (ví dụ hạn Thứ Sáu nhưng gợi ý sáng Thứ Bảy) -> $G_{\text{deadline}} = 0$ (toàn phương án nhận `0/35` điểm).
+   * **No Missed Deadline (`+10` điểm; $G_{\text{deadline}} \in \{0, 1\}$):** Thời điểm hoàn thành công việc không vượt quá mốc hạn chót thực tế nêu trong câu gốc ($t_{\text{end}} \le t_{\text{deadline}}$). Vi phạm (ví dụ hạn Thứ Sáu nhưng gợi ý sáng Thứ Bảy) -> $G_{\text{deadline}} = 0$ (toàn phương án nhận `0/35` điểm).
 2. **Ba tiêu chí tối ưu chất lượng sắp xếp (Kế thừa mục 1, 2, 4; mỗi mục tối đa `+5` điểm):**
    * **Mục 1 - Cân bằng tải trong ngày & Tuân thủ buổi ($S_{1,\text{balance}} \in [0, 5]$):**
-     $$S_{1,\text{balance}}(p_i) = 5 \times I_{\text{time\_pref}}(p_i) \times \max\left(0, 1 - \frac{\text{busy\_minutes\_in\_day}}{480}\right)$$
-     Trong đó `busy_minutes_in_day` là tổng số phút đã bận sẵn trong ngày chứa khung giờ $p_i$ (trước khi xếp việc mới), ngưỡng tải chuẩn mỗi ngày là `480` phút (8 tiếng); $I_{\text{time\_pref}} = 1$ nếu khung giờ tuân thủ đúng buổi ưu tiên / buổi cần tránh trong câu gốc, và bằng $0$ nếu AI hiểu sai dẫn tới xếp vào buổi người dùng đã cấm.
+     $$S_{1,\text{balance}}(p_i) = 5 \times I_{\text{pref}}(p_i) \times \max\left(0, 1 - \frac{t_{\text{busy}}}{480}\right)$$
+     Trong đó $t_{\text{busy}}$ là tổng số phút đã bận sẵn trong ngày chứa khung giờ $p_i$ (trường `busy_minutes_in_day` trước khi xếp việc mới), ngưỡng tải chuẩn mỗi ngày là `480` phút (8 tiếng); $I_{\text{pref}} = 1$ nếu khung giờ tuân thủ đúng buổi ưu tiên / buổi cần tránh trong câu gốc, và bằng $0$ nếu AI hiểu sai dẫn tới xếp vào buổi người dùng đã cấm.
    * **Mục 2 - Độ an toàn hạn chót & Trọng số ưu tiên ($S_{2,\text{margin}} \in [0, 5]$):**
-     $$S_{2,\text{margin}}(p_i) = 5 \times \min\left(1.0, \frac{\text{hours\_before\_deadline}}{24.0}\right)$$
-     Với việc có mức ưu tiên cao (`priority = 1` - gấp/ôn thi/sắp nộp), khung giờ hoàn thành trước hạn chót từ `24` giờ trở lên đạt trọn `+5.0` điểm; nếu xếp sát nút trước hạn chót dưới `24` giờ thì điểm giảm tỷ lệ thuận theo số giờ đệm thực tế.
+     $$S_{2,\text{margin}}(p_i) = 5 \times \min\left(1.0, \frac{\Delta t_{\text{margin}}}{24.0}\right)$$
+     Với việc có mức ưu tiên cao (`priority = 1` - gấp/ôn thi/sắp nộp), khung giờ hoàn thành trước hạn chót $\Delta t_{\text{margin}} \ge 24$ giờ đạt trọn `+5.0` điểm; nếu xếp sát nút trước hạn chót dưới `24` giờ thì điểm giảm tỷ lệ thuận theo số giờ đệm thực tế.
    * **Mục 4 - Chống phân mảnh lịch trống ($S_{4,\text{packing}} \in [0, 5]$):**
      * Đạt **`+5.0` điểm** nếu công việc được xếp nguyên 1 khối liên tục và đặt sát biên đầu hoặc biên cuối của khoảng trống lớn (khoảng trống còn dư ở đầu/cuối bằng `0` phút hoặc $\ge 60$ phút để tái sử dụng được cho việc khác).
      * Đạt **`+2.5` điểm** nếu đặt lửng lơ ở giữa khoảng trống lớn làm băm nhỏ hai đầu thành các mảnh vụn khó dùng ($0 < \text{khoảng hở hai bên} < 60$ phút).
@@ -186,7 +184,7 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
 * **Chấm điểm từng thành phần:**
   1. **Zero-Overlap:** Không đè lên giờ học `09:00 - 11:00`, cách giờ học buổi sáng 2 tiếng (> 15 phút nghỉ đệm) -> **$G_{\text{overlap}} = 1$** (`+10` điểm).
   2. **No Missed Deadline:** Hoàn thành lúc `15:00 Thứ Tư`, trước hạn chót `23:59 Thứ Sáu` -> **$G_{\text{deadline}} = 1$** (`+10` điểm).
-  3. **Mục 1 ($S_{1,\text{balance}}$):** Xếp vào buổi chiều (tuân thủ đúng lệnh cấm buổi tối -> $I_{\text{time\_pref}} = 1$). Ngày Thứ Tư chỉ mới bận `120` phút:
+  3. **Mục 1 ($S_{1,\text{balance}}$):** Xếp vào buổi chiều (tuân thủ đúng lệnh cấm buổi tối -> $I_{\text{pref}} = 1$). Ngày Thứ Tư chỉ mới bận `120` phút:
      $$S_{1,\text{balance}} = 5 \times 1 \times \left(1 - \frac{120}{480}\right) = 5 \times 0.75 = \mathbf{3.75} \text{ điểm}$$
   4. **Mục 2 ($S_{2,\text{margin}}$):** Hoàn thành lúc `15:00 Thứ Tư`, sớm hơn hạn chót `23:59 Thứ Sáu` tới **`57` giờ** ($\ge 24$ giờ):
      $$S_{2,\text{margin}} = 5 \times \min\left(1.0, \frac{57.0}{24.0}\right) = \mathbf{5.00} \text{ điểm}$$
@@ -198,7 +196,7 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
 * **Giả định lỗi của AI:** AI trích xuất đúng hạn Thứ Sáu nhưng quên mất vế *"đừng xếp vào buổi tối"*, dẫn tới gợi ý khung giờ **Tối Thứ Tư `11/11` từ `19:00 - 21:00`**.
 * **Chấm điểm:**
   * Không trùng lịch cứng và trước hạn Thứ Sáu -> $G_{\text{overlap}} = 1, G_{\text{deadline}} = 1$ (`20` điểm nền).
-  * **Mục 1 ($S_{1,\text{balance}}$):** Vì rơi vào buổi tối trái với ràng buộc thật trong câu gốc của sinh viên -> hệ số tuân thủ buổi **$I_{\text{time\_pref}} = 0$**, kéo $S_{1,\text{balance}} = \mathbf{0.00}$ điểm.
+  * **Mục 1 ($S_{1,\text{balance}}$):** Vì rơi vào buổi tối trái với ràng buộc thật trong câu gốc của sinh viên -> hệ số tuân thủ buổi **$I_{\text{pref}} = 0$**, kéo $S_{1,\text{balance}} = \mathbf{0.00}$ điểm.
   * **Mục 2 ($S_{2,\text{margin}}$):** Trước hạn 51 giờ -> `+5.00` điểm; **Mục 4 ($S_{4,\text{packing}}$):** Sát biên đầu `19:00` -> `+5.00` điểm.
   * **Tổng điểm Trường hợp 2:** $1 \times 1 \times (10 + 10 + 0.00 + 5.00 + 5.00) = \mathbf{30.00 / 35}$ **điểm** (bị phạt mất 3.75 điểm do lỗi NLU không bắt được phủ định buổi tối).
 
@@ -216,6 +214,6 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
 #### Trường hợp 4: AI làm rơi mất `deadline_hint` khiến hệ thống gợi ý sang sáng Thứ Bảy
 * **Giả định lỗi nghiêm trọng của AI:** AI chỉ lấy `date_hint = "tuần này"` mà bỏ sót `deadline_hint = "thứ sáu"`. Thấy Thứ Bảy `14/11` rảnh cả ngày (`busy = 0` phút), hệ thống đề xuất **Sáng Thứ Bảy `14/11` từ `08:00 - 10:00`**.
 * **Chấm điểm:**
-  * Dù ngày Thứ Bảy rảnh rỗi đạt điểm cân bằng tải và chống phân mảnh tuyệt đối, nhưng $\text{proposed\_end} = \text{10:00 Thứ Bảy} > \text{23:59 Thứ Sáu}$ (trễ hạn nộp bài).
+  * Dù ngày Thứ Bảy rảnh rỗi đạt điểm cân bằng tải và chống phân mảnh tuyệt đối, nhưng $t_{\text{end}} = \text{10:00 Thứ Bảy} > \text{23:59 Thứ Sáu}$ (trễ hạn nộp bài).
   * Chốt chặn cứng **$G_{\text{deadline}}(p_4) = 0$** lập tức kích hoạt:
     $$\text{ScheduleScore}(p_4) = 1 \times 0 \times (10 + 0 + 5.00 + 0.00 + 5.00) = \mathbf{0.00 / 35} \text{ điểm (Loại bỏ)}$$
