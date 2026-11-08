@@ -3,6 +3,8 @@ import json
 from kivy.network.urlrequest import UrlRequest
 from kivy.storage.jsonstore import JsonStore
 
+from fallback import AI_TIMEOUT_SECONDS
+
 
 """
 FILE: api_client.py
@@ -67,7 +69,7 @@ class APIClient:
             headers["Authorization"] = f"Bearer {self.access_token}"
         return headers
 
-    def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None):
+    def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None, timeout=None):
         """Hàm cốt lõi xử lý gửi HTTP Request"""
         url = f"{self.base_url}{endpoint}"
         req_body = json.dumps(payload) if payload else None
@@ -81,7 +83,8 @@ class APIClient:
             method=method,
             on_success=on_success or default_cb,
             on_failure=on_failure or default_cb,
-            on_error=on_error or default_cb
+            on_error=on_error or default_cb,
+            timeout=timeout,
         )
 
     # =========================================================================
@@ -139,8 +142,9 @@ class APIClient:
     # new method, next to the other calls:
     def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
         payload = {"prompt": prompt, "reschedule_proposal_id": reschedule_proposal_id}
+        # strict client-side timeout (P1-9): on expiry on_error is called and the chat opens the manual picker
         self._request("/api/v1/assistant/understand", method="POST", payload=payload,
-                on_success=on_success, on_failure=on_failure, on_error=on_error)
+                on_success=on_success, on_failure=on_failure, on_error=on_error, timeout=AI_TIMEOUT_SECONDS)
     def get_free_slots(self, window_start, window_end, duration_minutes, on_success, on_failure, on_error,
                    respect_preferences=True):
         payload = {"window_start": window_start, "window_end": window_end,
