@@ -13,6 +13,7 @@ from services.search_engine import (
     execute_local_search,
     find_user_free_slots,
     ingest_academic_document,
+    is_scheduling_command,
     optimize_search_query,
     verify_and_format_search_results,
 )
@@ -68,6 +69,10 @@ class ScheduleSearchResponse(BaseModel):
     keywords: str
     total: int
     events: list[ScheduleSearchEventOut]
+    message: str | None = None
+    # optional ui navigation metadata so kivy SearchScreen can offer a one-tap redirect button to 'chat_home'
+    redirect_target: str | None = None
+    redirect_button_label: str | None = None
 
 
 class AcademicDocumentIndexResponse(BaseModel):
@@ -92,6 +97,8 @@ class AcademicRagResponse(BaseModel):
     answer: str
     citations: list[AcademicCitationOut]
     fallback_mode: bool
+    redirect_target: str | None = None
+    redirect_button_label: str | None = None
 
 
 @router.get("/events", response_model=ScheduleSearchResponse)
@@ -107,8 +114,8 @@ def search_schedule_events(
 ) -> ScheduleSearchResponse:
     """
     input: query params (q, kind, start_from, end_until, room, top_k), db session, authenticated user.
-    core logic: normalize query, merge explicit sql filters, run hybrid sql + vector search, verify output.
-    output: ScheduleSearchResponse with +07:00 events ranked by semantic/exact relevance (no llm).
+    core logic: normalize query, check for scheduling commands (redirect to 'chat_home'), else run hybrid sql + vector search.
+    output: ScheduleSearchResponse with +07:00 events or cross-tab redirect metadata (no llm).
     typical flow: q='toán' -> returns 'Toán tổ hợp', 'Xác suất thống kê', 'Vi tích phân 2' of current_user.
     """
     aware_start = _coerce_vn_aware(start_from)
@@ -120,6 +127,22 @@ def search_schedule_events(
         )
 
     filters: dict[str, Any] = optimize_search_query(q, datetime.now(UTC_TZ))
+    if is_scheduling_command(q):
+        return ScheduleSearchResponse(
+            query=q,
+            normalized_query=filters["normalized_query"],
+            keywords=filters["keywords"],
+            total=0,
+            events=[],
+            message=(
+                "It seems bạn đang muốn yêu cầu xếp lịch công việc. "
+                "Trang 'Tìm kiếm' chỉ dùng để tra cứu lịch trình và hỏi đáp học vụ; "
+                "bạn hãy bấm nút 'Trợ lý AI' để chuyển sang khung xếp lịch thông minh nhé."
+            ),
+            redirect_target="chat_home",
+            redirect_button_label="Trợ lý AI",
+        )
+
     if kind is not None:
         filters["kind"] = kind  # explicit query parameter overrides inferred kind
     if aware_start is not None:
