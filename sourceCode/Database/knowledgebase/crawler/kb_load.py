@@ -145,17 +145,20 @@ def load(db: Session, uniinfo: Path = UNIINFO_DIR, approve: bool = False) -> dic
         if approve:
             row.review_status = "APPROVED"
 
-    # achievements (publications); identified by lecturer + year + title so re-runs do not duplicate
+    # achievements: a lecturer's publications, or a faculty-level entry (e.g. a research group, lecturer = null);
+    # identified by owner + year + title so re-runs do not duplicate
     for a in _read(uniinfo / "structured" / "achievements.json"):
-        lid = lecturer_ids.get((a["site_id"], folded(a["lecturer"])))
-        if lid is None:
-            continue
-        exists = db.scalar(select(KbAchievement.id).where(KbAchievement.lecturer_id == lid, KbAchievement.year == a.get("year"),
+        lid = lecturer_ids.get((a["site_id"], folded(a["lecturer"]))) if a.get("lecturer") else None
+        fid = None if lid else faculty_ids.get(a["site_id"])
+        if lid is None and (a.get("lecturer") or fid is None):
+            continue  # names a lecturer we do not have, or an unknown faculty
+        owner = (KbAchievement.lecturer_id == lid) if lid else (KbAchievement.faculty_id == fid)
+        exists = db.scalar(select(KbAchievement.id).where(owner, KbAchievement.year == a.get("year") if a.get("year") else KbAchievement.year.is_(None),
                                                           KbAchievement.title == a["title"]))
         if exists:
             continue
-        db.add(KbAchievement(lecturer_id=lid, kind=a.get("kind", "OTHER"), year=a.get("year"), title=a["title"], details=a.get("details"),
-                             source_id=source_ids.get(a.get("source_url")), review_status=status))
+        db.add(KbAchievement(lecturer_id=lid, faculty_id=fid, kind=a.get("kind", "OTHER"), year=a.get("year"), title=a["title"],
+                             details=a.get("details"), source_id=source_ids.get(a.get("source_url")), review_status=status))
         counts["achievements"] += 1
     db.flush()
     return counts

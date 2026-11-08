@@ -1,33 +1,39 @@
 [
   {
     "site_id": "fit",
-    "name": "Khoa học Máy tính",
-    "description": "",
-    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+    "name": "Khoa học máy tính",
+    "description": "Lĩnh vực nghiên cứu: Các hệ Cơ sở tri thức, Tính toán mềm, Xử lý hình ảnh, Mạng nơron, Máy học, Nhận dạng, Lập trình tiến hóa, Xử lý ảnh và tín hiệu số trong Y học, Semantic Web, Xử lý âm thanh.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
   },
   {
     "site_id": "fit",
     "name": "Công nghệ tri thức",
-    "description": "",
-    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
-  },
-  {
-    "site_id": "fit",
-    "name": "Thị giác máy tính",
-    "description": "",
-    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+    "description": "Lĩnh vực nghiên cứu: An toàn thông tin, xử lý ngôn ngữ.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
   },
   {
     "site_id": "fit",
     "name": "Công nghệ phần mềm",
-    "description": "",
-    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+    "description": "Lĩnh vực nghiên cứu: Các phương pháp cao cấp trong thiết kế phần mềm, Lập trình Hướng Đối tượng với UML, GIS, Phần mềm hỗ trợ giảng dạy, Mã hóa và ứng dụng.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
   },
   {
     "site_id": "fit",
     "name": "Hệ thống thông tin",
-    "description": "",
-    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+    "description": "Lĩnh vực nghiên cứu: Executive Information Systems (EIS), Tiếp cận hướng đối tượng trong phân tích và thiết kế hệ thống thông tin/Cơ sở dữ liệu, Hệ thống thông tin đa ngôn ngữ (Việt, Pháp, Anh,...), Hệ thống quản lý luồng công việc.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
+  },
+  {
+    "site_id": "fit",
+    "name": "Thị giác máy tính và điều khiển học thông minh",
+    "description": "Lĩnh vực nghiên cứu: Visual Information Retrieval, Visual Slam, Visual Recognition, 3D Object Reconstruction & Modeling, Medical Image Processing, BioInformatics, Data Science.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
+  },
+  {
+    "site_id": "fit",
+    "name": "Mạng máy tính và viễn thông",
+    "description": "Lĩnh vực nghiên cứu: Các công nghệ mạng và truyền thông cao cấp, Các hệ thống phân tán, Hệ thống VoIP, WAP / PKI và Bảo mật mạng, Mobile Agent.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa"
   },
   {
     "site_id": "math",

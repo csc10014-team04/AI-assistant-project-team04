@@ -14,13 +14,26 @@ It is filled by a polite web collector (`crawler/`) from the five official websi
 
 | Site id | Website | What it is | Pages collected (2026-11-09) | robots.txt (checked 2026-11-09) |
 |---|---|---|---|---|
-| `hcmus` | https://hcmus.edu.vn/ | University (Trường ĐH Khoa học Tự nhiên, ĐHQG-HCM): organisation, councils, faculties and institutes | **8** (limit 12) | `Crawl-delay: 10`, nothing disallowed. The crawler waits 10 s per request, so this site is slow. Most of its other pages are short news notices with too little text, so the run was stopped at 8 useful pages. |
-| `fit` | https://www.fit.hcmus.edu.vn/ | Faculty of Information Technology: staff list, programmes (standard, advanced...), news and achievements | **40** | none published (the server answers an HTML error page) |
+| `hcmus` | https://hcmus.edu.vn/ | University (Trường ĐH Khoa học Tự nhiên, ĐHQG-HCM): home page, the two training-information categories, organisation, councils, faculties | **19** (limit 14) | `Crawl-delay: 10`, nothing disallowed. The crawler waits 10 s per request, so a run takes about 4 minutes. |
+| `fit` | https://www.fit.hcmus.edu.vn/ | **Focus site.** Faculty of Information Technology: leadership, staff, facilities, partners, programmes, admissions, student activities, research groups, publications | **47** (13 focus pages + linked pages) | none published (the server answers an HTML error page) |
 | `fbb` | https://fbb.hcmus.edu.vn/ | Faculty of Biology - Biotechnology | **40** | disallows `/admin/`, `/cache/`, `/includes/`... and query URLs |
 | `chemistry` | https://chemistry.hcmus.edu.vn/ | Faculty of Chemistry | **0** (its home page is only an error screen) | disallows `/api/account`, `/api/users/`, `/management/`. The site is built by scripts in the browser, so a simple downloader receives an error screen instead of content; the crawler recognises and discards such pages (see section 5). |
 | `math` | https://www.math.hcmus.edu.vn/ | Faculty of Mathematics and Computer Science: programmes, staff, departments | **40** | none published |
 
-Total: **128 pages, about 940,000 characters, 1.4 MB**, which the loader turns into about 3,300 searchable chunks.
+Total: **146 pages  about 1 102 462 characters**, which the loader turns into about 3,300 searchable chunks.
+
+### 1.1 Focus list (what the crawler is pointed at)
+
+The team asked to concentrate on the IT faculty and the university's training pages. These addresses are the **seeds** in
+[`sources.json`](sources.json) (`seed_urls`); they are fetched first, in this order, and only pages below the seeds' own paths are followed (`follow: seed_paths`, one hop):
+
+| Site | Seed pages | Collected |
+|---|---|---|
+| `fit` | `/`, `/gioi-thieu-chung`, `/gioi-thieu/bcn-khoa`, `/gioi-thieu/thong-tin-doi-ngu`, `/gioi-thieu/co-so-vat-chat`, `/gioi-thieu/hop-tac-doanh-nghiep`, `/gioi-thieu/bo-phan-ho-tro`, `/dai-hoc`, `/tuyen-sinh/dai-hoc`, `/sinh-vien/hoat-dong`, `/nghien-cuu/nhom-nghien-cuu`, `/nghien-cuu/cong-trinh-khoa-hoc`, `/nghien-cuu/cong-bo-khoa-hoc` | all 13 |
+| `hcmus` | `/`, `/category/dao-tao/dai-hoc/chuong-trinh-dao-tao-dai-hoc/`, `/category/dao-tao/dai-hoc/thong-tin-danh-cho-sinh-vien/` (then the best-matching linked posts) | all 3 |
+| `itsm-fit` | https://itsm-fit.hcmus.edu.vn/ | **not collected**: it is the faculty's IT helpdesk web application. Its pages say `robots: noindex`, the route `#trang-chu` is built in the browser, and the server returns a "page could not be found" screen to a plain request. It holds a service desk, not public information. |
+
+Other settings in `sources.json` that matter for a focused crawl: `content_selector` (the element that holds a page's content, so menus are skipped: `div.content-wrapper` for `fit`, `#middle` for `hcmus`), `max_depth` (link hops from a seed), and `max_fetches` (an upper bound on requests per run, so a site full of short pages cannot keep the crawler busy). The `fbb` and `math` entries keep the broad crawl from the first run.
 
 The list, the page limits and the keywords that decide which pages are visited first are in [`sources.json`](sources.json).
 The collected pages are stored in **[`database/UniInfo/`](../../../database/UniInfo/README.md)** at the repository root. The exact result of the last run (pages per site, when, size, hash) is in [`database/UniInfo/index.json`](../../../database/UniInfo/index.json).
@@ -128,14 +141,14 @@ They share one MySQL server and one database (`university_assistant`) but no tab
 
 | Table | Purpose |
 |---|---|
-| `kb_sources` | every collected page (url, hash, fetch time) so each fact can cite its source |
+| `kb_sources` | 146 | every collected page |
 | `kb_faculties` | the faculties (seeded: FIT, FBB, Chemistry, Math) |
-| `kb_departments` | departments (bo mon) of a faculty |
-| `kb_lecturers` | name, academic title, position, bio, faculty / department |
+| `kb_departments` | 13 | FIT: the 6 departments with their heads and **research areas** from the leadership page. Math: its 7 department blocks |
+| `kb_lecturers` | 340 (FIT 270, Math 70) | FIT staff list, bios and the leadership page (dean, vice-deans, department heads); Math "Đội ngũ chuyên môn". 41 have a bio, 78 a department, 20 a position |
 | `kb_programs` | training programmes (standard, advanced...) |
 | `kb_courses` | course code, name, credits, description |
 | `kb_course_lecturers` | which lecturer teaches which course (and semester) |
-| `kb_achievements` | awards, publications, research of a lecturer or a faculty |
+| `kb_achievements` | 453 | 438 FIT publications (linked to the lecturers named as authors, matched by name) and 15 FIT research groups (faculty-level, kind RESEARCH) |
 
 Conventions: names are stored twice (`name` and an accent-free `name_folded`, so "thay nguyen van a" finds "Nguyễn Văn A"); every fact has `source_id`; extracted rows start as `review_status = 'PENDING'` and are shown to users only when a person marks them `APPROVED`; `is_active = false` hides a lecturer who asked to be removed. `kb_courses` allows two rows with the same name and no course code (SQL treats NULLs as different), so the loader must de-duplicate those itself.
 

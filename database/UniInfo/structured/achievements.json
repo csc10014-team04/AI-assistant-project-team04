@@ -1,6 +1,141 @@
 [
   {
     "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Trí tuệ nhân tạo và Khoa học dữ liệu",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Môi trường thông minh và đa phương tiện",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Hệ thống tích hợp và thông minh (INIS Group)",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Xử lý ngôn ngữ tự nhiên",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Xử lý tiếng nói",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Xử lý âm thanh",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Tìm kiếm thông tin & Khai thác văn bản",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Sinh trắc học",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Khoa học dữ liệu thị giác",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Mật mã phi tập trung",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Công nghệ phần mềm",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Dịch vụ thông minh",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Tích Hợp Đa Phương Tiện",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Học máy Đa phương thức",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
+    "lecturer": null,
+    "kind": "RESEARCH",
+    "year": null,
+    "title": "Nhóm nghiên cứu: Tương tác người-máy và Thiết kế trải nghiệm người dùng",
+    "details": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu"
+  },
+  {
+    "site_id": "fit",
     "lecturer": "Lê Hoài Bắc",
     "kind": "PUBLICATION",
     "year": 2025,

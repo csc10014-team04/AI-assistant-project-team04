@@ -3,12 +3,13 @@ source_url: https://www.fit.hcmus.edu.vn/dai-hoc/chat-luong-cao
 site: fit
 site_name: Khoa Công nghệ Thông tin
 title: "Chất lượng cao - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM"
-fetched_at: 2026-11-09T00:20:13+07:00
-sha256: 2b0c82ff713d0e7c99ab4d7be1af09b7b0cc7b1e25645edd3006828651d0840b
+fetched_at: 2026-11-09T01:05:19+07:00
+sha256: 5792b083cc034626e850af6c79737ee6855b6f5a15f5e13120d9d4006bf6f3dc
 ---
 
 # Chất lượng cao - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM
 
+# Chương trình Chất lượng cao
 Với mục tiêu đào tạo nguồn nhân lực chất lượng cao, đáp ứng nhu cầu của các doanh nghiệp trong và ngoài nước, Khoa Công nghệ thông tin triển khai tuyển sinh chương trình đào tạo Chất lượng cao theo học chế tín chỉ, kiểm định theo tiêu chuẩn AUN-QA khóa đầu tiên vào năm 2013.
 Chuẩn đầu ra của chương trình được xây dựng theo bộ tiêu chuẩn của CDIO, đảm bảo người học được trang bị đầy đủ kiến thức, kỹ năng và thái độ, đáp ứng nhu cầu xã hội khi tốt nghiệp. Chương trình được xây dựng cân đối dựa trên việc trang bị vững vàng kiến thức nghề nghiệp và phát triển kỹ năng cá nhân, kỹ năng mềm và ngoại ngữ, đảm bảo sinh viên khi tốt nghiệp có thể làm việc tốt tại các doanh nghiệp trong và ngoài nước hoặc học tập lên cao ở bậc sau đại học.
 - Chương trình đào tạo được xây dựng, phát triển từ chương trình đào tạo nhóm ngành Máy tính và Công nghệ Thông tin của trường đại học Khoa học Tự nhiên (đã đạt chuẩn AUN-QA, là chuẩn kiểm định chất lượng giáo dục dành cho hệ thống các trường đại học thuộc khối ASEAN)

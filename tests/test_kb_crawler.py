@@ -119,3 +119,101 @@ def test_KB12_error_screens_served_with_http_200_are_not_kept():
     assert kb.is_error_page("lỗi: 404 Không tìm thấy bài viết", "Bài viết không tồn tại")
     long_real = "Giới thiệu khoa. " * 400  # a long genuine page that merely mentions an error is kept
     assert not kb.is_error_page("Giới thiệu", long_real + " page not found")
+
+
+def _page(links: str, text: str = "Nội dung chính của trang giới thiệu khoa. " * 12) -> str:
+    return f"<html><head><title>Trang</title></head><body><main><h1>Tiêu đề</h1><p>{text}</p>{links}</main></body></html>"
+
+
+def _run_focus(monkeypatch, tmp_path, site_extra):
+    pages = {
+        "https://s.edu.vn/a": _page('<a href="/a/child">c</a><a href="/b/other">o</a><a href="/news/x">n</a>'),
+        "https://s.edu.vn/b": _page(""),
+        "https://s.edu.vn/a/child": _page(""),
+        "https://s.edu.vn/b/other": _page(""),
+        "https://s.edu.vn/news/x": _page(""),
+    }
+    fetched = []
+
+    class FakeFetcher(kb.Fetcher):
+        def get(self, url, attempts=3):
+            fetched.append(url)
+            if url.endswith("/robots.txt"):
+                return 404, "text/html", ""
+            return (200, "text/html; charset=utf-8", pages[url]) if url in pages else (404, "", "")
+
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(kb, "Fetcher", FakeFetcher)
+    site = {"id": "s", "name": "S", "base_url": "https://s.edu.vn/", "max_pages": 20, **site_extra}
+    kb.crawl_site(site, {**CFG, "min_delay_seconds": 0}, None, tmp_path, log=lambda *_: None)
+    return [u for u in fetched if not u.endswith("/robots.txt")]
+
+
+def test_KB13_seed_urls_are_fetched_first_in_the_given_order_and_only_their_sections_are_followed(monkeypatch, tmp_path):
+    got = _run_focus(monkeypatch, tmp_path, {"seed_urls": ["https://s.edu.vn/b", "https://s.edu.vn/a"], "follow": "seed_paths", "max_depth": 1})
+    assert got[:2] == ["https://s.edu.vn/b", "https://s.edu.vn/a"]            # order of the list, not alphabetical
+    assert "https://s.edu.vn/a/child" in got and "https://s.edu.vn/b/other" in got  # below a seed path
+    assert "https://s.edu.vn/news/x" not in got                                 # outside every seed section
+
+
+def test_KB14_follow_none_and_depth_limit_stop_the_crawl_at_the_seeds(monkeypatch, tmp_path):
+    assert _run_focus(monkeypatch, tmp_path, {"seed_urls": ["https://s.edu.vn/a"], "follow": "none"}) == ["https://s.edu.vn/a"]
+    got = _run_focus(monkeypatch, tmp_path, {"seed_urls": ["https://s.edu.vn/a"], "follow": "site", "max_depth": 0})
+    assert got == ["https://s.edu.vn/a"]
+
+
+def test_KB15_sources_json_focus_list_matches_the_requested_fit_and_hcmus_pages():
+    sites = {s["id"]: s for s in CFG["sites"]}
+    fit, hcmus = sites["fit"]["seed_urls"], sites["hcmus"]["seed_urls"]
+    for must in ("/gioi-thieu/bcn-khoa", "/nghien-cuu/nhom-nghien-cuu", "/nghien-cuu/cong-bo-khoa-hoc", "/sinh-vien/hoat-dong", "/tuyen-sinh/dai-hoc", "/dai-hoc"):
+        assert any(u.endswith(must) for u in fit), must
+    assert any("chuong-trinh-dao-tao-dai-hoc" in u for u in hcmus) and any("thong-tin-danh-cho-sinh-vien" in u for u in hcmus)
+    assert not any("itsm-fit" in s["base_url"] for s in CFG["sites"])  # helpdesk app: noindex, script-built, not collected
+
+
+def test_KB16_small_headings_and_template_wrappers_do_not_hide_content():
+    html = ("<html><head><title>BCN</title></head><body><article class='post-content'>"
+            "<h2>BAN CHỦ NHIỆM KHOA</h2><div class='row'><div class='col'><h5>Trưởng Khoa</h5><h6>TS. Đinh Bá Tiến</h6></div>"
+            "<div class='col'><h5>Phó Trưởng Khoa</h5><h6>PGS.TS. Nguyễn Văn Vũ</h6></div></div>"
+            "<dl><dt>Lĩnh vực nghiên cứu</dt><dd>Thị giác máy tính; Xử lý ảnh</dd></dl></article></body></html>")
+    _, text = kb.extract_page(html)
+    for must in ("TS. Đinh Bá Tiến", "PGS.TS. Nguyễn Văn Vũ", "Trưởng Khoa", "Thị giác máy tính; Xử lý ảnh"):
+        assert must in text, must
+
+
+def test_KB17_plain_text_fallback_rescues_a_page_whose_content_sits_in_skipped_elements():
+    body = "".join(f"<span>Dòng nội dung số {i} của một trang mà mẫu giao diện bọc trong thẻ span.</span><br>" for i in range(40))
+    _, text = kb.extract_page(f"<html><head><title>T</title></head><body><main>{body}</main></body></html>")
+    assert "Dòng nội dung số 7" in text and len(text) > 1500
+
+
+def test_KB18_content_selector_reads_siblings_that_an_article_tag_alone_would_miss():
+    html = ("<html><head><title>BCN</title></head><body><div class='menu'><ul><li>Trang chủ</li></ul></div>"
+            "<div class='content-wrapper'><article><h3>BAN CHỦ NHIỆM KHOA</h3><h6>TS. Đinh Bá Tiến</h6></article>"
+            "<section><h3>GIỚI THIỆU CÁC BỘ MÔN</h3><p>Bộ môn Công nghệ tri thức. Trưởng Bộ môn PGS.TS. Nguyễn Đình Thúc</p></section></div></body></html>")
+    _, without = kb.extract_page(html)
+    _, with_sel = kb.extract_page(html, "div.content-wrapper")
+    assert "Nguyễn Đình Thúc" not in without and "Nguyễn Đình Thúc" in with_sel and "Trang chủ" not in with_sel
+
+
+def test_KB19_request_budget_stops_a_crawl_even_when_most_pages_are_too_short(monkeypatch, tmp_path):
+    short = "<html><head><title>x</title></head><body><main><p>ngắn</p></main></body></html>"
+    links = "".join(f'<a href="/p{i}">p</a>' for i in range(30))
+    fetched = []
+
+    class FakeFetcher(kb.Fetcher):
+        def get(self, url, attempts=3):
+            fetched.append(url)
+            if url.endswith("/robots.txt"):
+                return 404, "", ""
+            return 200, "text/html", (short.replace("<p>ngắn</p>", links) if url.endswith("/s") else short)
+
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(kb, "Fetcher", FakeFetcher)
+    site = {"id": "s", "name": "S", "base_url": "https://s.edu.vn/", "max_pages": 5, "max_fetches": 7, "seed_urls": ["https://s.edu.vn/s"], "follow": "site"}
+    kb.crawl_site(site, {**CFG, "min_delay_seconds": 0}, None, tmp_path, log=lambda *_: None)
+    assert len([u for u in fetched if not u.endswith("/robots.txt")]) == 7

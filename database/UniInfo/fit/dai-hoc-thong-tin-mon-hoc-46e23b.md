@@ -3,8 +3,8 @@ source_url: https://www.fit.hcmus.edu.vn/dai-hoc/thong-tin-mon-hoc
 site: fit
 site_name: Khoa Công nghệ Thông tin
 title: "Thông tin môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM"
-fetched_at: 2026-11-09T00:18:33+07:00
-sha256: 22b80563f49e8cd4912441b50ee1e4a7e6f844755458a42a3e58c7b5bad6f0c6
+fetched_at: 2026-11-09T01:03:46+07:00
+sha256: 2b81a328b77421a25310e0b4892ce361dddfe98a51a8e340cd2fd4df3b74e1ed
 ---
 
 # Thông tin môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM
@@ -16,6 +16,13 @@ Thông tin môn học
 Đề cương tổng quát Xem danh sách
 
 #### GENERAL INFORMATION
+Course ID:
+Course name (English):
+Course name (Vietnamese):
+Relation to curriculum:
+Credit points:
+credits (Theory: ; Laboratory: ) / ~ ECTS credits
+Prior course(s):
 
 #### COURSE DESCRIPTION
 
@@ -28,8 +35,6 @@ On successful completion of this course, students will be able to:
 - [ ] , , ,
 Đề cương chi tiết Xem danh sách
 Module designation | Course name (English): Course name (Vietnamese):
-Course name (English):
-Course name (Vietnamese):
 Semester(s) in which the module is taught
 Person responsible for the module
 Language

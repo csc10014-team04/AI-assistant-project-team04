@@ -133,6 +133,48 @@ def extract_math_departments(body: str) -> tuple[list[dict], list[dict]]:
     return [{"name": d["name"], "description": d["description"]} for d in depts], people
 
 
+def extract_fit_leadership(body: str) -> tuple[list[dict], list[dict]]:
+    """FIT 'Lãnh đạo Khoa': the dean and vice-deans, then '#### Bộ môn X' blocks with the head and the research areas."""
+    people: list[dict] = []
+    depts: list[dict] = []
+    lines = [ln.strip() for ln in body.splitlines()]
+    role = None
+    current: dict | None = None
+    in_departments = False
+    for i, ln in enumerate(lines):
+        if ln.startswith("### GIỚI THIỆU CÁC BỘ MÔN") or ln.upper().startswith("### GIỚI THIỆU CÁC BỘ MÔN"):
+            in_departments, role = True, None
+            continue
+        if not in_departments:
+            if ln.startswith("#### "):
+                role = ln[5:].strip() if re.match(r"^(Phó\s+)?Trưởng\s+Khoa$", ln[5:].strip(), re.I) else None
+            elif ln.startswith("###### ") and role:
+                title, name = split_title(ln[7:])
+                if title and 2 <= len(name.split()) <= 6:
+                    people.append({"full_name": name, "academic_title": title, "position": role[0].upper() + role[1:].lower(), "department": None})
+            continue
+        if ln.startswith("#### Bộ môn"):
+            current = {"name": re.sub(r"^####\s*Bộ môn\s*", "", ln).strip(), "description": ""}
+            depts.append(current)
+        elif current is not None:
+            head = re.match(r"^(Phó\s+Trưởng|Trưởng)\s+Bộ\s+môn\s+(.+?)(?:\s+Email:.*)?$", ln, re.I)
+            if head:
+                title, name = split_title(head.group(2))
+                if title and 2 <= len(name.split()) <= 6:
+                    kind = "Phó trưởng" if head.group(1).lower().startswith("phó") else "Trưởng"
+                    people.append({"full_name": name, "academic_title": title, "department": current["name"],
+                                   "position": f"{kind} bộ môn {current['name']}"})
+            elif ln.startswith("Lĩnh vực nghiên cứu"):
+                current["description"] = "Lĩnh vực nghiên cứu: " + ln.split(":", 1)[-1].strip()[:900]
+    return depts, people
+
+
+def extract_research_groups(body: str) -> list[str]:
+    """FIT 'Nhóm nghiên cứu': one '###### <group name>' heading per research group."""
+    names = [ln[7:].strip() for ln in body.splitlines() if ln.startswith("###### ")]
+    return [n for n in names if 3 <= len(n) <= 120 and not n.lower().startswith("xem chi tiết")]
+
+
 def extract_program(site_id: str, url: str, title: str, body: str) -> dict | None:
     """a programme page (FIT / Math): name from the page, first real paragraph as description."""
     clean = re.sub(r"\s*-\s*Khoa.*$", "", title).strip()
@@ -234,6 +276,26 @@ def build(data_dir: Path = DATA_DIR) -> dict[str, list[dict]]:
             if row.get("department"):
                 depts.append({"site_id": "fit", "name": row["department"], "description": "", "source_url": fit_bios[0]})
 
+    # FIT leadership: dean, vice-deans, department heads and their research areas
+    fit_lead = find("fit", "gioi-thieu/bcn-khoa")
+    if fit_lead:
+        d_rows, p_rows = extract_fit_leadership(fit_lead[2])
+        depts += [{"site_id": "fit", **d, "source_url": fit_lead[0]} for d in d_rows]
+        for row in p_rows:
+            add_lecturer("fit", fit_lead[0], row)
+            key = ("fit", " ".join(fold(row["full_name"]).split()))
+            cur_pos = lecturers[key]["position"]
+            if row.get("position") and cur_pos != row["position"]:
+                # the leadership page is the most direct source of a role; a person may hold two (vice-dean and head of a department)
+                lecturers[key]["position"] = row["position"] if not cur_pos or cur_pos in {r["position"] for r in p_rows if r["full_name"] != row["full_name"]} \
+                    else (cur_pos if row["position"] in cur_pos else f"{cur_pos}; {row['position']}")
+    # FIT research groups (faculty-level entries, kind RESEARCH)
+    fit_groups = find("fit", "nghien-cuu/nhom-nghien-cuu")
+    if fit_groups:
+        for name in extract_research_groups(fit_groups[2]):
+            achievements.append({"site_id": "fit", "lecturer": None, "kind": "RESEARCH", "year": None,
+                                 "title": f"Nhóm nghiên cứu: {name}", "details": "", "source_url": fit_groups[0]})
+
     # Math departments and lecturers (Vietnamese page only)
     math_page = next(((u, m, b) for u, (m, b) in pages.items() if m.get("site") == "math" and u.endswith("/gioi-thieu/doi-ngu-chuyen-mon") and "/en/" not in u), None)
     if math_page:
@@ -269,7 +331,28 @@ def build(data_dir: Path = DATA_DIR) -> dict[str, list[dict]]:
                 achievements.append({"site_id": "fit", "lecturer": lec["full_name"], "kind": "PUBLICATION", "year": pub["year"],
                                      "title": pub["title"], "details": pub["details"], "source_url": pub_page[0]})
 
-    uniq = {(d["site_id"], " ".join(fold(d["name"]).split())): d for d in depts}
+    uniq: dict = {}
+    for d in depts:  # same department from several pages: keep the one that has a description
+        key = (d["site_id"], " ".join(fold(d["name"]).split()))
+        if key not in uniq or (d.get("description") and not uniq[key].get("description")):
+            uniq[key] = {**uniq.get(key, {}), **d} if key in uniq and not d.get("description") else d
+    # a department written short in one page and long in another ("Thị giác máy tính" / "Thị giác máy tính và điều khiển học ...")
+    # is one department: keep the long name and repoint the people
+    names = {k: v for k, v in uniq.items()}
+    for (site, short), d in list(names.items()):
+        longer = [k for k in names if k[0] == site and k[1] != short and k[1].startswith(short + " ")]
+        if longer:
+            target = names[longer[0]]
+            if d.get("description") and not target.get("description"):
+                target["description"] = d["description"]
+            for lec in lecturers.values():
+                if lec["site_id"] == site and lec.get("department") and " ".join(fold(lec["department"]).split()) == short:
+                    lec["department"] = target["name"]
+            uniq.pop((site, short))
+    for lec in lecturers.values():  # "Trưởng bộ môn X" and "Trưởng bộ môn X dài hơn": keep the longer wording once
+        if lec.get("position") and ";" in lec["position"]:
+            parts = [x.strip() for x in lec["position"].split(";")]
+            lec["position"] = "; ".join(x for x in parts if not any(o != x and o.lower().startswith(x.lower()) for o in parts))
     return {"faculties": faculties, "departments": list(uniq.values()), "lecturers": list(lecturers.values()),
             "programs": programs, "achievements": achievements}
 

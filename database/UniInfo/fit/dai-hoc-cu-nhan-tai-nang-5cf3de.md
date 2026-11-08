@@ -3,12 +3,13 @@ source_url: https://www.fit.hcmus.edu.vn/dai-hoc/cu-nhan-tai-nang
 site: fit
 site_name: Khoa Công nghệ Thông tin
 title: "Cử nhân tài năng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM"
-fetched_at: 2026-11-09T00:20:11+07:00
-sha256: 6d116729633427c16ea9c3ffe9709e9c29f2b9803baff23e59561d76468f6409
+fetched_at: 2026-11-09T01:05:17+07:00
+sha256: 5407c8d3027233672bdbf42d9538530761917220c834ebf67ad1a2c26a2ff474
 ---
 
 # Cử nhân tài năng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM
 
+# Chương trình Cử nhân Tài năng
 Chương trình đào tạo Cử nhân tài năng (4 năm) được xây dựng dựa trên chương trình đại học Chính quy Chuẩn, bổ sung kiến thức khoa học nền tảng và chuyên ngành nâng cao theo định hướng nghiên cứu.
 Mục tiêu của chương trình nhằm tuyển chọn, bồi dưỡng và tạo điều kiện phát triển cho những sinh viên ưu tú có thể trở thành những nhà khoa học, các chuyên gia có trình độ chuyên môn cao, thông qua đó đào tạo nguồn nhân lực chất lượng cao cho khu vực và cả nước.
 Sinh viên được học với môi trường lớp nhỏ (~40SV), được giảng dạy và hướng dẫn nghiên cứu bởi đội ngũ giảng viên giàu kinh nghiệm.

@@ -3,11 +3,13 @@ source_url: https://www.fit.hcmus.edu.vn/dai-hoc
 site: fit
 site_name: Khoa Công nghệ Thông tin
 title: "Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM"
-fetched_at: 2026-11-09T00:20:07+07:00
-sha256: dcdc640702d0349111e7465c1beabb53e29c0125da23ae7fce349c57ab48c526
+fetched_at: 2026-11-09T01:04:53+07:00
+sha256: b5a3fa6325ed1a855a77c112ac30e71aefbcaa55f3801d2479e567402a00d172
 ---
 
 # Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM
+
+# ĐÀO TẠO ĐẠI HỌC
 
 #### MỤC TIÊU CHUNG CỦA ĐÀO TẠO ĐẠI HỌC
 Mục tiêu của chương trình đào tạo nhằm đào tạo ra các sinh viên tốt nghiệp:

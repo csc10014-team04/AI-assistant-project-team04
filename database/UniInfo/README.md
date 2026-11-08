@@ -9,8 +9,10 @@ Rules, sources and limits are in [`sourceCode/Database/knowledgebase/README.md`]
 | `index.json` | list of every collected page (site, url, title, file, fetched_at, sha256, size) |
 | `structured/*.json` | rows extracted from the pages, ready for the `kb_*` tables: `faculties`, `departments`, `lecturers`, `programs`, `achievements` (each row has a `source_url`) |
 
-Site ids: `hcmus` (university), `fit` (Information Technology), `fbb` (Biology - Biotechnology), `math` (Mathematics and Computer Science). `chemistry` has no folder: its site returned only an error screen.
+Site ids: `hcmus` (university), `fit` (Information Technology, the focus site), `fbb` (Biology - Biotechnology), `math` (Mathematics and Computer Science). `chemistry` has no folder: its site returned only an error screen.
 
 Phone numbers and e-mail addresses were removed from the text when it was saved. Only public pages were read, with `robots.txt` obeyed.
 
 Refresh: `kb_crawler.py` (pages), then `kb_extract.py` (structured JSON), then `kb_load.py` (MySQL).
+
+The crawler is currently focused on the pages listed in `sourceCode/Database/knowledgebase/sources.json` (`seed_urls`) for `fit` and `hcmus`; `itsm-fit.hcmus.edu.vn` (an IT helpdesk app, noindex, script-built) is deliberately not collected.

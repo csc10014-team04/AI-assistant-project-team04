@@ -98,23 +98,32 @@ def extract_links(html: str, page_url: str) -> list[tuple[str, str]]:
     return out
 
 
-def extract_page(html: str) -> tuple[str, str]:
-    """returns (title, markdown-ish text). Keeps headings, paragraphs, lists and simple tables."""
+def extract_page(html: str, content_selector: str | None = None) -> tuple[str, str]:
+    """returns (title, markdown-ish text). Keeps headings, paragraphs, lists and simple tables.
+    content_selector (CSS, optional, from sources.json) names the element that holds the page content on a given site."""
     soup = BeautifulSoup(html, "html.parser")
     title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
     for tag in soup.find_all(NOISE_TAGS):
+        if tag.name in ("header", "footer") and tag.find_parent("article"):
+            continue  # an article's own header holds its title (list pages); only page-level headers are menus
         tag.decompose()
     for tag in soup.find_all(True):
         if tag.decomposed:  # already removed together with a noisy parent
             continue
-        marker = " ".join(filter(None, [" ".join(tag.get("class") or []), tag.get("id") or ""])).lower()
-        if marker and any(h in marker for h in NOISE_HINTS):
+        tokens = [t.lower() for t in (tag.get("class") or []) + [tag.get("id") or ""] if t]
+        # a hint must START a class / id word ("sidebar", "sidebar-left", "main-menu" does not count as "r_sidebar" would):
+        # layout classes such as "content_wrap r_sidebar" wrap the real content and must not be removed
+        if tokens and any(re.match(rf"(?:[a-z]+[-_])?{h}", t) for t in tokens for h in NOISE_HINTS):
+            if tag.find(["article", "h1"]) or len(tag.find_all("p")) >= 3:
+                continue  # it contains real content: keep it
             tag.decompose()
-    root = soup.find("main") or soup.find("article") or soup.find(id=re.compile("content|main", re.I)) or soup.body or soup
+    chosen = soup.select_one(content_selector) if content_selector else None
+    root = chosen or (soup.find("main") or soup.find("article") or soup.find(id=re.compile("content|main", re.I)) or soup.body or soup)
+    raw_len = len(re.sub(r"\s+", " ", root.get_text(" ")).strip())
     lines: list[str] = []
     seen: set[str] = set()
-    for el in root.find_all(["h1", "h2", "h3", "h4", "p", "li", "tr", "td", "div"], recursive=True):
-        if el.name == "div" and el.find(["p", "li", "tr", "h1", "h2", "h3", "h4", "div"]):
+    for el in root.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "tr", "td", "dt", "dd", "blockquote", "div"], recursive=True):
+        if el.name == "div" and el.find(["p", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "div"]):
             continue  # only leaf divs; their children are visited separately
         if el.name == "td" and el.find_parent("tr"):
             continue  # cells are read through their row
@@ -129,13 +138,26 @@ def extract_page(html: str) -> tuple[str, str]:
         if len(text) < 3 or text in seen:
             continue
         seen.add(text)
-        if el.name in ("h1", "h2", "h3", "h4"):
+        if el.name in ("h1", "h2", "h3", "h4", "h5", "h6"):
             lines.append(f"\n{'#' * int(el.name[1])} {text}")
         elif el.name == "li":
             lines.append(f"- {text}")
         else:
             lines.append(text)
-    body = redact_contacts("\n".join(lines).strip())
+    body = "\n".join(lines).strip()
+    if raw_len >= 1500 and len(body) < 0.12 * raw_len:
+        # the template hides its content in elements the rules above skip: fall back to the plain text lines
+        # of the page (short menu items are dropped; long lines and lines that look like names or roles are kept)
+        plain = [re.sub(r"\s+", " ", ln).strip() for ln in root.get_text("\n").splitlines()]
+        seen_lines: set[str] = set()
+        kept = []
+        for ln in plain:
+            if len(ln) >= 3 and ln not in seen_lines and (len(ln) >= 25 or re.match(r"^(GS|PGS|TS|ThS|CN|KS)\b", ln) or ":" in ln):
+                seen_lines.add(ln)
+                kept.append(ln)
+        if sum(len(x) for x in kept) > len(body):
+            body = "\n".join(kept)
+    body = redact_contacts(body)
     return title, re.sub(r"\n{3,}", "\n\n", body)
 
 
@@ -207,30 +229,46 @@ def crawl_site(site: dict, cfg: dict, max_pages: int | None, out_dir: Path, log=
     log(f"[{site['id']}] robots.txt read; delay {fetcher.delay:.0f}s between requests")
 
     limit = max_pages or site["max_pages"]
-    frontier: list[tuple[int, int, str]] = [(0, 0, base)]  # (-score, depth, url)
-    queued = {base}
+    seeds = site.get("seed_urls") or [base]
+    follow = site.get("follow", "site")
+    max_depth = site.get("max_depth", 2)
+    prefixes = [urlparse(u).path.rstrip("/") for u in seeds if urlparse(u).path.strip("/")]
+    order = iter(range(10**6))
+    frontier: list[tuple[int, int, int, str]] = [(-1000, 0, next(order), u) for u in seeds]  # (-score, depth, order, url)
+    queued = set(seeds)
+
+    def may_follow(link: str) -> bool:
+        if follow == "none":
+            return False
+        if follow == "seed_paths":
+            path = urlparse(link).path.rstrip("/")
+            return any(path == pref or path.startswith(pref + "/") for pref in prefixes)
+        return True
     index_path = out_dir / "index.json"
     previous = {p["url"]: p for p in json.loads(index_path.read_text(encoding="utf-8"))["pages"]} if index_path.is_file() else {}
     site_dir = out_dir / site["id"]
     site_dir.mkdir(parents=True, exist_ok=True)
     collected: list[dict] = []
 
-    while frontier and len(collected) < limit:
-        frontier.sort(key=lambda t: (t[0], t[1]))
-        _, depth, url = frontier.pop(0)
+    max_fetches = site.get("max_fetches", limit * 3)  # pages that are skipped (too short, errors) still cost a request
+    fetched_count = 0
+    while frontier and len(collected) < limit and fetched_count < max_fetches:
+        frontier.sort(key=lambda t: t[:3])
+        _, depth, _, url = frontier.pop(0)
         if not robots.can_fetch(cfg["user_agent"], url):
             log(f"[{site['id']}] robots.txt disallows {url}")
             continue
+        fetched_count += 1
         status, ctype, html = fetcher.get(url)
         if status != 200 or "html" not in ctype.lower():
             log(f"[{site['id']}] skip {url} (status {status})")
             continue
-        title, text = extract_page(html)
-        if depth < 2:
+        title, text = extract_page(html, site.get("content_selector"))
+        if depth < max_depth:
             for link, anchor in extract_links(html, url):
-                if link not in queued and is_candidate_url(link, host, cfg):
+                if link not in queued and is_candidate_url(link, host, cfg) and may_follow(link):
                     queued.add(link)
-                    frontier.append((-link_score(link, anchor, cfg["priority_keywords"]), depth + 1, link))
+                    frontier.append((-link_score(link, anchor, cfg["priority_keywords"]), depth + 1, next(order), link))
         if is_error_page(title, text):
             log(f"[{site['id']}] skip {url}: it is an error page, not content")
             continue

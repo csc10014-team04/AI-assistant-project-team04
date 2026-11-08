@@ -208,3 +208,62 @@ def test_KS14_real_crawled_data_loads_and_answers_the_example_questions(kb_db):
     assert {"Đại số", "Giải tích"} <= names
     # every row cites a collected page
     assert kb_db.scalar(select(func.count()).select_from(KbLecturer).where(KbLecturer.source_id.is_(None))) == 0
+
+
+# ---------------- FIT leadership page and research groups ---------------------------------------
+BCN = """### BAN CHỦ NHIỆM KHOA
+
+#### Trưởng Khoa
+
+###### TS. Đinh Bá Tiến
+Email: [email removed]
+
+#### Phó Trưởng Khoa
+
+###### PGS.TS. Nguyễn Văn Vũ
+
+### GIỚI THIỆU CÁC BỘ MÔN
+
+#### Bộ môn Công nghệ phần mềm
+Trưởng Bộ môn PGS. TS. Nguyễn Văn Vũ Email: [email removed]
+Lĩnh vực nghiên cứu : Thiết kế phần mềm, UML, GIS.
+
+#### Bộ môn Hệ thống thông tin
+Trưởng Bộ môn TS. Phạm Nguyễn Cương Email: [email removed]
+Lĩnh vực nghiên cứu : EIS; phân tích thiết kế hệ thống.
+"""
+
+
+def test_KS15_fit_leadership_gives_dean_vice_dean_department_heads_and_research_areas():
+    depts, people = ex.extract_fit_leadership(BCN)
+    by = {p["full_name"]: p for p in people}
+    assert by["Đinh Bá Tiến"]["position"] == "Trưởng khoa" and by["Nguyễn Văn Vũ"]["position"] in {"Phó trưởng khoa", "Trưởng bộ môn Công nghệ phần mềm"}
+    assert by["Phạm Nguyễn Cương"]["position"] == "Trưởng bộ môn Hệ thống thông tin" and by["Phạm Nguyễn Cương"]["academic_title"] == "TS."
+    assert [d["name"] for d in depts] == ["Công nghệ phần mềm", "Hệ thống thông tin"]
+    assert depts[0]["description"] == "Lĩnh vực nghiên cứu: Thiết kế phần mềm, UML, GIS."
+
+
+def test_KS16_research_groups_are_listed_without_the_link_text():
+    body = "# Các nhóm nghiên cứu khoa học\n\n##### Xem chi tiết\n\n###### Xử lý ngôn ngữ tự nhiên\n\n###### Sinh trắc học\n"
+    assert ex.extract_research_groups(body) == ["Xử lý ngôn ngữ tự nhiên", "Sinh trắc học"]
+
+
+def test_KS17_faculty_level_achievements_load_without_a_lecturer_and_do_not_duplicate(kb_db, tmp_path):
+    root = make_uniinfo(tmp_path)
+    group = [{"site_id": "fit", "lecturer": None, "kind": "RESEARCH", "year": None, "title": "Nhóm nghiên cứu: Sinh trắc học", "details": "", "source_url": None}]
+    (root / "structured" / "achievements.json").write_text(json.dumps(group, ensure_ascii=False), encoding="utf-8")
+    assert kb_load.load(kb_db, root)["achievements"] == 1
+    assert kb_load.load(kb_db, root)["achievements"] == 0
+    row = kb_db.scalar(select(KbAchievement))
+    assert row.lecturer_id is None and row.faculty_id is not None and row.kind == "RESEARCH"
+
+
+def test_KS18_real_data_has_the_fit_dean_department_heads_and_research_groups(kb_db):
+    kb_load.load(kb_db, UNIINFO, approve=True)
+    tien = kb_db.scalar(select(KbLecturer).where(KbLecturer.name_folded == "dinh ba tien"))
+    assert tien and "Trưởng khoa" in tien.position and tien.academic_title == "TS."
+    fit = kb_db.scalar(select(KbFaculty).where(KbFaculty.site_id == "fit"))
+    groups = kb_db.scalars(select(KbAchievement).where(KbAchievement.faculty_id == fit.id, KbAchievement.kind == "RESEARCH")).all()
+    assert len(groups) >= 10 and any("Xử lý ngôn ngữ tự nhiên" in g.title for g in groups)
+    heads = kb_db.scalars(select(KbLecturer).where(KbLecturer.faculty_id == fit.id, KbLecturer.position.like("%Trưởng bộ môn%"))).all()
+    assert len(heads) >= 5

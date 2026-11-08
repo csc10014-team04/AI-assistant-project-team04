@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-09T00:39:30+07:00",
+  "generated_at": "2026-11-09T01:15:06+07:00",
   "pages": [
     {
       "site": "fbb",
@@ -375,27 +375,27 @@
       "url": "https://www.fit.hcmus.edu.vn/dai-hoc",
       "title": "Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/dai-hoc-c61202.md",
-      "fetched_at": "2026-11-09T00:20:07+07:00",
-      "sha256": "dcdc640702d0349111e7465c1beabb53e29c0125da23ae7fce349c57ab48c526",
-      "chars": 6075
+      "fetched_at": "2026-11-09T01:04:53+07:00",
+      "sha256": "b5a3fa6325ed1a855a77c112ac30e71aefbcaa55f3801d2479e567402a00d172",
+      "chars": 6094
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chat-luong-cao",
       "title": "Chất lượng cao - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/dai-hoc-chat-luong-cao-410da9.md",
-      "fetched_at": "2026-11-09T00:20:13+07:00",
-      "sha256": "2b0c82ff713d0e7c99ab4d7be1af09b7b0cc7b1e25645edd3006828651d0840b",
-      "chars": 3253
+      "fetched_at": "2026-11-09T01:05:19+07:00",
+      "sha256": "5792b083cc034626e850af6c79737ee6855b6f5a15f5e13120d9d4006bf6f3dc",
+      "chars": 3283
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-chuan",
       "title": "Chương trình chuẩn - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/dai-hoc-chuong-trinh-chuan-8bf9c1.md",
-      "fetched_at": "2026-11-09T00:04:55+07:00",
-      "sha256": "db741042707aaafb7d7eddcdb20f078e48342fec9b3300362bc08a1b399eac5b",
-      "chars": 2936
+      "fetched_at": "2026-11-09T01:05:05+07:00",
+      "sha256": "a61d6d1020050017dfd36f2aea8d078bdd1b33abcdecd8679f24ef5b32bd7409",
+      "chars": 3349
     },
     {
       "site": "fit",
@@ -447,18 +447,18 @@
       "url": "https://www.fit.hcmus.edu.vn/dai-hoc/cu-nhan-tai-nang",
       "title": "Cử nhân tài năng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/dai-hoc-cu-nhan-tai-nang-5cf3de.md",
-      "fetched_at": "2026-11-09T00:20:11+07:00",
-      "sha256": "6d116729633427c16ea9c3ffe9709e9c29f2b9803baff23e59561d76468f6409",
-      "chars": 1966
+      "fetched_at": "2026-11-09T01:05:17+07:00",
+      "sha256": "5407c8d3027233672bdbf42d9538530761917220c834ebf67ad1a2c26a2ff474",
+      "chars": 1998
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/dai-hoc/thong-tin-mon-hoc",
       "title": "Thông tin môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/dai-hoc-thong-tin-mon-hoc-46e23b.md",
-      "fetched_at": "2026-11-09T00:18:33+07:00",
-      "sha256": "22b80563f49e8cd4912441b50ee1e4a7e6f844755458a42a3e58c7b5bad6f0c6",
-      "chars": 4260
+      "fetched_at": "2026-11-09T01:03:46+07:00",
+      "sha256": "2b81a328b77421a25310e0b4892ce361dddfe98a51a8e340cd2fd4df3b74e1ed",
+      "chars": 4377
     },
     {
       "site": "fit",
@@ -480,39 +480,48 @@
     },
     {
       "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa",
+      "title": "Lãnh đạo Khoa - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-bcn-khoa-fbce86.md",
+      "fetched_at": "2026-11-09T01:04:43+07:00",
+      "sha256": "9ff46d11eb6abacd2892b0b141029bf009047bda347c6dc358a31200f5aec5c9",
+      "chars": 1911
+    },
+    {
+      "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bo-phan-ho-tro",
       "title": "Các bộ phận hỗ trợ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/gioi-thieu-bo-phan-ho-tro-72b189.md",
-      "fetched_at": "2026-11-09T00:19:21+07:00",
-      "sha256": "91d1f180ef38aa07f4d1581588060522020335b40192d06d03129237965d000b",
-      "chars": 318
+      "fetched_at": "2026-11-09T01:04:51+07:00",
+      "sha256": "2712dbd4f9f01d9d0264015dff1ea01414d1d588c61c83c6af2c77a180ce4100",
+      "chars": 548
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/gioi-thieu-chung",
       "title": "Giới thiệu chung - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/gioi-thieu-chung-fa89e7.md",
-      "fetched_at": "2026-11-09T00:18:49+07:00",
-      "sha256": "04fb72226c4e719eacefe15b94676e24456b0584b7cbb61ba77e9bb516c2e51b",
-      "chars": 2078
+      "fetched_at": "2026-11-09T01:04:41+07:00",
+      "sha256": "fe6608a447b6ecb8e7a8732a0c49dd66e0449e333b751f6ae3ea0daecc245bff",
+      "chars": 5194
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/co-so-vat-chat",
       "title": "Cơ sở vật chất - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/gioi-thieu-co-so-vat-chat-321292.md",
-      "fetched_at": "2026-11-09T00:19:17+07:00",
-      "sha256": "54abae1091e7a5e3b99009e23a3087f7681b858df0c42068d46cd9e2ab41d086",
-      "chars": 1991
+      "fetched_at": "2026-11-09T01:04:47+07:00",
+      "sha256": "3bca5e578c7cafcfff194eb1fd46b747d4e72fa1590f72fa2f92119827984936",
+      "chars": 9134
     },
     {
       "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/hop-tac-doanh-nghiep",
       "title": "Hợp tác doanh nghiệp - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/gioi-thieu-hop-tac-doanh-nghiep-116b23.md",
-      "fetched_at": "2026-11-09T00:19:19+07:00",
-      "sha256": "b49eb6ad7e3743f8b0cfad48b725aafa2392e39871bc2c29de82c3141eef8907",
-      "chars": 734
+      "fetched_at": "2026-11-09T01:04:49+07:00",
+      "sha256": "76faf8a0ffb913d703fc5313e45ab52e46b059735a6604102487b71b7306342c",
+      "chars": 8280
     },
     {
       "site": "fit",
@@ -525,12 +534,39 @@
     },
     {
       "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/",
+      "title": "Trang chủ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/home-4edf0d.md",
+      "fetched_at": "2026-11-09T01:04:40+07:00",
+      "sha256": "8b2dd517cdd1cc0f42820195299276992abe463a19f22218295ccec46214465b",
+      "chars": 55613
+    },
+    {
+      "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/cong-bo-khoa-hoc",
       "title": "Công bố khoa học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/nghien-cuu-cong-bo-khoa-hoc-4e79e7.md",
       "fetched_at": "2026-11-09T00:19:13+07:00",
       "sha256": "52b573eaa9a64de936c62378e715d5bd847b5b239d32db7eabc2467ab1e9d9a6",
       "chars": 508078
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/cong-trinh-khoa-hoc",
+      "title": "Công trình NCKH - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-cong-trinh-khoa-hoc-d0c6e1.md",
+      "fetched_at": "2026-11-09T00:52:42+07:00",
+      "sha256": "e3fefd3b9b97ad30e842d3bf9e7c2e8d369d2535c3c7d49e46f980c64e10b847",
+      "chars": 26210
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu",
+      "title": "Nhóm nghiên cứu - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-nhom-nghien-cuu-3c0008.md",
+      "fetched_at": "2026-11-09T01:04:59+07:00",
+      "sha256": "d81d8d4b24bfc99f6bd5a14d751c591a1744d2b1dbd5cb49be40f4f5e44db57f",
+      "chars": 662
     },
     {
       "site": "fit",
@@ -585,6 +621,15 @@
       "fetched_at": "2026-11-09T00:18:43+07:00",
       "sha256": "ac474d152cbcd11e9979b2fbd5fd1c32a975390c196db85994ee953e5d153dcc",
       "chars": 403
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sinh-vien/hoat-dong",
+      "title": "Hoạt động sinh viên - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sinh-vien-hoat-dong-766d2f.md",
+      "fetched_at": "2026-11-09T01:04:58+07:00",
+      "sha256": "c13baaa4d6fe27bbdccdae7de705cb5daf3e378da749f56b5c3d331408015344",
+      "chars": 12489
     },
     {
       "site": "fit",
@@ -714,12 +759,93 @@
     },
     {
       "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc",
+      "title": "Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tuyen-sinh-dai-hoc-62da55.md",
+      "fetched_at": "2026-11-09T00:52:36+07:00",
+      "sha256": "be23444cfbcf5c10d0cd1f28393df0cfa596c3df1c9647fa4b3c0a71dce9a48f",
+      "chars": 6812
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc/hoc-bong-2026",
+      "title": "Thông tin học bổng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tuyen-sinh-dai-hoc-hoc-bong-2026-8fc87a.md",
+      "fetched_at": "2026-11-09T01:05:23+07:00",
+      "sha256": "d75693612ce1abd1815506a6c7475799344a70a81907bdf0808e66b7ac1407bf",
+      "chars": 3190
+    },
+    {
+      "site": "fit",
       "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc/thong-bao",
       "title": "Thông báo tuyển sinh - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
       "file": "fit/tuyen-sinh-dai-hoc-thong-bao-8e1ee2.md",
-      "fetched_at": "2026-11-09T00:19:07+07:00",
-      "sha256": "110e8564cade337c6373baa31838072013c68c6690d6d63c72467eeff5cba60e",
-      "chars": 1272
+      "fetched_at": "2026-11-09T01:03:48+07:00",
+      "sha256": "8f47983845ffa3a8caec7919c51baa32a535f124de0167fc4985c2ded7a431a7",
+      "chars": 1946
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/",
+      "title": "Đào tạo - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-78c278.md",
+      "fetched_at": "2026-11-09T01:14:51+07:00",
+      "sha256": "fb5f7217716ee13b635134060be8814726144a46a0b699dad22cefa762143404",
+      "chars": 3551
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dai-hoc/chuong-trinh-dao-tao-dai-hoc/",
+      "title": "Chương trình đào tạo Đại học - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dai-hoc-chuong-trinh-dao-tao-dai-hoc-b1510c.md",
+      "fetched_at": "2026-11-09T01:12:51+07:00",
+      "sha256": "20526ea6540ed8ccc9af6414787c86992748c4be5dd544b6c89639f2939a51db",
+      "chars": 3932
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dai-hoc/thong-tin-danh-cho-sinh-vien/",
+      "title": "Thông tin dành cho sinh viên - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dai-hoc-thong-tin-danh-cho-sinh-vien-912dc2.md",
+      "fetched_at": "2026-11-09T01:13:01+07:00",
+      "sha256": "ce3bc98d8d3ab20863f8f1bf118a6f4807bc1a51ef44722d0d2a0c021a4bffb0",
+      "chars": 3428
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dao-tao-tu-xa/",
+      "title": "Đào tạo từ xa - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dao-tao-tu-xa-0ec66e.md",
+      "fetched_at": "2026-11-09T01:15:01+07:00",
+      "sha256": "c641cf203f7af9530868b387710da86e6a8280627af0598fa4f07463d3656651",
+      "chars": 2630
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/sau-dai-hoc/chuong-trinh-dao-tao-sau-dai-hoc/",
+      "title": "Chương trình đào tạo sau đại học - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-sau-dai-hoc-chuong-trinh-dao-tao-sau-dai-hoc-33eaf3.md",
+      "fetched_at": "2026-11-09T01:13:21+07:00",
+      "sha256": "3b75f150ce7155da1a3e4514131f9620b7b1801720ee5bd0ccd8ba5e6d6f7b11",
+      "chars": 4054
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/chuong-trinh-dao-tao-trinh-do-dai-hoc-khoa-2024/",
+      "title": "Chương trình đào tạo trình độ đại học Khóa 2024 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/chuong-trinh-dao-tao-trinh-do-dai-hoc-khoa-2024-0ca6b0.md",
+      "fetched_at": "2026-11-09T01:13:41+07:00",
+      "sha256": "19fc7849dfd241820253ce7c94372ad6f30a2db0dd34b040491b9d979957ebd5",
+      "chars": 1178
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/chuong-trinh-ket-noi-dao-tao-nganh-kinh-te-dat-dai-giua-truong-dai-hoc-khoa-hoc-tu-nhien-dhqg-hcm-va-truong-dai-hoc-kinh-te-luat-dhqg-hcm/",
+      "title": "Chương trình kết nối đào tạo ngành Kinh tế đất đai giữa Trường Đại học Khoa học tự nhiên và Trường Đại học Kinh tế – Luật - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/chuong-trinh-ket-noi-dao-tao-nganh-kinh-te-dat-dai-giua-truong-dai-hoc-khoa-hoc--472791.md",
+      "fetched_at": "2026-11-09T01:13:51+07:00",
+      "sha256": "ecc97f2ddbcc222bf188f87bd5697989d7b9730cd3eeb3c0ab66124f9a006e08",
+      "chars": 2635
     },
     {
       "site": "hcmus",
@@ -777,6 +903,15 @@
     },
     {
       "site": "hcmus",
+      "url": "https://hcmus.edu.vn/",
+      "title": "University of Science - VNUHCM",
+      "file": "hcmus/home-f7bd75.md",
+      "fetched_at": "2026-11-09T01:12:41+07:00",
+      "sha256": "9020c85894a974bcf96b596db9e22ed604e3314ce729cc0f1d5e278fc975cf75",
+      "chars": 2844
+    },
+    {
+      "site": "hcmus",
       "url": "https://hcmus.edu.vn/khoa-vien/",
       "title": "Các Khoa và Viện đào tạo - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
       "file": "hcmus/khoa-vien-9e2dad.md",
@@ -792,6 +927,33 @@
       "fetched_at": "2026-11-09T00:14:46+07:00",
       "sha256": "b7b34947ec66e955d57828da744fae0c8cfca32f1e6a24605fc2a0ac50abc431",
       "chars": 973
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/postech-call-for-2026-postech-summer-program-research-intensive/",
+      "title": "[POSTECH] Call for 2026 POSTECH Summer Program (Research Intensive) - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/postech-call-for-2026-postech-summer-program-research-intensive-1eea72.md",
+      "fetched_at": "2026-11-09T01:14:11+07:00",
+      "sha256": "97f7a4629b329dedcc6e8c280e1d0755d7e1e89f9aa7502cdcf9099a8e3fe36e",
+      "chars": 3268
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/thong-bao-buoi-noi-chuyen-gioi-thieu-chuong-trinh-vef-2-0-hoc-ky-fall-2027/",
+      "title": "[THÔNG BÁO] BUỔI NÓI CHUYỆN GIỚI THIỆU CHƯƠNG TRÌNH VEF 2.0 – HỌC KỲ FALL 2027 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/thong-bao-buoi-noi-chuyen-gioi-thieu-chuong-trinh-vef-2-0-hoc-ky-fall-2027-878cf2.md",
+      "fetched_at": "2026-11-09T01:14:01+07:00",
+      "sha256": "65948ad3827ad0995682038156608c90a4689ec30139ce52b9ae60dd5b3ee192",
+      "chars": 2406
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/thong-bao-nop-ho-so-xet-tot-nghiep-dai-hoc-he-chinh-quy-cac-chuong-trinh-cho-cac-dot-cong-bo-danh-sach-tot-nghiep-thang-9-10-va-11-nam-2025/",
+      "title": "Thông báo nộp hồ sơ xét tốt nghiệp đại học hệ chính quy các chương trình cho các đợt công bố danh sách tốt nghiệp tháng 9, 10 và 11 năm 2025 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/thong-bao-nop-ho-so-xet-tot-nghiep-dai-hoc-he-chinh-quy-cac-chuong-trinh-cho-cac-8fa67f.md",
+      "fetched_at": "2026-11-09T01:13:31+07:00",
+      "sha256": "358e93f6c36b7e8bdd99e4366e5062a5cfd2d2ef54a1e4f2470d426af1a4baf7",
+      "chars": 8919
     },
     {
       "site": "math",
