@@ -102,6 +102,18 @@ class APIClient:
         self._request("/api/v1/auth/login", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
 
+    def oauth_start(self, provider, redirect_uri, on_success, on_failure, on_error):
+        """provider = "google" | "github". Success body: {"authorize_url", "state"}; open the URL in a browser."""
+        from urllib.parse import quote
+        self._request(f"/api/v1/auth/oauth/{provider}/start?redirect_uri={quote(redirect_uri, safe='')}",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def oauth_exchange(self, provider, code, redirect_uri, state, on_success, on_failure, on_error):
+        """Send the code the provider gave back; success body has access_token / user_id / display_name."""
+        payload = {"code": code, "redirect_uri": redirect_uri, "state": state}
+        self._request(f"/api/v1/auth/oauth/{provider}/exchange", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
     # =========================================================================
     # 2. INGESTION
     # =========================================================================

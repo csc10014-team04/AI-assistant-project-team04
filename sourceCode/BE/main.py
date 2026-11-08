@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import os
 
-from routers import assistant, auth, ingestion, proposals, reminders, search, tasks
+from routers import assistant, auth, ingestion, oauth, proposals, reminders, search, tasks
 from services.telemetry import collector
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(oauth.router)
 app.include_router(assistant.router)
 app.include_router(proposals.router)
 app.include_router(tasks.router)
