@@ -1,15 +1,6 @@
 {
-  "generated_at": "2026-11-09T00:30:02+07:00",
+  "generated_at": "2026-11-09T00:39:30+07:00",
   "pages": [
-    {
-      "site": "chemistry",
-      "url": "https://chemistry.hcmus.edu.vn/",
-      "title": "Khoa hóa học - HCMUS",
-      "file": "chemistry/home-dd39ba.md",
-      "fetched_at": "2026-11-09T00:18:19+07:00",
-      "sha256": "4d0871a9c2c41a5d064ff4fe025b4a48f69f7ac892777d88c1af0d3502c30716",
-      "chars": 1459
-    },
     {
       "site": "fbb",
       "url": "https://fbb.hcmus.edu.vn/bo-mon.html",

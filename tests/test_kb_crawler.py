@@ -112,3 +112,10 @@ def test_KB11_non_ascii_links_are_percent_encoded_so_requests_cannot_crash():
     links = kb.extract_links('<a href="/gioi-thieu/tổ-bộ-môn">x</a>', "https://s.edu.vn/")
     assert links[0][0] == "https://s.edu.vn/gioi-thieu/t%E1%BB%95-b%E1%BB%99-m%C3%B4n"
     assert all(ord(c) < 128 for c in links[0][0]) and kb.ascii_url("https://s.edu.vn/a%20b") == "https://s.edu.vn/a%20b"
+
+
+def test_KB12_error_screens_served_with_http_200_are_not_kept():
+    assert kb.is_error_page("Khoa hóa học - HCMUS", "# An error has occurred :-(\n## Usual error causes ...")
+    assert kb.is_error_page("lỗi: 404 Không tìm thấy bài viết", "Bài viết không tồn tại")
+    long_real = "Giới thiệu khoa. " * 400  # a long genuine page that merely mentions an error is kept
+    assert not kb.is_error_page("Giới thiệu", long_real + " page not found")

@@ -1,0 +1,17 @@
+[
+  {
+    "site_id": "fit",
+    "description": "Khoa Công nghệ Thông tin, Trường Đại học Khoa học Tự nhiên (thuộc Đại học Quốc gia TPHCM) là một trong những khoa hàng đầu đào tạo về lĩnh vực Máy tính và Công nghệ thông tin tại Việt Nam. Được thành lập vào năm 1995, Khoa không chỉ là một trong những cơ sở đào tạo trình độ đại học đầu tiên tại Việt Nam trong lĩnh vực Máy tính và Công nghệ thông tin mà còn là một trong những đơn vị lớn nhất cả về số lượng người học lẫn đội ngũ cán bộ giảng dạy. Đồng thời, Khoa còn là một trong những nơi có sự cạnh tranh tuyển sinh đầu vào cao nhất cả nước, chỉ tuyển sinh các thí sinh đạt điểm cao trong các kỳ thi trung học phổ thông quốc gia, đánh giá năng lực ĐHQG-HCM hàng năm và cũng là nơi thu hút các tài năng giành huy chương, giải thưởng trong các cuộc thi lập trình hoặc toán học cấp quốc gia hoặc quốc tế. Khoa có hơn 100 cán bộ giảng viên cơ hữu và nhiều giáo sư, giảng viên thỉnh giảng đến từ các trường đại học nổi tiếng trong và ngoài nước.",
+    "source_url": "https://www.fit.hcmus.edu.vn/gioi-thieu-chung"
+  },
+  {
+    "site_id": "math",
+    "description": "Khoa Toán – Tin học, Trường Đại học Khoa học tự nhiên, Đại học Quốc gia Thành phố Hồ Chí Minh, là đơn vị có bề dày truyền thống trong đào tạo và nghiên cứu Toán học tại khu vực phía Nam, đồng thời phát triển mạnh các lĩnh vực Toán ứng dụng, Toán tin, Khoa học dữ liệu và Thống kê.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu"
+  },
+  {
+    "site_id": "fbb",
+    "description": "Thuộc Trường Đại học Khoa học tự nhiên, ĐHQG‑HCM, Khoa Sinh học – Công nghệ Sinh học là một trong những đơn vị chủ lực trong lĩnh vực khoa học cơ bản và ứng dụng tại miền Nam. Mục tiêu trọng yếu là đào tạo nhân lực chất lượng cao trong lĩnh vực sinh học và công nghệ sinh học. Thực hiện nghiên cứu ứng dụng, chuyển giao công nghệ và gắn kết chặt chẽ giữa học thuật và doanh nghiệp.",
+    "source_url": "https://fbb.hcmus.edu.vn/ve-khoa-sinh-hoc-cong-nghe-sinh-hoc.html"
+  }
+]

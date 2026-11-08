@@ -17,7 +17,7 @@ from pathlib import Path
 
 KB_DIR = Path(__file__).resolve().parent.parent
 BE_DIR = KB_DIR.parent.parent / "BE"
-DATA_DIR = KB_DIR / "data"
+DATA_DIR = KB_DIR.parents[2] / "database" / "UniInfo"
 
 
 def load(data_dir: Path = DATA_DIR, site: str | None = None, dry_run: bool = False, rag_dir: Path | None = None) -> dict:

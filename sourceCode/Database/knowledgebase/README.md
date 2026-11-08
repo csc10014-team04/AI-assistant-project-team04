@@ -6,7 +6,7 @@ It is filled by a polite web collector (`crawler/`) from the five official websi
 (that is in [`../user_data`](../user_data/README.md)).
 
 ```
- official websites ──► crawler/kb_crawler.py ──► data/<site>/*.md + data/index.json ──► load_into_backend_kb.py ──► backend search index ──► AI answer + source link
+ official websites ──► crawler/kb_crawler.py ──► database/UniInfo/<site>/*.md + index.json ──► load_into_backend_kb.py ──► backend search index ──► AI answer + source link
    (public pages)         (robots.txt obeyed)        (readable text, contacts removed)        (one-time / on refresh)        (/api/v1/search/academic/ask)
 ```
 
@@ -17,30 +17,34 @@ It is filled by a polite web collector (`crawler/`) from the five official websi
 | `hcmus` | https://hcmus.edu.vn/ | University (Trường ĐH Khoa học Tự nhiên, ĐHQG-HCM): organisation, councils, faculties and institutes | **8** (limit 12) | `Crawl-delay: 10`, nothing disallowed. The crawler waits 10 s per request, so this site is slow. Most of its other pages are short news notices with too little text, so the run was stopped at 8 useful pages. |
 | `fit` | https://www.fit.hcmus.edu.vn/ | Faculty of Information Technology: staff list, programmes (standard, advanced...), news and achievements | **40** | none published (the server answers an HTML error page) |
 | `fbb` | https://fbb.hcmus.edu.vn/ | Faculty of Biology - Biotechnology | **40** | disallows `/admin/`, `/cache/`, `/includes/`... and query URLs |
-| `chemistry` | https://chemistry.hcmus.edu.vn/ | Faculty of Chemistry | **1** (home page only) | disallows `/api/account`, `/api/users/`, `/management/`. The site is built by scripts in the browser, so a simple downloader sees almost no text (see section 5). |
+| `chemistry` | https://chemistry.hcmus.edu.vn/ | Faculty of Chemistry | **0** (its home page is only an error screen) | disallows `/api/account`, `/api/users/`, `/management/`. The site is built by scripts in the browser, so a simple downloader receives an error screen instead of content; the crawler recognises and discards such pages (see section 5). |
 | `math` | https://www.math.hcmus.edu.vn/ | Faculty of Mathematics and Computer Science: programmes, staff, departments | **40** | none published |
 
-Total: **129 pages, about 940,000 characters, 1.4 MB**, which the loader turns into about 3,300 searchable chunks.
+Total: **128 pages, about 940,000 characters, 1.4 MB**, which the loader turns into about 3,300 searchable chunks.
 
 The list, the page limits and the keywords that decide which pages are visited first are in [`sources.json`](sources.json).
-The exact result of the last run (how many pages per site, when, size, hash) is in [`data/index.json`](data/index.json).
+The collected pages are stored in **[`database/UniInfo/`](../../../database/UniInfo/README.md)** at the repository root. The exact result of the last run (pages per site, when, size, hash) is in [`database/UniInfo/index.json`](../../../database/UniInfo/index.json).
 
 ## 2. Folder layout
 
 ```
-knowledgebase/
+sourceCode/Database/knowledgebase/        the TOOLS and the rules (code, no collected content)
 ├── README.md              this file
 ├── sources.json           sites, limits, user agent, priority keywords, skipped file types
 ├── search_engine_schema.sql   MySQL tables (kb_*) for the search engine; separate from the scheduling init.sql
 ├── requirements.txt       beautifulsoup4 (only needed for collecting, not for the backend)
-├── crawler/
-│   ├── README.md
-│   ├── kb_crawler.py      the collector
-│   └── load_into_backend_kb.py   puts the collected pages into the backend search index
-└── data/                  OUTPUT of the crawler (do not edit by hand)
+└── crawler/
     ├── README.md
-    ├── index.json         every collected page: site, url, title, file, fetched_at, sha256, chars
-    ├── hcmus/ fit/ fbb/ chemistry/ math/    one Markdown file per page
+    ├── kb_crawler.py      1. collects the pages
+    ├── kb_extract.py      2. turns pages into lecturers / departments / programmes / publications (JSON)
+    ├── kb_load.py         3. puts those rows into the kb_* MySQL tables
+    └── load_into_backend_kb.py   (alternative) puts the pages into the backend's text search index
+
+database/UniInfo/                         the COLLECTED DATA (output of the tools; see its README)
+├── README.md
+├── index.json             every collected page: site, url, title, file, fetched_at, sha256, chars
+├── hcmus/ fit/ fbb/ math/ one Markdown file per page (chemistry: none, see section 5)
+└── structured/            faculties.json, departments.json, lecturers.json, programs.json, achievements.json
 ```
 
 ### Format of a collected page
@@ -68,11 +72,12 @@ Headings (`#`), paragraphs, bullet lists and tables (`cell | cell`) are kept; me
 pip install -r sourceCode/Database/knowledgebase/requirements.txt          # once
 python sourceCode/Database/knowledgebase/crawler/kb_crawler.py --site fit --max-pages 5    # quick trial
 python sourceCode/Database/knowledgebase/crawler/kb_crawler.py                              # all sites (about 10 minutes, mostly waiting)
+python sourceCode/Database/knowledgebase/crawler/kb_extract.py                              # pages -> structured JSON rows
 ```
 - A re-run keeps the old date of pages whose text did not change and replaces the ones that did.
 - `--site <id>` collects one site only; `--max-pages N` limits each site.
 - Run it **at most about once a month**; faculty pages change slowly and the sites are small servers.
-- Output stays in this folder, so it is easy to review with `git diff`.
+- Output goes to `database/UniInfo/`, so it is easy to review with `git diff`.
 
 ### What the collector does and does NOT do (rules)
 - Reads and obeys `robots.txt` (Disallow and Crawl-delay) and waits at least 2 seconds between requests.
@@ -99,7 +104,7 @@ Alternative to the loader: upload one page by hand with `POST /api/v1/search/aca
 ## 5. Limits you should know
 
 - **Names and titles, not full profiles.** For example, the IT faculty's staff page lists names with academic titles (GS.TS., PGS.TS., TS.). Per-lecturer pages with courses taught and achievements exist only where the site publishes them as ordinary web pages, and the crawler only reaches the pages it finds by following links within the page limit.
-- **Script-built pages.** A page that is drawn by JavaScript after loading contains almost no text for a simple downloader. The Faculty of Chemistry site is one of these, so few or no pages could be collected from it; the crawler logs "too little text" for such pages. Options: ask the faculty for an export, or add a browser-based collector later.
+- **Script-built pages.** A page that is drawn by JavaScript after loading contains no text for a simple downloader. The Faculty of Chemistry site is one of these: it answered with an error screen, which the crawler discards, so **no Chemistry data exists yet**. Options: ask the faculty for an export, or add a browser-based collector later.
 - **PDFs are skipped** (curricula, decisions, course outlines are often PDFs). They can be added by hand with `/academic/documents`, which can read PDFs.
 - **Search quality.** The index uses a lightweight offline embedding, good for Vietnamese keywords and names but not for deep paraphrases. In a trial with the collected pages, "Khoa Toán - Tin học có những ngành nào" found the right programme page, but a query naming one lecturer returned a staff page of another faculty. That is why exact lecturer and course questions should move to the structured tables in section 7.
 - **Freshness.** Every page carries `fetched_at`. Timetables, teaching assignments and staff lists change each semester.
@@ -143,7 +148,38 @@ How to apply it:
   The file is idempotent (`IF NOT EXISTS`, `INSERT IGNORE`), so running it twice is safe.
 - Check: `SHOW TABLES LIKE 'kb_%';` lists 8 tables, and `SELECT short_name, name FROM kb_faculties;` shows the 4 seeded faculties.
 
-Status: the tables exist and are seeded with the faculties only. Filling lecturers, courses and achievements from `data/*.md` (a parser per site plus a review step) and the lookup code that answers "Thay nay day mon gi?" are **not built yet**. The file was syntax-checked with a MySQL parser and is covered by static tests, but it was **not executed on a MySQL server** (no Docker on the machine that wrote it): run it once on the host and run the check above.
+### 7.1 Filling the tables (done for the five sites)
+
+```powershell
+python sourceCode/Database/knowledgebase/crawler/kb_extract.py     # database/UniInfo/<site>/*.md  ->  database/UniInfo/structured/*.json
+python sourceCode/Database/knowledgebase/crawler/kb_load.py --dry-run   # fills the tables, then rolls back, prints the counts
+python sourceCode/Database/knowledgebase/crawler/kb_load.py             # rows loaded as PENDING (not shown to users yet)
+python sourceCode/Database/knowledgebase/crawler/kb_load.py --approve   # after a person checked the JSON: mark them APPROVED
+```
+`kb_load.py` connects like the backend does (`DATABASE_URL` or `DB_*`, port 3307), so run it on the host or with `$env:DATABASE_URL` pointing at the host. It is safe to run again: rows are matched by their unique keys and updated, never duplicated. The Python models are in `sourceCode/BE/services/kb_models.py` (own base class, separate from the scheduling models).
+
+What the extractors found (2026-11-09):
+
+| Table | Rows | From where |
+|---|---|---|
+| `kb_sources` | 128 | every collected page |
+| `kb_faculties` | 4 (3 with a description) | seeded by the SQL file; Chemistry has no text page |
+| `kb_departments` | 12 | FIT: from "Trưởng / Phó trưởng Bộ môn X" in staff bios (5). Math: its 7 department blocks |
+| `kb_lecturers` | 340 (FIT 270, Math 70) | FIT staff list and bios; Math "Đội ngũ chuyên môn". 41 have a bio, 77 a department, 17 a head position |
+| `kb_programs` | 17 | FIT programme pages (standard, advanced, high quality, talented bachelor, AI, Vietnamese-French: 6) and Math programme pages (standard, English-enhanced and talented-bachelor programmes, per major: 11) |
+| `kb_achievements` | 438 | FIT "Công bố khoa học": each publication is linked to the lecturers named as authors (matched by name) |
+| `kb_courses`, `kb_course_lecturers` | **0** | the faculties do not publish course lists or who teaches what as web text (they are PDFs or script-built pages) |
+
+Honest limits of these rows
+- A lecturer's **bio text** keeps the faculty's own wording, including the bulleted list of subjects and research topics under it ("Môn học / lĩnh vực: ..."). The page does not say which bullets are courses and which are research topics, so they are **not** stored as courses.
+- Publication authors are matched to lecturers by their name; two lecturers with the same name would be confused. A publication whose authors are nobody on the FIT list is not stored.
+- Math lecturers have only a rank and department (no bio); the Math page for a programme is a description, not a list of courses. FBB and Chemistry have no lecturer pages as text, so they have no lecturers.
+- Everything starts `PENDING`. Read `database/UniInfo/structured/*.json` (or a sample of the tables) before using `--approve`.
+
+### 7.2 Still not built
+The lookup code that turns "Thầy này dạy môn gì, là ai, có thành tích gì?" into a query on these tables (language-understanding intents plus parameterised queries) is the next step. Until then the same questions can be answered from the text index (section 4).
+
+The SQL file was syntax-checked with a MySQL parser and the loader was run against SQLite, but the tables have **not been executed on a MySQL server** (no Docker on the machine that wrote them): run `search_engine_schema.sql`, then `kb_load.py --dry-run`, once on the host.
 
 ## 8. Troubleshooting
 

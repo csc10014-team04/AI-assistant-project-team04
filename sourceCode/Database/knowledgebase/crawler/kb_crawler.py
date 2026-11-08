@@ -5,8 +5,8 @@ What it does, per site listed in ../sources.json:
   1. reads robots.txt and obeys it (Disallow rules and Crawl-delay);
   2. fetches the home page, finds same-site links, and visits the most useful ones first (faculty
      introduction, staff, departments, programmes, courses, achievements) up to `max_pages`;
-  3. extracts the readable text of each page and saves it as Markdown in ../data/<site_id>/;
-  4. writes ../data/index.json (what was collected, when, content hash) so a re-run skips unchanged pages.
+  3. extracts the readable text of each page and saves it as Markdown in <repo>/database/UniInfo/<site_id>/;
+  4. writes database/UniInfo/index.json (what was collected, when, content hash) so a re-run skips unchanged pages.
 
 Rules it follows: public pages only; never logs in; skips URLs with query strings, files (PDF, images...),
 login/admin paths; waits between requests; redacts e-mail addresses and phone numbers from the saved text.
@@ -36,7 +36,8 @@ from bs4 import BeautifulSoup
 
 KB_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = KB_DIR / "sources.json"
-DATA_DIR = KB_DIR / "data"
+# collected pages live outside sourceCode, at <repo>/database/UniInfo
+DATA_DIR = KB_DIR.parents[2] / "database" / "UniInfo"
 VN_TZ = timezone(timedelta(hours=7))
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -138,6 +139,15 @@ def extract_page(html: str) -> tuple[str, str]:
     return title, re.sub(r"\n{3,}", "\n\n", body)
 
 
+ERROR_PAGE_HINTS = ("an error has occurred", "page not found", "404 not found", "không tìm thấy bài viết", "lỗi: 404", "access denied")
+
+
+def is_error_page(title: str, text: str) -> bool:
+    """some sites answer an error screen with HTTP 200; such a page is not knowledge and must not be saved."""
+    hay = f"{title} {text[:600]}".lower()
+    return len(text) < 3000 and any(h in hay for h in ERROR_PAGE_HINTS)
+
+
 # ----------------------------------------------------------------------------- crawling
 class Fetcher:
     def __init__(self, user_agent: str, max_bytes: int, min_delay: float):
@@ -221,6 +231,9 @@ def crawl_site(site: dict, cfg: dict, max_pages: int | None, out_dir: Path, log=
                 if link not in queued and is_candidate_url(link, host, cfg):
                     queued.add(link)
                     frontier.append((-link_score(link, anchor, cfg["priority_keywords"]), depth + 1, link))
+        if is_error_page(title, text):
+            log(f"[{site['id']}] skip {url}: it is an error page, not content")
+            continue
         if len(text) < 200:
             log(f"[{site['id']}] too little text on {url} ({len(text)} chars); probably a menu or a script-built page")
             continue
@@ -273,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--site", help="only this site id from sources.json")
     ap.add_argument("--max-pages", type=int, help="override max_pages per site")
-    ap.add_argument("--out", type=Path, default=DATA_DIR, help="output folder (default: knowledgebase/data)")
+    ap.add_argument("--out", type=Path, default=DATA_DIR, help="output folder (default: <repo>/database/UniInfo)")
     ap.add_argument("--reindex", action="store_true", help="only rebuild data/index.json from the saved pages")
     args = ap.parse_args(argv)
     cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))

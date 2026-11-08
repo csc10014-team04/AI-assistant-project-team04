@@ -1,0 +1,74 @@
+[
+  {
+    "site_id": "fit",
+    "name": "Khoa học Máy tính",
+    "description": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+  },
+  {
+    "site_id": "fit",
+    "name": "Công nghệ tri thức",
+    "description": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+  },
+  {
+    "site_id": "fit",
+    "name": "Thị giác máy tính",
+    "description": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+  },
+  {
+    "site_id": "fit",
+    "name": "Công nghệ phần mềm",
+    "description": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+  },
+  {
+    "site_id": "fit",
+    "name": "Hệ thống thông tin",
+    "description": "",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien"
+  },
+  {
+    "site_id": "math",
+    "name": "Đại số",
+    "description": "Hướng chuyên môn: Lý thuyết nhóm; Lý thuyết vành và mô-đun; Đại số tính toán; Đại số đồng điều; Đại số giao hoán; Tô pô đại số tính toán; K-lý thuyết; Lý thuyết mã và mật mã.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Giải tích",
+    "description": "Hướng chuyên môn: Giải tích phi tuyến; Phương trình đạo hàm riêng; Phương trình vi phân; Bài toán ngược; Giải tích phức; Giải tích số; Tôpô; Tối ưu hóa; Lý thuyết toán tử; Toán Giải tích trong Vật Lý lượng tử.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Xác suất - Thống kê",
+    "description": "Hướng chuyên môn: Thống kê ứng dụng; Ước lượng phi tham số; Mô hình hỗn hợp; Thống kê sinh học; Bài toán ngược trong thống kê; Tài chính định lượng; Toán bảo hiểm.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Ứng dụng Tin học",
+    "description": "Hướng chuyên môn: Trí tuệ nhân tạo; Học máy Ứng Dụng; Xử lý ngôn ngữ tự nhiên; Thị giác máy tính; Phân tích ảnh y sinh; Học đa phương thức; Học liên kết; Trí tuệ nhân tạo đáng tin cậy; Lý thuyết học máy; Dữ liệu Lớn; Khoa học dữ Liệu.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Tối ưu và Hệ thống",
+    "description": "Hướng chuyên môn: Tối ưu không trơn; Tối ưu vectơ; Tối ưu đa trị; Thuật toán tối ưu; Giải tích biến phân; Giải tích lồi và quy hoạch lồi; Mô hình bài toán tối ưu.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Toán học tính toán",
+    "description": "Hướng chuyên môn: Cơ học vật rắn và chất lưu phức tạp; Mô phỏng số cho vật liệu composite và chất lưu; Phương pháp số cho phương trình vi phân; Tối ưu hóa số; Máy học khoa học.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  },
+  {
+    "site_id": "math",
+    "name": "Giáo dục Toán học",
+    "description": "Hướng chuyên môn: Giáo dục Toán học; Lý thuyết và phương pháp dạy học; Học tập gắn với cộng đồng và phục vụ cộng đồng; Giáo dục STEM.",
+    "source_url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon"
+  }
+]

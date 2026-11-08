@@ -17,7 +17,7 @@ python -m pytest tests -rx                             # also list every known d
 - The AI engine (vLLM) is always simulated: down by default, scripted per test. No GPU needed.
 - Runtime files (AI error log, reminder audit, RAG index) are redirected to pytest temp folders.
 
-## Files and cases (202 tests, 0 expected failures)
+## Files and cases (217 tests, 0 expected failures)
 
 | File | IDs | Covers |
 |---|---|---|
@@ -30,6 +30,7 @@ python -m pytest tests -rx                             # also list every known d
 | `test_fe_fallback.py` | FB-01..06 | client AI timeout and offline manual-picker parsing (P1-9) |
 | `test_fe_notifier.py` | NT-01..08 | local reminder scheduling and delivery audit (P2-9) |
 | `test_kb_crawler.py` | KB-01..11 | knowledge-base collector (offline): text extraction, contact redaction, URL rules, robots.txt, accent folding, loader into the search index |
+| `test_kb_structured.py` | KS-01..14 | structured extraction (lecturers, departments, programmes, publications), loader into the `kb_*` tables (idempotent, PENDING / APPROVED), models versus the SQL file, and the real collected data answering the example questions |
 | `test_search_schema.py` | SS-01..07 | the search-engine SQL file is separate from the scheduling `init.sql`: `kb_` names, no shared table, no cross foreign key, no user data, idempotent, mounted by docker-compose |
 | `test_database_layer.py` | DB-01..20 | `init.sql` ↔ ORM parity (tables, columns, enums), CHECK/UNIQUE constraints, soft-delete helpers, proposal abandonment, docker-compose ports/secrets/volumes, `.env` hygiene |
 | `test_ai_layer.py` | AI-01..20 | NLU through the API (P1-7, P2-1), dirty input (P2-6), ambiguity (P2-3), AI failure fallback + taxonomy log (P1-9, P2-12), privacy (P1-2), RAG isolation (P2-2), proposal abandonment (P2-7), reminder audit (P2-13) |
