@@ -180,9 +180,12 @@ def create_proposal(
     prompt: str,
     now: datetime,
     parent: Proposal | None = None,
+    task: Task | None = None,
+    extra_excluded: list[TimeSlot] | None = None,
 ) -> Proposal | None:
     """
-    input: validated NLU result, the raw prompt, current time, optional parent proposal being rescheduled.
+    input: validated NLU result, the raw prompt, current time, optional parent proposal being rescheduled,
+           optional existing `task` (batch scheduling) and slots already promised to other tasks.
     core logic: find free gaps in the NLU window (respecting sleep/break preferences), choose the best block for
                 the requested part of the day, skip blocks of the parent chain, then store a PROPOSED row.
                 The AI never writes to `events` - only a proposal is created.
@@ -194,11 +197,14 @@ def create_proposal(
         title, duration = task.title, task.duration_minutes
         excluded = _ancestor_slots(db, owner_id, parent)
         fallback_start = from_db_to_vn(parent.start_time).date()
+    elif task is not None:  # an existing pending task (priority queue)
+        title, duration = task.title, task.duration_minutes
+        excluded, fallback_start = [], None
     else:
-        task = None
         title = (nlu.title or "Công việc").strip()[:255]
         duration = nlu.duration_minutes or 60
         excluded, fallback_start = [], None
+    excluded = excluded + list(extra_excluded or [])
 
     window_start, window_end = _search_window(nlu, now_vn, fallback_start)
     gaps = find_user_free_slots(db, owner_id, window_start, window_end, duration)
@@ -342,3 +348,55 @@ def create_manual_event(
     db.flush()
     events, reminders = _create_events(db, owner_id, task, [TimeSlot(start, end)], EventSource.MANUAL, proposal.id)
     return ConfirmResult(proposal, events, reminders)
+
+
+# ---------------------------------------------------------------------------------------------
+# priority queue (P2-5) and edge-case handling for a batch of pending tasks (P2-4)
+# ---------------------------------------------------------------------------------------------
+PRIORITY_LABEL = {1: "cao", 2: "trung bình", 3: "thấp"}
+
+
+def sort_queue(tasks: list[Task]) -> list[Task]:
+    """scheduling order: priority weight first (1 = most important), then oldest task, then id."""
+    return sorted(tasks, key=lambda t: (t.priority, t.created_at or datetime.min, t.id))
+
+
+@dataclass
+class BatchResult:
+    proposals: list[Proposal]
+    unscheduled: list[tuple[Task, str]]  # (task, reason) dropped because no time is left
+
+
+def schedule_pending_tasks(
+    db: Session, owner_id: int, now: datetime, window_start: date | None = None, window_end: date | None = None
+) -> BatchResult:
+    """
+    allocate time to every PENDING task of the user, highest priority first. A task gets the earliest good
+    block (or a split) that does not overlap the classes, the sleep time or blocks already promised to a
+    more important task of this batch. Tasks that no longer fit are returned as `unscheduled` with a reason
+    instead of silently disappearing: the low-priority items are the ones dropped, never the urgent ones.
+    """
+    pending = db.scalars(
+        select(Task).where(Task.owner_id == owner_id, Task.deleted_at.is_(None), Task.status == TaskStatus.PENDING)
+    ).all()
+    waiting = {
+        pid for (pid,) in db.execute(
+            select(Proposal.task_id).where(Proposal.owner_id == owner_id, Proposal.status == ProposalStatus.PROPOSED)
+        )
+    }
+    queue = sort_queue([t for t in pending if t.id not in waiting])
+    promised: list[TimeSlot] = []
+    proposals: list[Proposal] = []
+    dropped: list[tuple[Task, str]] = []
+    for task in queue:
+        nlu = NluResult(
+            intent="schedule_task", title=task.title, duration_minutes=task.duration_minutes,
+            priority=task.priority, window_start=window_start, window_end=window_end,
+        )
+        created = create_proposal(db, owner_id, nlu, task.title, now, task=task, extra_excluded=promised)
+        if created is None:
+            dropped.append((task, f"không còn khoảng trống cho công việc ưu tiên {PRIORITY_LABEL.get(task.priority, task.priority)}"))
+            continue
+        promised.extend(_slots_of(created))
+        proposals.append(created)
+    return BatchResult(proposals, dropped)
