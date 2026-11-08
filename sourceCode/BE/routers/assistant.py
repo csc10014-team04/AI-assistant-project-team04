@@ -23,6 +23,9 @@ class UnderstandResponse(BaseModel):
     nlu: NluResult
     abandoned_proposals: int
     message: str | None = None
+    # optional ui navigation metadata so kivy ChatBubble can render a one-tap redirect button
+    redirect_target: str | None = None
+    redirect_button_label: str | None = None
 
 
 @router.post("/understand", response_model=UnderstandResponse)
@@ -34,8 +37,9 @@ def understand(
     """
     input: authenticated user's free-text prompt (optionally a reschedule follow-up).
     core logic: a new root prompt abandons the user's pending proposals (AGENTS.md section 4), then NLU runs;
-                AI failures are logged to ai_error_logs and returned as fallback_mode=True, never as HTTP 500.
-    output: extracted intent/entities for the scheduling engine and the mobile manual picker.
+                if user asks a schedule/academic question in the AI scheduling chat, return a redirect notice
+                pointing to 'search_home'; AI failures are logged and returned as fallback_mode=True.
+    output: extracted intent/entities, optional redirect_target/redirect_button_label for UI tab switching.
     """
     abandoned = 0
     if body.reschedule_proposal_id is None:
@@ -44,10 +48,28 @@ def understand(
         body.prompt, datetime.now(UTC_TZ), db=db, user_id=current_user.id
     )
     db.commit()
-    message = (
-        "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp." if result.fallback_mode else None
+
+    redirect_target: str | None = None
+    redirect_button_label: str | None = None
+    if result.intent == "query_schedule":
+        message = (
+            "It seems bạn đang muốn tra cứu lịch trình hoặc hỏi đáp học vụ. "
+            "Khung 'Trợ lý AI' chỉ dùng để xếp lịch công việc mới; bạn hãy bấm nút 'Tìm kiếm' để chuyển sang trang Tra cứu nhé."
+        )
+        redirect_target = "search_home"
+        redirect_button_label = "Tìm kiếm"
+    elif result.fallback_mode:
+        message = "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp."
+    else:
+        message = None
+
+    return UnderstandResponse(
+        nlu=result,
+        abandoned_proposals=abandoned,
+        message=message,
+        redirect_target=redirect_target,
+        redirect_button_label=redirect_button_label,
     )
-    return UnderstandResponse(nlu=result, abandoned_proposals=abandoned, message=message)
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
