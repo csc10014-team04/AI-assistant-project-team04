@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 
 import os
 
+from database import get_db
 from routers import assistant, auth, ingestion, oauth, proposals, reminders, search, tasks
 from services.telemetry import collector
 
@@ -43,3 +46,13 @@ app.include_router(search.router)
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/db", tags=["system"])
+def health_db(db: Session = Depends(get_db)) -> dict[str, str]:
+    """unlike /health this really talks to MySQL: 200 when `SELECT 1` works, 503 when the database is down."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(503, f"database unreachable: {type(exc).__name__}") from exc
+    return {"status": "ok", "database": "ok"}

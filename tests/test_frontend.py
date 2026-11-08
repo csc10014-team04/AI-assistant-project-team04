@@ -116,7 +116,6 @@ def test_FE05_status_page_only_calls_the_unauthenticated_health_endpoint(monkeyp
     assert len(urls) == 1 and urls[0].endswith("/health")  # no personal data is requested or sent (P1-2)
 
 
-@pytest.mark.xfail(strict=True, reason="DEFECT-03: frontend/main.py hard-codes the backend IP 26.211.52.63 (breaks on any other network)")
 def test_FE06_backend_address_is_not_hard_coded_in_source():
     src = FE_MAIN.read_text(encoding="utf-8")
     assert not re.search(r"https?://\d+\.\d+\.\d+\.\d+", src), "backend IP is hard-coded; use configuration / env var"
@@ -129,9 +128,9 @@ def _fe_sources() -> str:
     return "\n".join(parts).lower()
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-02 (P1-1): sourceCode/FE is empty - no Android calendar UI exists")
 def test_FE07_android_calendar_project_exists():
-    assert any(FE_DIR.rglob("*.kt")) or any(FE_DIR.rglob("*.java")) or any(FE_DIR.rglob("AndroidManifest.xml"))
+    # a Kivy app is packaged for Android by buildozer, so buildozer.spec is its Android project definition
+    assert (FE_DIR / "buildozer.spec").is_file() or any(FE_DIR.rglob("*.kt")) or any(FE_DIR.rglob("AndroidManifest.xml"))
 
 
 def test_FE08_calendar_renders_busy_and_free_slots():
@@ -165,3 +164,16 @@ def test_FE12_ai_fallback_payload_lets_the_app_open_the_manual_form(client, alic
     body = res.json()
     assert res.status_code == 200 and body["nlu"]["fallback_mode"] is True and body["message"]
     assert body["nlu"]["duration_minutes"] == 180  # form can be pre-filled for the user
+
+
+def test_FE13_android_build_spec_declares_network_and_reminder_permissions():
+    spec = (FE_DIR / "buildozer.spec").read_text(encoding="utf-8")
+    perms = next(l for l in spec.splitlines() if l.startswith("android.permissions"))
+    assert all(p in perms for p in ("INTERNET", "POST_NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"))
+    assert "kivymd" in spec and "plyer" in spec
+    assert not re.search(r"https?://\d+\.\d+\.\d+\.\d+", spec.split("# The backend")[0])  # no IP in the build config
+
+
+def test_FE14_backend_address_can_be_saved_on_the_device():
+    src = (FE_DIR / "api_client.py").read_text(encoding="utf-8")
+    assert "def set_base_url" in src and 'os.getenv("ASSISTANT_API_URL") or saved' in src

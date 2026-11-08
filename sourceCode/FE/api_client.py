@@ -26,9 +26,10 @@ class APIClient:
     def __init__(self):
         # Thuộc tính instance giúp truy cập qua self.base_url
         # in APIClient.__init__ replace the hard-coded address (8000 is the AI engine, the backend is 8080):
-        self.base_url = os.getenv("ASSISTANT_API_URL", "http://127.0.0.1:8080").rstrip("/")
-        # self.base_url = self.BASE_URL
         self.store = JsonStore("auth_session.json")
+        # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
+        saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
+        self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://127.0.0.1:8080").rstrip("/")
 
         # Phục hồi token từ bộ nhớ cục bộ nếu có
         self.access_token = None
@@ -36,6 +37,11 @@ class APIClient:
         self.display_name = None
         self._load_session()
     
+    def set_base_url(self, url):
+        """remember the backend address on the device (settings screen / first-run prompt)."""
+        self.base_url = url.strip().rstrip("/")
+        self.store.put("settings", base_url=self.base_url)
+
     def _load_session(self):
         """Khôi phục token từ lần đăng nhập trước"""
         if self.store.exists("auth"):

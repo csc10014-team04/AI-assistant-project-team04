@@ -1,7 +1,12 @@
 from kivymd.app import MDApp
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
+import os
+
 import requests
+
+# backend address comes from the environment (inside Docker the service name resolves); never hard-code an IP
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8080").rstrip("/")
 
 class UniversityAssistantApp(MDApp):
     def build(self):
@@ -12,8 +17,7 @@ class UniversityAssistantApp(MDApp):
         screen = MDScreen()
         
         try:
-            # Hướng tới backend đang mở trên cổng localhost 8080 của máy chủ
-            response = requests.get("http://26.211.52.63:8080/health", timeout=2.0)
+            response = requests.get(f"{BACKEND_URL}/health", timeout=2.0)
             status_text = f"Trạng thái Backend: {response.json().get('status')}"
         except requests.exceptions.RequestException:
             status_text = "Kết nối Backend Thất bại. Đảm bảo Docker daemon đang hoạt động."
