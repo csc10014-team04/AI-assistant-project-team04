@@ -1,12 +1,12 @@
 """BE-21..BE-40: timetable parser (P1-4), ingestion API, conflict resolution, re-import, data isolation, search engine."""
 import time as _time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
 from conftest import class_row
-from database import VN_TZ
+from database import VN_TZ, to_db_utc
 from models import Course, CsvRowKind, Event, EventDomain, EventKind, EventSource
 from services.parser import export_valid_rows_to_csv, parse_timetable_content
 
@@ -199,3 +199,27 @@ def test_BE40_availability_engine_meets_200ms_budget_for_a_semester():
     t0 = _time.perf_counter()
     find_free_slots(events, datetime(2026, 9, 7, 0, tzinfo=VN_TZ), datetime(2026, 12, 20, 0, tzinfo=VN_TZ), 60)
     assert (_time.perf_counter() - t0) < 0.2
+
+
+
+# ---------------- search by kind and by day (regression for "deadline" / "ngày 9/11" returning nothing) ------------------
+def _seed_search_events(db, owner_id):
+    base = datetime(2026, 11, 9, 9, tzinfo=VN_TZ)
+    db.add(Event(owner_id=owner_id, title="Nộp báo cáo đồ án", kind=EventKind.DEADLINE, source=EventSource.IMPORTED, is_hard=True,
+                 start_time=to_db_utc(base), end_time=to_db_utc(base)))
+    db.add(Event(owner_id=owner_id, title="Thi cuối kỳ Toán", kind=EventKind.EXAM, source=EventSource.IMPORTED, is_hard=True,
+                 start_time=to_db_utc(base + timedelta(days=1)), end_time=to_db_utc(base + timedelta(days=1, hours=2))))
+    db.commit()
+
+
+@pytest.mark.parametrize("query", ["deadline", "hạn chót", "hạn nộp"])
+def test_BE41_deadline_words_find_deadline_events(client, alice, db, query):
+    _seed_search_events(db, alice.id)
+    res = client.get("/api/v1/search/events", headers=alice.h, params={"q": query}).json()
+    assert [e["title"] for e in res["events"]] == ["Nộp báo cáo đồ án"]
+
+
+def test_BE42_a_day_query_returns_that_days_events(client, alice, db):
+    _seed_search_events(db, alice.id)
+    res = client.get("/api/v1/search/events", headers=alice.h, params={"q": "ngày 9/11"}).json()
+    assert [e["title"] for e in res["events"]] == ["Nộp báo cáo đồ án"]

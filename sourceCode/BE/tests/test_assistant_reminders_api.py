@@ -58,10 +58,30 @@ def test_understand_falls_back_logs_and_abandons(client, db_session):
 
 
 def test_reschedule_prompt_does_not_abandon(client, db_session):
+    from datetime import datetime, timedelta
+
+    from database import UTC_TZ, to_db_utc
+    from models import Proposal, ProposalStatus, Task
+
     u = _register(client, "ai_user_2")
+    task = Task(owner_id=u["id"], title="học bài", duration_minutes=60)
+    db_session.add(task)
+    db_session.flush()
+    start = to_db_utc(datetime.now(UTC_TZ) + timedelta(days=1))
+    waiting = Proposal(owner_id=u["id"], task_id=task.id, start_time=start, end_time=start + timedelta(hours=1),
+                       status=ProposalStatus.PROPOSED)
+    db_session.add(waiting)
+    db_session.commit()
     res = client.post("/api/v1/assistant/understand", headers=u["h"],
-                      json={"prompt": "dời sang tối", "reschedule_proposal_id": 1})
-    assert res.json()["abandoned_proposals"] == 0
+                      json={"prompt": "dời sang tối", "reschedule_proposal_id": waiting.id})
+    assert res.status_code == 200 and res.json()["abandoned_proposals"] == 0  # a reschedule is not a new topic
+
+
+def test_reschedule_of_an_unknown_or_foreign_proposal_is_404(client):
+    u = _register(client, "ai_user_3")
+    res = client.post("/api/v1/assistant/understand", headers=u["h"],
+                      json={"prompt": "dời sang tối", "reschedule_proposal_id": 999999})
+    assert res.status_code == 404  # never leak or touch somebody else's proposal
 
 
 def test_reminder_lifecycle_and_audit(client, db_session):

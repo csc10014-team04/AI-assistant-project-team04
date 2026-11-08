@@ -25,6 +25,7 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 from api_client import api
 from fallback import is_timeout, parse_request
 from notifier import ReminderScheduler
+from event_store import store
 
 reminder_scheduler = ReminderScheduler(reporter=api)  # one scheduler for the whole app (P2-9)
 
@@ -243,7 +244,7 @@ class ManualFallbackModal(ModalView):
             api.create_manual_event(
                 self.task_title, int(self.duration),
                 selected_slot.get("start_time"), selected_slot.get("end_time"),
-                on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), self.dismiss()),
+                on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api), self.dismiss()),
                 on_failure=lambda req, res: self._show_error(res),
                 on_error=lambda req, err: self._show_error({"detail": "Lỗi kết nối Server."}),
             )
@@ -317,7 +318,7 @@ class ProposalCard(MDBoxLayout):
         pid = self.proposal.get("id")
         api.confirm_proposal(
             pid,
-            on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res),
+            on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api),
                                          self.disable_card("Đã xác nhận thêm vào lịch")),
             on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
             on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),

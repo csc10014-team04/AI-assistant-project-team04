@@ -60,12 +60,27 @@ sourceCode/BE/
 ## 2. Hệ thống Tài liệu Đặc tả của Team Backend
 
 1. **Phân công Nhân sự & Logic Nền tảng (`Parse` + `Conflict Resolution`):**
-   * Đọc [`BE_team_task_description.md`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/BE_team_task_description.md) để nắm rõ ai là PIC của từng file/phân vùng (`# [pic: khoi]`, `# [pic: lam]`) và những logic nghiệp vụ nào người đó cần nắm.
+   * Đọc [`BE_team_task_description.md`](BE_team_task_description.md) để nắm rõ ai là PIC của từng file/phân vùng (`# [pic: khoi]`, `# [pic: lam]`) và những logic nghiệp vụ nào người đó cần nắm.
 2. **Đặc tả Tính năng 1 - Tìm kiếm Thông tin (`Information Searching`):**
-   * Đọc [`feature_information_searching.md`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/feature_information_searching.md) để xem khung tóm tắt thuyết trình, phân luồng Bước 0 trên UI, quy trình Hướng 1 (Hybrid SQL + Vector Search 2 tầng không gọi LLM), Hướng 2 (Academic Knowledge Base RAG 6 bước), điều hướng chéo sang Trợ lý AI và 2 thang chấm điểm 30 điểm kèm ví dụ minh họa.
+   * Đọc [`feature_information_searching.md`](feature_information_searching.md) để xem khung tóm tắt thuyết trình, phân luồng Bước 0 trên UI, quy trình Hướng 1 (Hybrid SQL + Vector Search 2 tầng không gọi LLM), Hướng 2 (Academic Knowledge Base RAG 6 bước), điều hướng chéo sang Trợ lý AI và 2 thang chấm điểm 30 điểm kèm ví dụ minh họa.
 3. **Đặc tả Tính năng 2 - Xếp lịch Thông minh cùng AI (`Scheduling with AI`):**
-   * Đọc [`feature_scheduling_with_ai.md`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/feature_scheduling_with_ai.md) để xem khung tóm tắt thuyết trình, ranh giới AI và thuật toán tất định, vai trò của `deadline_hint` trong `NluResult`, cơ chế bộ nhớ từ chối `excluded_slots`, điều hướng chéo sang Tìm kiếm và thang chấm điểm 35 điểm kèm ví dụ minh họa.
+   * Đọc [`feature_scheduling_with_ai.md`](feature_scheduling_with_ai.md) để xem khung tóm tắt thuyết trình, ranh giới AI và thuật toán tất định, vai trò của `deadline_hint` trong `NluResult`, cơ chế bộ nhớ từ chối `excluded_slots`, điều hướng chéo sang Tìm kiếm và thang chấm điểm 35 điểm kèm ví dụ minh họa.
 4. **Quy chuẩn Kiểm thử trên Docker MySQL 8.0 (`localhost:3307`):**
-   * Đọc [`tests/README.md`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/tests/README.md) để nắm cách dùng fixture `db_session`, `client` (cô lập giao dịch bằng `create_savepoint`, không làm bẩn DBeaver) và các tiêu chí kiểm thử bắt buộc của từng module.
+   * Đọc [`tests/README.md`](tests/README.md) để nắm cách dùng fixture `db_session`, `client` (cô lập giao dịch bằng `create_savepoint`, không làm bẩn DBeaver) và các tiêu chí kiểm thử bắt buộc của từng module.
 
-> **NGUYÊN TẮC BẤT BIẾN:** Ba file [`models.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/models.py), [`database.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/database.py) và [`AGENTS.md`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/AGENTS.md) là hợp đồng chung của cả nhóm. **Không ai được tự ý sửa hoặc định nghĩa lại các class/enum đã có trong `models.py`**. Mọi file code đều phải `from models import ...` và `from database import ...`.
+> **NGUYÊN TẮC BẤT BIẾN:** Ba file [`models.py`](models.py), [`database.py`](database.py) và [`AGENTS.md`](AGENTS.md) là hợp đồng chung của cả nhóm. **Không ai được tự ý sửa hoặc định nghĩa lại các class/enum đã có trong `models.py`**. Mọi file code đều phải `from models import ...` và `from database import ...`.
+
+---
+
+## 6. Cập nhật (11/2026): các module mới
+
+| File | Việc nó làm |
+|---|---|
+| `routers/proposals.py`, `services/proposals.py` | Vòng đời đề xuất: `confirm` (kiểm tra lại xung đột rồi mới tạo `events` + nhắc nhở), `reject`, `POST /proposals/manual` (người dùng tự chọn khung giờ), tách việc dài thành nhiều khối |
+| `routers/tasks.py` | Công việc có độ ưu tiên, hàng đợi ưu tiên và `POST /tasks/schedule` |
+| `routers/oauth.py` | Đăng nhập Google / GitHub (authorization-code); cần `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET` |
+| `services/kb_models.py` | Model SQLAlchemy cho các bảng `kb_*` của search engine (schema riêng: `Database/knowledgebase/search_engine_schema.sql`) |
+| `GET /health/db` (trong `main.py`) | Kiểm tra thật sự kết nối MySQL (khác `/health`) |
+
+Chạy kiểm thử module: `python -m pytest tests` — dùng MySQL Docker nếu kết nối được, nếu không tự chuyển sang SQLite trong bộ nhớ
+(đặt `REQUIRE_MYSQL=1` để bắt buộc MySQL). Bộ kiểm thử hệ thống ở thư mục gốc: `python -m pytest tests` (xem `tests/README.md`).
