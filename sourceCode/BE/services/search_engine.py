@@ -41,8 +41,13 @@ from services.temporal import resolve_date_hint
 # note: stops strictly at vector retrieval + sql filtering; never calls llm
 # ============================================================================
 
-VECTOR_SIMILARITY_THRESHOLD = 0.25  # minimum cosine score for semantic match
+VECTOR_SIMILARITY_THRESHOLD = 0.25  # minimum cosine score for tier-1 semantic match
+NEURAL_FALLBACK_THRESHOLD = 0.42  # minimum cosine score for tier-2 neural embedding fallback
+MIN_TIER1_RESULTS = 1  # trigger tier-2 neural model only when tier-1 returns fewer than N results
 DEFAULT_SEARCH_TOP_K = 50  # default max events returned per search request
+
+_NEURAL_EMBEDDER: Any = None
+_NEURAL_EMBEDDER_LOADED: bool = False
 
 COURSE_ABBREVIATIONS: dict[str, str] = {
     "xstk": "xác suất thống kê",
@@ -70,11 +75,19 @@ COURSE_ABBREVIATIONS: dict[str, str] = {
     "ktmt": "kiến trúc máy tính",
     "vl1": "vật lý đại cương 1",
     "vl2": "vật lý đại cương 2",
+    "ktct": "kinh tế chính trị mác lênin",
+    "cnxh": "chủ nghĩa xã hội khoa học",
+    "tthcm": "tư tưởng hồ chí minh",
+    "lsd": "lịch sử đảng cộng sản việt nam",
+    "pldc": "pháp luật đại cương",
+    "gdtc": "giáo dục thể chất",
+    "gdqp": "giáo dục quốc phòng và an ninh",
+    "clb": "câu lạc bộ",
     "gk": "giữa kỳ",
     "ck": "cuối kỳ",
 }
 
-# orthogonal anchor tokens (disjoint trigrams) + trigger phrases for semantic vector search
+# orthogonal anchor tokens (disjoint trigrams) + trigger phrases for tier-1 semantic vector search
 SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
     "zmathq xcalcz wstatw": (
         "toan",
@@ -91,6 +104,8 @@ SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
         "dai so",
         "tuyen tinh",
         "dstt",
+        "phuong trinh vi phan",
+        "toi uu hoa",
         "calculus",
         "algebra",
         "probability",
@@ -131,6 +146,7 @@ SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
         "an toan thong tin",
         "attt",
         "bao mat",
+        "dien toan dam may",
         "network",
         "operating system",
         "security",
@@ -139,7 +155,9 @@ SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
         "tri tue nhan tao",
         "ttnt",
         "hoc may",
+        "hoc sau",
         "machine learning",
+        "deep learning",
         "khoa hoc du lieu",
         "khdl",
         "co so du lieu",
@@ -153,17 +171,74 @@ SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
         "co hoc",
         "dien tu",
         "quang hoc",
+        "hoa hoc",
+        "sinh hoc",
         "physics",
         "phy",
     ),
     "lengll nvocab mfluen": (
+        "ngoai ngu",
         "tieng anh",
         "anh van",
         "anh ngu",
+        "tieng nhat",
+        "tieng phap",
         "ielts",
         "toeic",
         "english",
         "eng",
+    ),
+    "kpolik mmarxm slawss": (
+        "dai cuong",
+        "chinh tri",
+        "ly luan chinh tri",
+        "triet",
+        "triet hoc",
+        "mac lenin",
+        "kinh te chinh tri",
+        "ktct",
+        "chu nghia xa hoi",
+        "cnxh",
+        "tu tuong ho chi minh",
+        "tthcm",
+        "lich su dang",
+        "lsd",
+        "phap luat",
+        "phap luat dai cuong",
+        "pldc",
+        "baa",
+    ),
+    "psport gfitne mdefen": (
+        "the duc",
+        "the chat",
+        "giao duc the chat",
+        "gdtc",
+        "the thao",
+        "bong chuyen",
+        "bong ro",
+        "bong da",
+        "cau long",
+        "boi loi",
+        "vo thuat",
+        "co vua",
+        "quoc phong",
+        "giao duc quoc phong",
+        "gdqp",
+        "quan su",
+    ),
+    "sskill cclubx mteamw": (
+        "ky nang",
+        "ky nang mem",
+        "thuyet trinh",
+        "lam viec nhom",
+        "clb",
+        "cau lac bo",
+        "sinh hoat",
+        "ngoai khoa",
+        "tinh nguyen",
+        "hoi thao",
+        "seminar",
+        "workshop",
     ),
 }
 
@@ -253,6 +328,64 @@ def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     typical flow: related math subjects -> ~0.45..0.85; unrelated subjects -> ~0.0.
     """
     return sum(a * b for a, b in zip(vec_a, vec_b))
+
+
+_SCHEDULING_CMD_RE = re.compile(
+    r"\b(xếp\s+lịch|xep\s+lich|sắp\s+xếp|sap\s+xep|xếp\s+cho\s+mình|xep\s+cho\s+minh|"
+    r"đặt\s+lịch|dat\s+lich|thêm\s+lịch|them\s+lich|dời\s+lịch|doi\s+lich|"
+    r"xóa\s+lịch|xoa\s+lich|hủy\s+buổi|schedule\s+for\s+me)\b",
+    re.IGNORECASE,
+)
+
+
+def is_scheduling_command(raw_query: str) -> bool:
+    """
+    input: raw_query (str) typed into the search tab.
+    core logic: detect scheduling/modification verbs so search tab can redirect user to 'Trợ lý AI'.
+    output: bool (True if query is a scheduling/action command rather than a read-only search).
+    typical flow: 'xếp cho mình 2 tiếng học bài' -> True; 'lịch thi xstk' -> False.
+    """
+    clean = normalize_text(sanitize_prompt(raw_query or "", max_chars=500)).text
+    return bool(_SCHEDULING_CMD_RE.search(clean))
+
+
+def _compute_neural_fallback_scores(
+    query_keywords: str, candidate_texts: list[str]
+) -> list[float]:
+    """
+    input: query_keywords (str) and candidate_texts (list[str]) when tier-1 returns < MIN_TIER1_RESULTS.
+    core logic: lazy-load lightweight multilingual sentence-transformer on cpu to score unseen synonyms.
+    output: list[float] cosine similarity scores in [-1.0, 1.0], or 0.0 list if model unavailable.
+    typical flow: tier-1 misses rare synonym -> tier-2 neural model encodes & ranks candidates.
+    """
+    global _NEURAL_EMBEDDER, _NEURAL_EMBEDDER_LOADED
+    if not query_keywords or not candidate_texts:
+        return [0.0 for _ in candidate_texts]
+    if not _NEURAL_EMBEDDER_LOADED:
+        _NEURAL_EMBEDDER_LOADED = True
+        model_id = os.getenv(
+            "SEARCH_NEURAL_EMBED_MODEL",
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        )
+        if os.getenv("ENABLE_NEURAL_SEARCH_FALLBACK", "0") == "1":
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+
+                _NEURAL_EMBEDDER = SentenceTransformer(model_id, device="cpu")
+            except Exception:
+                _NEURAL_EMBEDDER = None
+    if _NEURAL_EMBEDDER is None:
+        return [0.0 for _ in candidate_texts]
+    try:
+        q_emb = _NEURAL_EMBEDDER.encode(
+            [query_keywords], normalize_embeddings=True, show_progress_bar=False
+        )[0].tolist()
+        c_embs = _NEURAL_EMBEDDER.encode(
+            candidate_texts, normalize_embeddings=True, show_progress_bar=False
+        ).tolist()
+        return [_cosine_similarity(q_emb, c_vec) for c_vec in c_embs]
+    except Exception:
+        return [0.0 for _ in candidate_texts]
 
 
 def _detect_time_of_day(text: str) -> str | None:
@@ -408,14 +541,16 @@ def execute_local_search(
     course_rows = list(db.scalars(active_courses_stmt(owner_id)).all())
     course_map: dict[int, Course] = {c.id: c for c in course_rows}
 
-    query_vec = _build_semantic_vector(keywords)  # step 1: embed query into vector
+    query_vec = _build_semantic_vector(keywords)  # step 1 (tier 1): embed query into concept-enriched vector
     scored_items: list[tuple[float, EventDomain]] = []
+    candidate_texts: list[str] = []
 
-    # step 2: scan sql-filtered candidate events for exact + vector similarity
+    # step 2 (tier 1 core): scan sql-filtered candidate events for lexical + concept-hashed vector similarity
     for ev in domain_events:
         course = course_map.get(ev.course_id) if ev.course_id is not None else None
         course_code = course.course_code if course is not None else ""
         searchable_text = f"{ev.title} {course_code} {ev.room or ''}".strip()
+        candidate_texts.append(searchable_text)
 
         lex_score = _compute_lexical_score(keywords, searchable_text)
         doc_vec = _build_semantic_vector(ev.title, course_code)
@@ -428,6 +563,15 @@ def execute_local_search(
                 else vec_score
             )
             scored_items.append((hybrid_score, ev))
+
+    # step 2b (tier 2 fallback): if tier 1 returned fewer than MIN_TIER1_RESULTS, invoke neural embedding fallback
+    min_tier1 = int(structured_filters.get("min_tier1_results") or MIN_TIER1_RESULTS)
+    if len(scored_items) < min_tier1 and domain_events:
+        matched_ids = {ev.id for _, ev in scored_items if ev.id is not None}
+        neural_scores = _compute_neural_fallback_scores(keywords, candidate_texts)
+        for ev, n_score in zip(domain_events, neural_scores):
+            if ev.id not in matched_ids and n_score >= NEURAL_FALLBACK_THRESHOLD:
+                scored_items.append((n_score, ev))
 
     # step 3: sort top-k results by similarity descending, then start_time ascending
     scored_items.sort(key=lambda pair: (-round(pair[0], 4), pair[1].start_time))
@@ -553,6 +697,22 @@ def ask_academic_knowledge_base(
             "answer": "Vui lòng nhập nội dung câu hỏi học vụ.",
             "citations": [],
             "fallback_mode": False,
+            "redirect_target": None,
+            "redirect_button_label": None,
+        }
+    if is_scheduling_command(clean_query):
+        return {
+            "query": raw_query,
+            "normalized_query": normalized_query,
+            "answer": (
+                "It seems bạn đang muốn yêu cầu xếp lịch công việc. "
+                "Trang 'Tìm kiếm' chỉ dùng để tra cứu lịch trình và hỏi đáp học vụ; "
+                "bạn hãy bấm nút 'Trợ lý AI' để chuyển sang khung xếp lịch thông minh nhé."
+            ),
+            "citations": [],
+            "fallback_mode": False,
+            "redirect_target": "chat_home",
+            "redirect_button_label": "Trợ lý AI",
         }
 
     # steps 1, 2, 3: embed query, scan academic vector store, and collect top-k chunks
