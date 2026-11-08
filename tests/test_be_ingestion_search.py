@@ -178,7 +178,7 @@ def test_BE38_commit_rejects_malformed_rows(client, alice, patch):
 
 # ---------------- search engine / availability (P1-5) -------------------------------------------
 def test_BE39_find_free_slots_returns_gaps_between_events():
-    """P1-5. Known gap: services/search_engine.find_free_slots still raises NotImplementedError."""
+    """P1-5: free windows between events, never overlapping a hard event."""
     from models import TimeSlot
     from services.search_engine import find_free_slots
 
