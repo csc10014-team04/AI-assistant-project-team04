@@ -17,7 +17,7 @@ python -m pytest tests -rx                             # also list every known d
 - The AI engine (vLLM) is always simulated: down by default, scripted per test. No GPU needed.
 - Runtime files (AI error log, reminder audit, RAG index) are redirected to pytest temp folders.
 
-## Files and cases (178 tests, 0 expected failures)
+## Files and cases (195 tests, 0 expected failures)
 
 | File | IDs | Covers |
 |---|---|---|
@@ -29,6 +29,7 @@ python -m pytest tests -rx                             # also list every known d
 | `test_be_rag_timetable.py` | RG-01..05 | confirmed timetable rows indexed for retrieval (P1-4) |
 | `test_fe_fallback.py` | FB-01..06 | client AI timeout and offline manual-picker parsing (P1-9) |
 | `test_fe_notifier.py` | NT-01..08 | local reminder scheduling and delivery audit (P2-9) |
+| `test_kb_crawler.py` | KB-01..11 | knowledge-base collector (offline): text extraction, contact redaction, URL rules, robots.txt, accent folding, loader into the search index |
 | `test_database_layer.py` | DB-01..20 | `init.sql` ↔ ORM parity (tables, columns, enums), CHECK/UNIQUE constraints, soft-delete helpers, proposal abandonment, docker-compose ports/secrets/volumes, `.env` hygiene |
 | `test_ai_layer.py` | AI-01..20 | NLU through the API (P1-7, P2-1), dirty input (P2-6), ambiguity (P2-3), AI failure fallback + taxonomy log (P1-9, P2-12), privacy (P1-2), RAG isolation (P2-2), proposal abandonment (P2-7), reminder audit (P2-13) |
 | `test_frontend.py` | FE-01..12 | existing Kivy status page (stubbed), missing Android calendar / chat buttons / manual-picker deliverables (P1-1, P1-8, P1-9), JSON contract the app consumes |

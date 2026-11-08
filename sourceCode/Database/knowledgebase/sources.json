@@ -1,0 +1,22 @@
+{
+  "user_agent": "UniversityLifeAssistant-KB/0.1 (student project, HCMUS; polite crawler; contact: project team 04)",
+  "min_delay_seconds": 2.0,
+  "max_page_bytes": 2000000,
+  "sites": [
+    {"id": "hcmus", "name": "Trường Đại học Khoa học Tự nhiên, ĐHQG-HCM", "base_url": "https://hcmus.edu.vn/", "max_pages": 12},
+    {"id": "fit", "name": "Khoa Công nghệ Thông tin", "base_url": "https://www.fit.hcmus.edu.vn/", "max_pages": 40},
+    {"id": "fbb", "name": "Khoa Sinh học - Công nghệ Sinh học", "base_url": "https://fbb.hcmus.edu.vn/", "max_pages": 40},
+    {"id": "chemistry", "name": "Khoa Hóa học", "base_url": "https://chemistry.hcmus.edu.vn/", "max_pages": 40},
+    {"id": "math", "name": "Khoa Toán - Tin học", "base_url": "https://www.math.hcmus.edu.vn/", "max_pages": 40}
+  ],
+  "priority_keywords": [
+    "gioi thieu", "gioi-thieu", "about", "lich su", "co cau", "to chuc", "so do",
+    "giang vien", "giang-vien", "can bo", "can-bo", "nhan su", "doi ngu", "doi-ngu", "faculty", "staff", "people",
+    "bo mon", "bo-mon", "department", "phong thi nghiem", "labs",
+    "chuong trinh", "chuong-trinh", "dao tao", "mon hoc", "mon-hoc", "hoc phan", "hoc-phan", "curriculum", "program", "course",
+    "thanh tich", "thanh-tich", "khen thuong", "giai thuong", "achievement", "award",
+    "nghien cuu", "research", "cong bo", "tuyen sinh", "ctdt", "nganh"
+  ],
+  "skip_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".mp4", ".mp3", ".css", ".js", ".ico", ".xml", ".json"],
+  "skip_path_words": ["login", "dang-nhap", "admin", "wp-admin", "feed", "rss", "tag", "calendar", "print", "download"]
+}
