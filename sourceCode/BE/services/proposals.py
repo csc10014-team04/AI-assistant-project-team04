@@ -17,6 +17,7 @@ from models import (
     Task,
     TaskStatus,
     TimeSlot,
+    UserPreference,
 )
 from services.nlu import NluResult
 from services.search_engine import find_user_free_slots
@@ -25,6 +26,8 @@ from services.validator import check_hard_conflict
 DEFAULT_REMINDER_OFFSET_MIN = 30
 DEFAULT_WINDOW_DAYS = 7  # when the user gave no date, search one week ahead
 STEP = timedelta(minutes=15)
+MIN_BLOCK_MIN = 30  # smallest piece a split task may be cut into
+MAX_PIECES = 6  # a task split into more pieces than this is not a useful schedule
 # preferred / avoided part of the day, as [start_hour, end_hour) in Vietnam time
 TIME_OF_DAY = {"morning": (6, 12), "afternoon": (12, 18), "evening": (18, 23)}
 
@@ -94,6 +97,58 @@ def _pick_slot(
     return best[2] if best else None
 
 
+def _subtract(gaps: list[TimeSlot], excluded: list[TimeSlot]) -> list[TimeSlot]:
+    """cut every excluded interval out of the free gaps (used to avoid previously rejected blocks)."""
+    out = list(gaps)
+    for ex in excluded:
+        nxt: list[TimeSlot] = []
+        for g in out:
+            if not g.overlaps(ex):
+                nxt.append(g)
+                continue
+            if g.start < ex.start:
+                nxt.append(TimeSlot(g.start, ex.start))
+            if ex.end < g.end:
+                nxt.append(TimeSlot(ex.end, g.end))
+        out = nxt
+    return out
+
+
+def split_task(gaps: list[TimeSlot], remaining: int, cap: int, min_block: int = MIN_BLOCK_MIN, depth: int = 0) -> list[TimeSlot] | None:
+    """
+    recursive task splitting (P2-4): when no single free gap can hold the task, cut it into smaller pieces.
+    Each level places the biggest piece (<= cap minutes, on the 15-minute grid) at the start of the gap that
+    allows it, shrinks that gap, and recurses on the minutes still missing. A trailing piece smaller than
+    `min_block` is avoided by shortening the previous piece. Returns the pieces in time order, or None
+    when the free time cannot hold the task within MAX_PIECES pieces.
+    """
+    if remaining <= 0:
+        return []
+    if depth >= MAX_PIECES:
+        return None
+    best: tuple[int, int] | None = None  # (piece minutes, gap index)
+    for i, gap in enumerate(gaps):
+        room = gap.duration_minutes() // 15 * 15
+        size = min(remaining, cap, room)
+        left = remaining - size
+        if 0 < left < min_block and size - (min_block - left) >= min_block:
+            size -= min_block - left  # leave a usable last piece instead of a sliver
+        if size >= min(min_block, remaining) and (
+            best is None or size > best[0] or (size == best[0] and gap.start < gaps[best[1]].start)
+        ):
+            best = (size, i)
+    if best is None:
+        return None
+    size, i = best
+    gap = gaps[i]
+    piece = TimeSlot(gap.start, gap.start + timedelta(minutes=size))
+    rest = gaps[:i] + [TimeSlot(piece.end, gap.end)] + gaps[i + 1 :]
+    tail = split_task(rest, remaining - size, cap, min_block, depth + 1)
+    if tail is None:
+        return None
+    return sorted([piece, *tail], key=lambda t: t.start)
+
+
 def _ancestor_slots(db: Session, owner_id: int, proposal: Proposal) -> list[TimeSlot]:
     """slots of the proposal and of every proposal it was rescheduled from (all rejected by the user)."""
     out: list[TimeSlot] = []
@@ -147,9 +202,19 @@ def create_proposal(
 
     window_start, window_end = _search_window(nlu, now_vn, fallback_start)
     gaps = find_user_free_slots(db, owner_id, window_start, window_end, duration)
-    chosen = _pick_slot(gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, excluded)
-    if chosen is None:
+    pref = db.scalar(select(UserPreference).where(UserPreference.user_id == owner_id))
+    cap = pref.max_block_minutes if pref else 180  # longest continuous work block the user accepts
+    pieces: list[TimeSlot] | None = None
+    if duration <= cap:  # a whole block is preferred whenever the task is short enough
+        chosen = _pick_slot(gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, excluded)
+        pieces = [chosen] if chosen else None
+    if pieces is None:  # too long for one block, or no gap long enough: split it (P2-4)
+        small = find_user_free_slots(db, owner_id, window_start, window_end, MIN_BLOCK_MIN)
+        pieces = split_task(_subtract(small, excluded), duration, cap)
+    if not pieces:
         return None
+    chosen = pieces[0]
+    extra = [{"start_time": p.start.isoformat(), "end_time": p.end.isoformat()} for p in pieces[1:]] or None
 
     if task is None:
         task = Task(
@@ -167,13 +232,15 @@ def create_proposal(
         f"Khung trống {chosen.start:%H:%M}-{chosen.end:%H:%M} ngày {chosen.start:%d/%m}, "
         f"không trùng lịch học hay giờ ngủ."
     )
+    if extra:
+        rationale = f"Công việc {duration} phút được chia thành {len(pieces)} khối vì không có khoảng trống liên tục đủ dài. " + rationale
     proposal = Proposal(
         owner_id=owner_id,
         task_id=task.id,
         parent_id=parent.id if parent else None,
         start_time=to_db_utc(chosen.start),
         end_time=to_db_utc(chosen.end),
-        extra_slots_json=None,
+        extra_slots_json=extra,
         rationale=rationale,
         source_prompt=prompt[:2000],
         status=ProposalStatus.PROPOSED,
