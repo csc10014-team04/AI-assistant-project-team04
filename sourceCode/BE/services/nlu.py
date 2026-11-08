@@ -50,27 +50,30 @@ SYSTEM_PROMPT = (
     'intent (schedule_task|query_schedule|delete_event|reschedule|unknown), '
     "title (string|null), duration_minutes (int|null), priority (1-3|null, 1=highest), "
     "preferred_time_of_day (morning|afternoon|evening|null), avoid_time_of_day "
-    "(morning|afternoon|evening|null), date_hint (copy the user's date words or null). "
+    "(morning|afternoon|evening|null), date_hint (copy the user's date words or null), "
+    "deadline_hint (copy the user's deadline/due-date words if stated, else null). "
     "Never invent values the user did not state; use null instead. "
     "Never output calendar dates, only copy the user's own date words. "
     "Distinguish schedule_task vs query_schedule: 'xếp lịch', 'sắp xếp', or scheduling an activity is schedule_task; "
     "'xem lịch', 'có lịch gì', 'khi nào rảnh' is query_schedule. "
-    "Do not include time of day words (sáng, chiều, tối) in date_hint."
+    "Do not include time of day words (sáng, chiều, tối) in date_hint or deadline_hint."
 )
 
 FEW_SHOT: list[dict[str, str]] = [
     {"role": "user", "content": "xếp 3 tiếng làm đồ án CTDL, không làm buổi tối"},
-    {"role": "assistant", "content": '{"intent":"schedule_task","title":"làm đồ án CTDL","duration_minutes":180,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":"evening","date_hint":null}'},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"làm đồ án CTDL","duration_minutes":180,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":"evening","date_hint":null,"deadline_hint":null}'},
     {"role": "user", "content": "mình cần học bài gấp 90 phút chiều thứ sáu"},
-    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":90,"priority":1,"preferred_time_of_day":"afternoon","avoid_time_of_day":null,"date_hint":"thứ sáu"}'},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":90,"priority":1,"preferred_time_of_day":"afternoon","avoid_time_of_day":null,"date_hint":"thứ sáu","deadline_hint":null}'},
+    {"role": "user", "content": "hạn nộp bài tập CTDL là thứ sáu, xếp cho mình 2 tiếng làm bài trong tuần này"},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"làm bài tập CTDL","duration_minutes":120,"priority":1,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"tuần này","deadline_hint":"thứ sáu"}'},
     {"role": "user", "content": "xóa buổi gym ngày mai"},
-    {"role": "assistant", "content": '{"intent":"delete_event","title":"gym","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"ngày mai"}'},
+    {"role": "assistant", "content": '{"intent":"delete_event","title":"gym","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"ngày mai","deadline_hint":null}'},
     {"role": "user", "content": "tuần này mình có lịch gì"},
-    {"role": "assistant", "content": '{"intent":"query_schedule","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"tuần này"}'},
+    {"role": "assistant", "content": '{"intent":"query_schedule","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":"tuần này","deadline_hint":null}'},
     {"role": "user", "content": "xếp lịch học bài"},
-    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
+    {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
     {"role": "user", "content": "hôm nay trời đẹp quá"},
-    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null}'},
+    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
 ]
 
 
@@ -82,8 +85,12 @@ class NluResult(BaseModel):
     preferred_time_of_day: TimeOfDay | None = None
     avoid_time_of_day: TimeOfDay | None = None
     date_hint: str | None = Field(default=None, max_length=100)
+    # deadline_hint separates hard due-date phrases (e.g., "hạn nộp thứ 6", "trước thứ 6") from general search windows
+    # so find_user_free_slots and the 35-point slot scorer clamp window_end <= deadline and never suggest late slots
+    deadline_hint: str | None = Field(default=None, max_length=100)
     window_start: date | None = None  # resolved deterministically from date_hint (P2-3)
     window_end: date | None = None
+    deadline: date | None = None  # hard upper-bound date resolved from deadline_hint for No-Missed-Deadline gate
     date_assumed: bool = False  # True when a default window was applied
     needs_clarification: bool = False
     clarification_question: str | None = None
@@ -127,6 +134,14 @@ _DATE_HINT_RE = re.compile(
     r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
     r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
     r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week)",
+    re.IGNORECASE,
+)
+# matches explicit deadline clauses ("hạn nộp bài tập CTDL là thứ 6", "deadline 25/11", "nộp trước thứ sáu")
+_DEADLINE_HINT_RE = re.compile(
+    r"\b(?:hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|hoàn\s+thành\s+trước|due)"
+    r"[^,.;\n]{0,60}?"
+    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
+    r"cuối tuần|cuoi tuan|thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow)",
     re.IGNORECASE,
 )
 _TIME_OF_DAY = {
@@ -175,6 +190,7 @@ def _extract_title(text: str) -> str | None:
     cleaned = _DATE_HINT_RE.sub(" ", cleaned)
     cleaned = re.sub(
         r"\b(xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|"
+        r"hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|là|trong|"
         r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
         " ",
         cleaned,
@@ -188,13 +204,20 @@ def _extract_title(text: str) -> str | None:
 def rule_based_understand(text: str) -> NluResult:
     """
     input: text (str) sanitized prompt.
-    core logic: regex extraction of duration, time-of-day, date hint, priority and a coarse intent.
+    core logic: regex extraction of duration, time-of-day, date hint, deadline hint, priority and intent.
     output: NluResult(source="rules"); every field is None when not literally present in the text.
     """
     lowered = text.lower()
     duration = extract_duration_minutes(text)
     preferred, avoided = _time_of_day_flags(text)
-    date_match = _DATE_HINT_RE.search(text)
+    deadline_match = _DEADLINE_HINT_RE.search(text)
+    deadline_hint = deadline_match.group(1) if deadline_match else None
+    text_without_deadline = (
+        text[: deadline_match.start(1)] + " " + text[deadline_match.end(1) :]
+        if deadline_match
+        else text
+    )
+    date_match = _DATE_HINT_RE.search(text_without_deadline)
 
     if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
         intent: Intent = "delete_event"
@@ -202,7 +225,10 @@ def rule_based_understand(text: str) -> NluResult:
         intent = "reschedule"
     elif duration is not None or re.search(r"\b(xếp|xep|sắp xếp|sap xep)\b", lowered):
         intent = "schedule_task"
-    elif re.search(r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|schedule|what)\b", lowered):
+    elif re.search(
+        r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|quy chế|quy định|tín chỉ|học vụ|schedule|what)\b",
+        lowered,
+    ):
         intent = "query_schedule"
     else:
         intent = "unknown"
@@ -210,12 +236,13 @@ def rule_based_understand(text: str) -> NluResult:
     priority = 1 if any(re.search(rf"\b{w}\b", lowered) for w in _HIGH_PRIORITY) else None
     return NluResult(
         intent=intent,
-        title=_extract_title(text) if intent == "schedule_task" else None,
+        title=_extract_title(text_without_deadline) if intent == "schedule_task" else None,
         duration_minutes=duration,
         priority=priority,
         preferred_time_of_day=preferred,
         avoid_time_of_day=avoided,
         date_hint=date_match.group(0) if date_match and intent != "unknown" else None,
+        deadline_hint=deadline_hint if intent != "unknown" else None,
         fallback_mode=False,
         source="rules",
     )
@@ -277,12 +304,28 @@ def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, n
         if not any(tod in result.date_hint.lower() for tod in ("sáng", "sang", "chiều", "chieu", "tối", "toi")):
             hint = result.date_hint
     result.date_hint = hint
+
+    # deadline hallucination guard: only a deadline phrase literally present in the prompt is accepted
+    dl_hint = rules.deadline_hint
+    if dl_hint is None and result.deadline_hint and result.deadline_hint.lower() in prompt.lower():
+        if not any(tod in result.deadline_hint.lower() for tod in ("sáng", "sang", "chiều", "chieu", "tối", "toi")):
+            dl_hint = result.deadline_hint
+    result.deadline_hint = dl_hint
+
     if result.intent in {"schedule_task", "query_schedule", "reschedule"}:
         window = resolve_date_hint(hint, now)
         result.window_start, result.window_end = window.start, window.end
         result.date_assumed = window.assumed
         if window.clarification_question:
             result.needs_clarification, result.clarification_question = True, window.clarification_question
+        if dl_hint is not None:
+            dl_window = resolve_date_hint(dl_hint, now)
+            result.deadline = dl_window.end
+            # clamp search window upper bound to hard deadline so sort-and-sweep never suggests late slots
+            if result.window_end is not None and result.deadline is not None and result.window_end > result.deadline:
+                result.window_end = result.deadline
+            if result.window_start is not None and result.deadline is not None and result.window_start > result.deadline:
+                result.window_start = now.astimezone(VN_TZ).date()
     if result.intent == "schedule_task" and result.duration_minutes is None:
         result.needs_clarification = True
         result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
