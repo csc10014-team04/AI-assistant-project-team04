@@ -31,6 +31,7 @@ The exact result of the last run (how many pages per site, when, size, hash) is 
 knowledgebase/
 ├── README.md              this file
 ├── sources.json           sites, limits, user agent, priority keywords, skipped file types
+├── search_engine_schema.sql   MySQL tables (kb_*) for the search engine; separate from the scheduling init.sql
 ├── requirements.txt       beautifulsoup4 (only needed for collecting, not for the backend)
 ├── crawler/
 │   ├── README.md
@@ -109,19 +110,40 @@ Alternative to the loader: upload one page by hand with `POST /api/v1/search/aca
 
 The pages are public and are read slowly, once in a while, for a student project, with robots.txt obeyed. Content remains the property of the university and the faculties; this folder is a study index with a link back to every source. Do not republish it as a product, and re-check each site's terms before any wider use. If a faculty asks you to stop or remove something, delete the files and the index chunks.
 
-## 7. Next step: structured tables (planned)
+## 7. The search-engine database schema (separate from scheduling)
 
-Plain text is good for "tell me about this faculty". Exact questions ("which courses does lecturer X teach?") are answered better from tables. The plan, once the team agrees to change the locked schema:
+The MySQL database has **two schema files**, kept apart on purpose:
 
-| Table | Main columns |
+| File | Holds | Table names | Data |
+|---|---|---|---|
+| [`../assistant_deploy/init.sql`](../assistant_deploy/init.sql) | **scheduling**: users, tasks, proposals, events, reminders, logs | `users`, `courses`, `tasks`, `events`... | private, per student, filtered by `owner_id` |
+| [`search_engine_schema.sql`](search_engine_schema.sql) (this folder) | **search engine**: faculties, lecturers, courses, achievements | all start with `kb_` | public, no user data |
+
+They share one MySQL server and one database (`university_assistant`) but no table, key or foreign key crosses from one file to the other (scheduling already has a table called `courses`; the search engine's is `kb_courses`). The scheduling file is a locked team contract; this one can change without touching it.
+
+| Table | Purpose |
 |---|---|
-| `faculties` | name, `name_folded` (no accents), url, description |
-| `lecturers` | faculty, full name, `name_folded`, degree/title, position, bio, source_url |
-| `courses` | faculty, code, name, `name_folded`, credits, description, source_url |
-| `course_lecturers` | course, lecturer, semester |
-| `achievements` | lecturer, kind (award / publication / research), year, text, source_url |
+| `kb_sources` | every collected page (url, hash, fetch time) so each fact can cite its source |
+| `kb_faculties` | the faculties (seeded: FIT, FBB, Chemistry, Math) |
+| `kb_departments` | departments (bo mon) of a faculty |
+| `kb_lecturers` | name, academic title, position, bio, faculty / department |
+| `kb_programs` | training programmes (standard, advanced...) |
+| `kb_courses` | course code, name, credits, description |
+| `kb_course_lecturers` | which lecturer teaches which course (and semester) |
+| `kb_achievements` | awards, publications, research of a lecturer or a faculty |
 
-The Markdown files here are the raw material: a parser per site fills the tables, a person reviews them, and the assistant's language-understanding step maps questions to fixed, parameterised queries (the model never writes SQL).
+Conventions: names are stored twice (`name` and an accent-free `name_folded`, so "thay nguyen van a" finds "Nguyễn Văn A"); every fact has `source_id`; extracted rows start as `review_status = 'PENDING'` and are shown to users only when a person marks them `APPROVED`; `is_active = false` hides a lecturer who asked to be removed. `kb_courses` allows two rows with the same name and no course code (SQL treats NULLs as different), so the loader must de-duplicate those itself.
+
+How to apply it:
+- **New database:** `docker-compose.yml` mounts the file as `/docker-entrypoint-initdb.d/02_search_engine.sql`, so it runs together with `init.sql` on the first start. Each file creates what it needs, so their order does not matter.
+- **Existing database** (the init scripts do not run again on an old volume):
+  ```powershell
+  Get-Content sourceCode/Database/knowledgebase/search_engine_schema.sql -Raw | docker exec -i schedule_db mysql -u<DB_USER> -p<DB_PASSWORD> university_assistant
+  ```
+  The file is idempotent (`IF NOT EXISTS`, `INSERT IGNORE`), so running it twice is safe.
+- Check: `SHOW TABLES LIKE 'kb_%';` lists 8 tables, and `SELECT short_name, name FROM kb_faculties;` shows the 4 seeded faculties.
+
+Status: the tables exist and are seeded with the faculties only. Filling lecturers, courses and achievements from `data/*.md` (a parser per site plus a review step) and the lookup code that answers "Thay nay day mon gi?" are **not built yet**. The file was syntax-checked with a MySQL parser and is covered by static tests, but it was **not executed on a MySQL server** (no Docker on the machine that wrote it): run it once on the host and run the check above.
 
 ## 8. Troubleshooting
 
