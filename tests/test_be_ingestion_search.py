@@ -70,9 +70,8 @@ def test_BE27_parse_preview_rejects_empty_request(client):
     assert client.post("/api/v1/ingestion/parse-preview", data={"raw_content": "   "}).status_code == 422
 
 
-@pytest.mark.xfail(strict=True, reason="DEFECT-01: parse_preview reads `filename` before assigning it -> UnboundLocalError on every file upload")
 def test_BE28_parse_preview_file_upload_csv(client):
-    """P1-4 upload path. Known defect: ingestion.py reads `filename` before assigning it (UnboundLocalError)."""
+    """P1-4 upload path: a CSV file upload is parsed (regression test for the old UnboundLocalError)."""
     res = client.post("/api/v1/ingestion/parse-preview",
                       files={"file": ("t.csv", (HEADER + GOOD).encode("utf-8"), "text/csv")})
     assert res.status_code == 200, res.text

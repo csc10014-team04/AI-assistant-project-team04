@@ -435,6 +435,7 @@ async def parse_preview(
 ) -> ParsePreviewResponse:
     # 1. Resolve content source: file upload takes priority over raw_content form field
     if file is not None:
+        filename = file.filename or ""  # must be set before extraction (it picks the parser by extension)
         file_bytes = await file.read()
 
         MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -451,8 +452,6 @@ async def parse_preview(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=str(extraction_err),
             )
-
-        filename = file.filename or ""
 
     elif raw_content is not None and raw_content.strip():
         content_str = raw_content
