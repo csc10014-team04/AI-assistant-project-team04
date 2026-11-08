@@ -8,7 +8,7 @@ from database import VN_TZ
 
 _WEEKDAYS = {"hai": 0, "2": 0, "ba": 1, "3": 1, "tư": 2, "4": 2, "năm": 3, "5": 3,
              "sáu": 4, "6": 4, "bảy": 5, "7": 5}
-_VAGUE = ("sớm", "lúc nào đó", "sắp tới", "dạo này", "khi nào rảnh", "một lúc nào", "soon", "sometime", "whenever")
+_VAGUE = ("sớm", "lúc nào đó", "sắp tới", "dạo này", "khi nào rảnh", "một lúc nào", "vài hôm nữa", "soon", "sometime", "whenever")
 
 
 @dataclass
