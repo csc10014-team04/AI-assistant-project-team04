@@ -136,5 +136,23 @@ class APIClient:
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
 
+    # =========================================================================
+    # 4. PROPOSAL LIFECYCLE (Accept / Reject buttons) AND MANUAL PICKER
+    # =========================================================================
+    def confirm_proposal(self, proposal_id, on_success, on_failure, on_error):
+        self._request(f"/api/v1/proposals/{proposal_id}/confirm", method="POST",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def reject_proposal(self, proposal_id, on_success, on_failure, on_error):
+        self._request(f"/api/v1/proposals/{proposal_id}/reject", method="POST",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def create_manual_event(self, title, duration_minutes, slot_start, slot_end, on_success, on_failure, on_error):
+        payload = {"title": title, "duration_minutes": duration_minutes,
+                   "slot_start": slot_start, "slot_end": slot_end}
+        self._request("/api/v1/proposals/manual", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+
 # Khởi tạo instance duy nhất
 api = APIClient()
