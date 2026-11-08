@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, abandon_pending_proposals, get_db
-from models import User
+from models import ProposalStatus, User
+from routers.proposals import ProposalOut, proposal_out
+from services import proposals as proposal_svc
 from services import rag
 from services.nlu import NluResult, understand_prompt
 from services.security import get_current_user
@@ -23,6 +25,7 @@ class UnderstandResponse(BaseModel):
     nlu: NluResult
     abandoned_proposals: int
     message: str | None = None
+    proposal: ProposalOut | None = None  # set when a free slot was found; the chat renders Accept / Reject / Reschedule
 
 
 @router.post("/understand", response_model=UnderstandResponse)
@@ -37,17 +40,36 @@ def understand(
                 AI failures are logged to ai_error_logs and returned as fallback_mode=True, never as HTTP 500.
     output: extracted intent/entities for the scheduling engine and the mobile manual picker.
     """
+    parent = None
     abandoned = 0
     if body.reschedule_proposal_id is None:
         abandoned = abandon_pending_proposals(db, current_user.id)
-    result = understand_prompt(
-        body.prompt, datetime.now(UTC_TZ), db=db, user_id=current_user.id
-    )
+    else:  # reschedule follow-up: the old proposal must still be waiting for the user
+        try:
+            parent = proposal_svc.get_proposal(db, current_user.id, body.reschedule_proposal_id)
+        except proposal_svc.ProposalError as exc:
+            raise HTTPException(exc.status_code, exc.detail) from exc
+        if parent.status != ProposalStatus.PROPOSED:
+            raise HTTPException(409, f"proposal is already {parent.status.value}")
+    now = datetime.now(UTC_TZ)
+    result = understand_prompt(body.prompt, now, db=db, user_id=current_user.id)
+
+    proposal = None
+    message = None
+    if result.fallback_mode:
+        message = "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp."
+    elif not result.needs_clarification and (result.intent == "schedule_task" or (parent and result.intent != "unknown")):
+        created = proposal_svc.create_proposal(db, current_user.id, result, body.prompt, now, parent)
+        if created is None:
+            message = "Không tìm thấy khung giờ trống phù hợp trong khoảng thời gian này. Bạn thử chọn ngày khác nhé."
+        else:
+            if parent is not None:
+                parent.status = ProposalStatus.RESCHEDULED
+            db.flush()
+            proposal = proposal_out(created)
+            message = "Mình đề xuất khung giờ này, bạn xác nhận nhé."
     db.commit()
-    message = (
-        "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp." if result.fallback_mode else None
-    )
-    return UnderstandResponse(nlu=result, abandoned_proposals=abandoned, message=message)
+    return UnderstandResponse(nlu=result, abandoned_proposals=abandoned, message=message, proposal=proposal)
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024

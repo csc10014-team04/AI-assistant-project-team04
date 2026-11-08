@@ -164,8 +164,10 @@ class ChatBubble(MDBoxLayout):
 # ==============================================================================
 class ManualFallbackModal(ModalView):
     """Bảng chọn giờ Thủ công khi AI Lỗi hoặc không khớp tự động được"""
-    def __init__(self, task_title, duration, available_slots, **kwargs):
+    def __init__(self, task_title, duration, available_slots, ai_busy=False, **kwargs):
         super().__init__(**kwargs)
+        self.task_title = task_title
+        self.duration = duration
         self.size_hint = (0.9, 0.7)
         self.auto_dismiss = False
         self.background_color = [0, 0, 0, 0.6]
@@ -175,11 +177,13 @@ class ManualFallbackModal(ModalView):
             md_bg_color=WHITE_COLOR, radius=[dp(12)]
         )
         
-        self.main_layout.add_widget(MDLabel(
-            text="(!) Trợ lý AI đang bận. Bạn hãy chọn nhanh khung giờ dưới:",
+        self.title_label = MDLabel(
+            text=("(!) Trợ lý AI đang bận. Bạn hãy chọn nhanh khung giờ dưới:" if ai_busy
+                  else "Hãy chọn khung giờ phù hợp bên dưới:"),
             theme_text_color="Custom", text_color=[0.9, 0.4, 0, 1],
             bold=True, size_hint_y=None, height=dp(40)
-        ))
+        )
+        self.main_layout.add_widget(self.title_label)
         
         info_box = MDBoxLayout(orientation='vertical', size_hint_y=None, height=dp(50), spacing=dp(5))
         info_box.add_widget(MDLabel(text=f"Tên hoạt động: [b]{task_title}[/b]", markup=True))
@@ -231,20 +235,18 @@ class ManualFallbackModal(ModalView):
                 break
                 
         if selected_slot:
-            # Gửi sự kiện thủ công lên Server thông qua API
-            events_payload = [{
-                "title": self.slots_box.parent.parent.children[2].children[1].text.replace("Tên hoạt động: ", ""),
-                "start_time": selected_slot.get("start_time"),
-                "end_time": selected_slot.get("end_time"),
-                "kind": "TASK"
-            }]
-            api.commit_events(
-                events_payload,
-                on_success=lambda req, res: print("Tạo sự kiện thủ công thành công!"),
-                on_failure=lambda req, res: print("Lỗi khi gửi sự kiện thủ công."),
-                on_error=lambda req, err: print("Lỗi kết nối Server.")
+            # Server dat cong viec o dau khung gio da chon (khong lay ca khung trong)
+            api.create_manual_event(
+                self.task_title, int(self.duration),
+                selected_slot.get("start_time"), selected_slot.get("end_time"),
+                on_success=lambda req, res: self.dismiss(),
+                on_failure=lambda req, res: self._show_error(res),
+                on_error=lambda req, err: self._show_error({"detail": "Lỗi kết nối Server."}),
             )
-            self.dismiss()
+
+    def _show_error(self, res):
+        detail = res.get("detail") if isinstance(res, dict) else None
+        self.title_label.text = f"(!) Không thể lưu: {detail or 'lỗi không xác định'}"
 
 
 class ProposalCard(MDBoxLayout):
@@ -307,23 +309,27 @@ class ProposalCard(MDBoxLayout):
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(8)]
 
     def on_confirm(self, instance):
-        # Gọi API xác nhận đề xuất và ghi lịch vào hệ thống
-        events_data = [{
-            "title": self.proposal.get('task_title', self.proposal.get('title', 'Sự kiện')),
-            "start_time": self.proposal.get('start_time'),
-            "end_time": self.proposal.get('end_time'),
-            "kind": self.proposal.get('kind', 'EVENT')
-        }]
-        
-        api.commit_events(
-            events=events_data,
+        # POST /proposals/{id}/confirm: server kiem tra lai xung dot roi moi tao su kien
+        pid = self.proposal.get("id")
+        api.confirm_proposal(
+            pid,
             on_success=lambda req, res: self.disable_card("Đã xác nhận thêm vào lịch"),
-            on_failure=lambda req, res: self.disable_card("Lỗi khi lưu đề xuất"),
-            on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ")
+            on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
+            on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),
         )
 
     def on_reject(self, instance):
-        self.disable_card("Đã từ chối")
+        api.reject_proposal(
+            self.proposal.get("id"),
+            on_success=lambda req, res: self.disable_card("Đã từ chối"),
+            on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
+            on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),
+        )
+
+    @staticmethod
+    def _failure_text(res):
+        detail = res.get("detail") if isinstance(res, dict) else None
+        return f"Không thực hiện được: {detail}" if detail else "Lỗi khi xử lý đề xuất"
 
     def on_reschedule(self, instance):
         self.chat_screen.trigger_reschedule_mode(self)
@@ -454,11 +460,15 @@ class ChatAssistantScreen(MDScreen):
                 card.disable_card("Đã hủy do chuyển chủ đề")
 
         # 2. Gửi request trực tiếp đến Backend Server
-        api.parse_preview(
-            text_data=user_text,
+        reschedule_id = None
+        if self.active_reschedule_proposal:
+            reschedule_id = self.active_reschedule_proposal.proposal.get("id")
+        api.understand(
+            user_text,
             on_success=self.on_api_success,
             on_failure=self.on_api_failure,
-            on_error=self.on_api_error
+            on_error=self.on_api_error,
+            reschedule_proposal_id=reschedule_id,
         )
 
     def on_api_success(self, req, result):
@@ -467,28 +477,34 @@ class ChatAssistantScreen(MDScreen):
             self.append_ai_message("Đã nhận được thông tin nhưng máy chủ không trả về nội dung xử lý.")
             return
 
-        # Neu backend tra ve dang fallback che do thu cong
-        if result.get("fallback_mode", False):
-            ManualFallbackModal(
-                task_title=result.get("task_title", "Hoạt động"),
-                duration=result.get("duration", 60),
-                available_slots=result.get("available_slots", [])
-            ).open()
-            self.append_ai_message("Hệ thống chưa thể xếp lịch tự động. Bạn vui lòng lựa chọn khung giờ trống ở bảng trên nhé!")
-            Clock.schedule_once(self.scroll_to_bottom, 0.2)
-            return
+        # /assistant/understand tra ve {"nlu": {...}, "abandoned_proposals": n, "message": str|None}
+        nlu = result.get("nlu") or {}
+        if nlu.get("fallback_mode"):
+            print(f"[AI FALLBACK] {nlu.get('fallback_reason')}")
 
-        # 1. Hiển thị tin nhắn trả lời của AI nếu có
-        ai_reply = result.get("ai_reply") or result.get("message") or "Đã phân tích yêu cầu của bạn."
-        self.append_ai_message(ai_reply)
-
-        # 2. Vẽ Thẻ đề xuất (Proposal Card) nếu Server có trả về đề xuất
-        proposal = result.get("proposal") or result.get("parsed_event")
-        if proposal:
+        proposal = result.get("proposal")
+        if proposal:  # server found a free slot -> show the Accept / Reject / Reschedule card
+            self.append_ai_message(result.get("message") or "Mình đề xuất khung giờ này:")
             new_card = ProposalCard(proposal_data=proposal, chat_screen=self)
             self.chat_history.add_widget(new_card)
             self.active_cards.append(new_card)
+            Clock.schedule_once(self.scroll_to_bottom, 0.2)
+            return
 
+        if nlu.get("needs_clarification") and nlu.get("clarification_question"):
+            self.append_ai_message(nlu["clarification_question"])
+            Clock.schedule_once(self.scroll_to_bottom, 0.2)
+            return
+
+        if nlu.get("fallback_mode") and nlu.get("intent") == "schedule_task":
+            # AI khong kha dung: bang chon gio thu cong voi cac khung trong that
+            self._open_manual_picker(nlu)
+            self.append_ai_message("Bạn vui lòng chọn khung giờ trống ở bảng trên nhé!")
+            Clock.schedule_once(self.scroll_to_bottom, 0.2)
+            return
+
+        self.append_ai_message(result.get("message") or nlu.get("clarification_question")
+                               or "Mình chưa hiểu rõ yêu cầu, bạn thử nói cụ thể hơn nhé.")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def _open_manual_picker(self, nlu):
@@ -497,8 +513,10 @@ class ChatAssistantScreen(MDScreen):
         start = nlu.get("window_start") or datetime.now().date().isoformat()
         end = nlu.get("window_end") or start
         
+        busy = bool(nlu.get("fallback_mode"))
+
         def show(slots):
-            ManualFallbackModal(task_title=title, duration=duration, available_slots=slots).open()
+            ManualFallbackModal(task_title=title, duration=duration, available_slots=slots, ai_busy=busy).open()
         
         api.get_free_slots(
             f"{start}T00:00:00", f"{end}T23:59:59", max(15, min(int(duration), 720)),
