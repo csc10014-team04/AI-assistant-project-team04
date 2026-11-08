@@ -168,19 +168,19 @@ Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn b
 
 ---
 
-### 2.4. File `test_search_engine.py` (P.Nguyên phụ trách)
-Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Lịch trình Cục bộ 3 Bước & Động cơ Tìm Khung giờ trống `< 200ms` (`services/search_engine.py`, `routers/search.py`)**, sử dụng `db_session` và `client` từ `conftest.py`.
+### 2.4. File `test_search_engine.py` (Khôi phụ trách phần Information Searching; Lâm phụ trách phần `find_free_slots`)
+Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Thông tin 2 Hướng (Hybrid SQL + Vector 2 tầng & RAG 6 bước)** và **Động cơ Tìm Khung giờ trống `< 200ms`** ([`services/search_engine.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/services/search_engine.py), [`routers/search.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/routers/search.py)), sử dụng `db_session` và `client` từ `conftest.py`.
 
 **Các nhóm kịch bản bắt buộc phải bao phủ:**
-1. **Chuẩn hóa truy vấn ngôn ngữ tự nhiên & Thời gian tương đối (`optimize_search_query`):**
-   * Ánh xạ từ viết tắt, không dấu và teencode (`"ctdl"`, `"mmt"`, `"gk"`, `"ck"`, `"dl"`, `"t2".."t7"`, `"cn"`).
-   * Quy đổi mốc thời gian tương đối (*"hôm nay"*, *"ngày mai"*, *"chiều thứ 7 tuần này"*, *"tuần sau"*) dựa trên `reference_now` thành khoảng `[start_from, end_until]` gắn múi giờ `+07:00`.
-2. **Truy vấn cục bộ trên MySQL `utf8mb4` & Chống lộ dữ liệu chéo (`execute_local_search` & `verify_and_format_search_results`):**
-   * Lưu dữ liệu thật vào bảng `events` qua `db_session`; xác nhận truy vấn tiếng Việt tìm đúng bản ghi thuộc `owner_id` hiện tại, bỏ qua các sự kiện đã xóa mềm (`deleted_at IS NOT NULL`) và không bao giờ trả về lịch của sinh viên khác.
-   * Mọi mốc thời gian trả ra JSON mang chuẩn ISO 8601 ở múi giờ `+07:00`, cam kết 0% ảo giác do không dùng mô hình sinh tự do để trả lời trực tiếp dữ liệu lịch.
-3. **Độ chính xác và Hiệu năng `< 200ms` của `find_free_slots`:**
-   * Trừ đúng các khoảng bận (`CLASS`, `EXAM`, `EVENT`, `TASK`), trừ khung giờ ngủ (`UserPreference.sleep_start` tới `sleep_end`), trừ danh sách các khung giờ người dùng đã từ chối trong phiên xếp lịch (`excluded_slots`), và cộng đúng khoảng nghỉ chuyển tiếp (`min_break_minutes = 15`).
-   * Không bị chặn bởi `DEADLINE` (thời lượng bằng 0, `blocks_availability = False`), làm tròn giờ bắt đầu lên lưới 15 phút (`:00`, `:15`, `:30`, `:45`).
+1. **[PIC: Khôi] Chuẩn hóa truy vấn, Điều hướng chéo & Hybrid SQL + Vector Search 2 tầng (`optimize_search_query`, `execute_local_search`, `verify_and_format_search_results`):**
+   * Ánh xạ từ viết tắt, không dấu, teencode (`"ctdl"`, `"mmt"`, `"xstk"`, `"vtp2"`, `"ktct"`, `"gdtc"`, `"gk"`, `"ck"`, `"dl"`) và quy đổi thời gian tương đối (*"hôm nay"*, *"chiều thứ 7 tuần này"*, *"tuần sau"*) thành `[window_start, window_end]` (`+07:00`).
+   * **Truy vấn ngữ nghĩa theo cụm khái niệm & Tầng dự phòng:** Lưu dữ liệu thật vào bảng `courses` và `events` qua `db_session`; xác nhận truy vấn chủ đề rộng (ví dụ `"toán"`, `"đại cương"`, `"thể dục"`) tìm đủ các môn thuộc nhóm ngành tương ứng nhưng loại bỏ các môn khác ngành; cô lập tuyệt đối `owner_id`, bỏ qua sự kiện đã xóa mềm (`deleted_at IS NOT NULL`) và dừng tại Bước 3 (không gọi LLM, 0% ảo giác).
+   * **Điều hướng chéo (`is_scheduling_command`):** Khi người dùng gõ câu lệnh đặt/xếp lịch vào thanh Search, API trả về `redirect_target = "chat_home"` và `redirect_button_label = "Trợ lý AI"`.
+2. **[PIC: Khôi] Hỏi đáp Tri thức Học vụ - 6-Step RAG (`ingest_academic_document`, `ask_academic_knowledge_base`):**
+   * Nạp tài liệu quy chế mẫu vào kho vector cô lập, truy vấn câu hỏi học vụ trả về đúng đoạn `citations` và câu trả lời bám sát ngữ cảnh; khi câu hỏi nằm ngoài tài liệu (`score < 0.12`) thì dừng ngay tại Bước 3; khi `vLLM` bận/tắt thì kích hoạt `fallback_mode = True` trả trực tiếp trích đoạn gốc.
+3. **[PIC: Lâm] Độ chính xác và Hiệu năng `< 200ms` của `find_free_slots` & `find_user_free_slots`:**
+   * Trừ đúng các khoảng bận (`CLASS`, `EXAM`, `EVENT`, `TASK`), trừ khung giờ ngủ (`UserPreference.sleep_start` tới `sleep_end`), và cộng đúng khoảng nghỉ chuyển tiếp (`min_break_minutes = 15`).
+   * Không bị chặn bởi `DEADLINE` (thời lượng bằng 0, `blocks_availability = False`), làm tròn biên giờ theo lưới 15 phút (`:00`, `:15`, `:30`, `:45`).
    * **Đo kiểm hiệu năng:** Trên tập 300 sự kiện của cả học kỳ 15 tuần truy vấn từ MySQL, thời gian tính toán của `find_free_slots` bắt buộc nhỏ hơn `200ms`.
 
 ---
