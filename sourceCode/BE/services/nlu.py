@@ -90,6 +90,7 @@ class NluResult(BaseModel):
     profanity_found: bool = False
     fallback_mode: bool = False  # True when the llm failed and rules produced this result
     source: Literal["llm", "rules"] = "llm"
+    fallback_reason: str | None = None  # "<CATEGORY>: <reason>" when fallback_mode is True (for diagnosis)
 
     @field_validator("duration_minutes", mode="before")
     @classmethod
@@ -372,4 +373,5 @@ def understand_prompt(
     log_ai_error(db, user_id, safe_prompt, raw_output, AiErrorType(record["db_error_type"]), retries)
     record_latency_ms((time.monotonic() - started) * 1000)
     rules.fallback_mode = True
+    rules.fallback_reason = f"{category}: {reason}"[:300]
     return rules

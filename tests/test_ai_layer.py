@@ -69,6 +69,7 @@ def test_AI05_llm_down_returns_200_fallback_never_500(client, alice):
     assert res.status_code == 200
     n = res.json()["nlu"]
     assert n["fallback_mode"] is True and n["duration_minutes"] == 180 and n["window_start"]
+    assert n["fallback_reason"].startswith("INFRA_CRASH")  # cause is returned so the host can diagnose it
 
 
 def test_AI06_every_failure_is_logged_in_db_and_in_taxonomy_file(client, alice, db, tmp_path):

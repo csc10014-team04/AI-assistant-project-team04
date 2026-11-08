@@ -119,7 +119,8 @@ class APIClient:
     # 3. SEARCH & PROPOSALS
     # =========================================================================
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
-        endpoint = f"/api/v1/search/events?q={query}&start={start_date}&end={end_date}"
+        from urllib.parse import quote
+        endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
 
