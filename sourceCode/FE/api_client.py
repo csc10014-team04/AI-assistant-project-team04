@@ -153,6 +153,21 @@ class APIClient:
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     # =========================================================================
+    # 3b. REMINDER AUDIT (used by notifier.ReminderScheduler)
+    # =========================================================================
+    @staticmethod
+    def _device_time():
+        """aware ISO timestamp from the phone's clock (the body of these two calls is required by the server)."""
+        from datetime import datetime
+        return {"at": datetime.now().astimezone().isoformat()}
+
+    def report_reminder_scheduled(self, event_id):
+        self._request(f"/api/v1/reminders/{event_id}/scheduled", method="POST", payload=self._device_time())
+
+    def report_reminder_delivered(self, event_id):
+        self._request(f"/api/v1/reminders/{event_id}/delivered", method="POST", payload=self._device_time())
+
+    # =========================================================================
     # 4. PROPOSAL LIFECYCLE (Accept / Reject buttons) AND MANUAL PICKER
     # =========================================================================
     def confirm_proposal(self, proposal_id, on_success, on_failure, on_error):
