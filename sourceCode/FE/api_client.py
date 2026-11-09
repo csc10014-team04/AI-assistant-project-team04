@@ -139,6 +139,13 @@ class APIClient:
     # =========================================================================
     # 3. SEARCH & PROPOSALS
     # =========================================================================
+    def list_events(self, start_from, end_until, on_success, on_failure, on_error, top_k=200):
+        """all of the logged-in user's events between two ISO datetimes (empty query = no text filter)."""
+        from urllib.parse import quote
+        endpoint = (f"/api/v1/search/events?q=&top_k={int(top_k)}"
+                    f"&start_from={quote(start_from, safe='')}&end_until={quote(end_until, safe='')}")
+        self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
+
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
         from urllib.parse import quote
         endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"

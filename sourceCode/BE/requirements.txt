@@ -27,3 +27,6 @@ pytesseract>=0.3.10          # OCR wrapper; also needs the Tesseract program + "
 
 # --- tests ---
 pytest>=8
+
+# --- optional (off by default) ---
+# sentence-transformers>=3.0   # only with ENABLE_NEURAL_SEARCH_FALLBACK=1 (search_engine.py); downloads a model

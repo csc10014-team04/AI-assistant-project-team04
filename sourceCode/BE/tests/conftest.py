@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import BigInteger, Engine, create_engine, text
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,16 @@ if str(BE_ROOT_DIR) not in sys.path:
 from database import get_db, resolve_database_url  # noqa: E402
 from main import app  # noqa: E402
 from models import Base  # noqa: E402
+
+
+@compiles(BigInteger, "sqlite")
+def _bigint_as_integer(type_, compiler, **kw):  # SQLite only auto-increments INTEGER primary keys
+    return "INTEGER"
+
+
+def _sqlite_fallback_engine() -> Engine:
+    """in-memory SQLite used when MySQL is not reachable, so the suite runs on any machine (set REQUIRE_MYSQL=1 to forbid it)."""
+    return create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
 
 
 def resolve_test_database_url() -> str:
@@ -49,12 +61,15 @@ def mysql_engine() -> Generator[Engine, None, None]:
         Base.metadata.create_all(bind=eng, checkfirst=True)  # ensure 11 schema tables exist
     except OperationalError as exc:
         eng.dispose()
-        pytest.fail(
-            "cannot connect to docker mysql for testing. "
-            "ensure container 'schedule_db' is running on port 3307 and credentials in "
-            "sourceCode/Database/assistant_deploy/.env (or BE/.env) match. "
-            f"underlying driver error: {exc}"
-        )
+        if os.getenv("REQUIRE_MYSQL", "0").strip() == "1":
+            pytest.fail(
+                "cannot connect to docker mysql for testing. "
+                "ensure container 'schedule_db' is running on port 3307 and credentials in "
+                "sourceCode/Database/assistant_deploy/.env (or BE/.env) match. "
+                f"underlying driver error: {exc}"
+            )
+        print("\n[tests] MySQL is not reachable; running on in-memory SQLite instead (set REQUIRE_MYSQL=1 to fail instead).")
+        eng = _sqlite_fallback_engine()
     yield eng
     eng.dispose()
 
@@ -67,6 +82,16 @@ def db_session(mysql_engine: Engine) -> Generator[Session, None, None]:
     output: generator yielding an isolated Session executing real mysql innodb constraints.
     typical flow: begin outer tx -> yield savepoint session -> route calls db.commit() -> rollback outer tx.
     """
+    if mysql_engine.dialect.name == "sqlite":  # fallback engine: a fresh schema for every test
+        Base.metadata.drop_all(mysql_engine)
+        Base.metadata.create_all(mysql_engine)
+        session = Session(bind=mysql_engine)
+        try:
+            yield session
+        finally:
+            session.close()
+        return
+
     persist_data = os.getenv("PERSIST_TEST_DATA", "0").strip() == "1"
     if persist_data:
         # optional visual inspection mode: commit rows permanently so they remain visible in dbeaver

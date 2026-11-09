@@ -19,3 +19,11 @@ Env switches: `VLLM_ENDPOINT`, `LLM_TIMEOUT_SECONDS`, `DATA_ENCRYPTION_KEY`, `IN
 
 Measure P2-1 against the live model: `python tools/eval_nlu.py` (target: schema adherence >= 98 %, `bad_dates` = 0).
 `python tools/eval_nlu.py --rules` scores the deterministic fallback alone.
+
+When the AI fails, the API answer carries `nlu.fallback_mode = true` and `nlu.fallback_reason` (`CATEGORY: reason`, for example
+`TIMEOUT: ReadTimeout`), so the cause can be read without opening the log file (the log is written on the machine that runs the backend).
+
+Related AI work outside `BE/services`:
+- `sourceCode/Database/knowledgebase/` and `database/UniInfo/`: the university knowledge base (collector, extractor, loader, `kb_*` schema);
+- `routers/search.py` `POST /search/academic/ask`: question answering over indexed documents (6-step RAG, fallback to excerpts when the model is down);
+- `services/proposals.py`: turns an NLU result into a proposal (free gaps from the deterministic engine, never from the model).

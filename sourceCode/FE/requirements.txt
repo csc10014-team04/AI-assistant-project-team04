@@ -27,4 +27,4 @@ requests==2.34.2
 setuptools==84.2.1
 urllib3==2.8.0
 virtualenv==21.14.12
-
+plyer>=2.1.0
