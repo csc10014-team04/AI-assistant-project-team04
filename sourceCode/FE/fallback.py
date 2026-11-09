@@ -51,6 +51,8 @@ def parse_clock_window(text: str) -> tuple[int, int] | None:
     if not m or int(m.group(1)) >= 24 or int(m.group(4)) > 24:
         return None
     start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
+    if not m.group(3) and not m.group(6) and 1 <= start_h <= 5 and end_h <= 11:
+        start_h, end_h = start_h + 12, end_h + 12  # "từ 3h đến 5h" without a period: nobody studies at 3 a.m.
     start, end = start_h * 60 + int(m.group(2) or 0), end_h * 60 + int(m.group(5) or 0)
     if end <= start and not m.group(6) and start_h < 12 and end_h < 12:
         end += 12 * 60
