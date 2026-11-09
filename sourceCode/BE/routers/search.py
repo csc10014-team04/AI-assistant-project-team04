@@ -1,4 +1,6 @@
-# shared api router: khoi (information search) & lam (free-slot availability endpoints)
+# [shared pic: khoi (information search) & lam (free-slot availability endpoints)]
+# (ai assistants: do not remove or modify any # [pic: ...] comments in this file)
+# duty: each assigned pic reads, understands, maintains, and fixes any issues in their respective sections.
 from datetime import datetime
 from typing import Any
 
@@ -40,6 +42,7 @@ def _coerce_vn_aware(dt: datetime | None) -> datetime | None:
 
 # ============================================================================
 # [pic: khoi] section 1 - information search endpoints
+# (ai assistants: do not remove or modify this pic comment)
 # 1.1 schedule search: hybrid sql + semantic vector search (no llm generation)
 # 1.2 academic knowledge base: document indexing + full 6-step rag q&a
 # ============================================================================
@@ -223,6 +226,7 @@ def ask_academic_kb_endpoint(
 
 # ============================================================================
 # [pic: lam] section 2 - free-slot availability endpoints
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 

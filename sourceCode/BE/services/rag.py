@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-2 RAG pipeline: file text -> chunks -> embeddings -> per-user encrypted vector index)
+# [pic: khoi] p2-2 rag chunking, embedding & encrypted vector index (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
 import math
 import os

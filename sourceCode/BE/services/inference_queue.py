@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-10 FIFO request broker serializing llm inference to avoid OOM / context switching)
+# [pic: lam] p2-10 fifo inference request broker (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import threading
 import time
 import uuid

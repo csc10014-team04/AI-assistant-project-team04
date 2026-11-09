@@ -1,4 +1,5 @@
-# owner: Backend (P2-5 priority classification + queue, P2-4 batch scheduling with dropped low-priority items)
+# [pic: lam] p2-5 & p2-4 flexible tasks crud, priority queue & batch scheduling endpoints (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException

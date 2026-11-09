@@ -1,4 +1,5 @@
-# owner: Backend (P1-8 server side: proposal lifecycle PROPOSED -> CONFIRMED / REJECTED / RESCHEDULED, AGENTS.md section 4)
+# [pic: lam] p1-8, p2-4 & p2-5 proposal lifecycle, slot scoring, task splitting & priority queue (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 

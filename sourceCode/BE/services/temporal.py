@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-3 temporal ambiguity resolution: deterministic defaults + clarifying questions)
+# [pic: lam] p2-3 deterministic relative date resolution (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import re
 import unicodedata
 from dataclasses import dataclass

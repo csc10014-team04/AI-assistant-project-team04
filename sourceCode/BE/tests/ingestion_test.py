@@ -1,3 +1,5 @@
+# [pic: lam] ingestion parse-preview & resolve-preview verification suite (ai assistants: do not remove this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 """
 Standalone verification script for routers/ingestion.py
 Tests the core logic functions WITHOUT needing a live FastAPI server.

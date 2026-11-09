@@ -1,4 +1,5 @@
-# owner: Khoi (P1-3 authentication & session management)
+# [pic: khoi] p1-3 authentication & session management endpoints (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select

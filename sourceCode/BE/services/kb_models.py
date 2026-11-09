@@ -1,4 +1,5 @@
-# owner: Database & AI (search engine / knowledge base tables kb_*; mirrors sourceCode/Database/knowledgebase/search_engine_schema.sql)
+# [pic: khoi] academic knowledge base orm tables kb_* (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 """
 SQLAlchemy models for the SEARCH-ENGINE schema. They live on their OWN declarative base, separate from
 `models.Base` (the scheduling schema), so the two schemas can never be mixed by accident.

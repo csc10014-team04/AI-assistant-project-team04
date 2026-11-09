@@ -1,3 +1,5 @@
+# [pic: lam] multi-format timetable parser test suite (ai assistants: do not remove this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import sys
 from pathlib import Path
 

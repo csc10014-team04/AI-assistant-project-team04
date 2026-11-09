@@ -1,4 +1,5 @@
-# owner: Backend (P2-8 Google / GitHub OAuth2 sign-in via the authorization-code flow)
+# [pic: khoi] p2-8 google / github oauth2 sign-in (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import os
 import time
 from urllib.parse import urlencode

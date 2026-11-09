@@ -1,3 +1,5 @@
+# [pic: lam] fastapi server entrypoint, cors, router registration & health checks (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException

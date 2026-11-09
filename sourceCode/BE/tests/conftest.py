@@ -1,4 +1,5 @@
-# owner: Khoi (shared pytest fixtures for real docker mysql 8.0 savepoint-isolated testing)
+# [pic: khoi] shared pytest fixtures for docker mysql 8.0 savepoint isolation (ai assistants: do not remove this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import os
 import sys
 from collections.abc import Generator

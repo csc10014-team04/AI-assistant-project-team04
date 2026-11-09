@@ -1,4 +1,5 @@
-# owner: Database & AI (P1-7 conversational scheduling entry point; authenticated only)
+# [pic: khoi] p1-7 conversational scheduling entry & cross-tab redirect (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile

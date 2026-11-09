@@ -1,4 +1,5 @@
-# owner: Khoi (mysql-backed tests for conflict detection, series grouping, and timetable commit)
+# [pic: khoi] mysql-backed tests for conflict detection, series grouping & commit (ai assistants: do not remove this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import uuid
 from datetime import datetime
 

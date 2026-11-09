@@ -1,4 +1,5 @@
-# owner: Backend (P1-8 server side: Accept / Reject buttons and the manual slot picker)
+# [pic: lam] p1-8 proposal confirm / reject & manual slot picker endpoints (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException

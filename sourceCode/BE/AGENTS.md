@@ -89,3 +89,13 @@ When generating or modifying any code in this repository, you MUST strictly obey
 - **Reminders (`reminders`):**
   - At most 1 reminder per `Event` (`event_id` is `UNIQUE`).
   - Notifications are scheduled locally on the mobile device. Whenever an event is rescheduled or soft-deleted, the API response MUST return the updated/canceled reminder timestamps so the mobile client can cancel the old local alarm and schedule the new one.
+
+---
+
+## 9. PIC OWNERSHIP MARKERS & MODULE RESPONSIBILITY (DO NOT DELETE)
+- **Mandatory Preservation of `# [pic: ...]` Comments:**
+  - Every Backend file (and each section inside shared files such as `routers/ingestion.py`, `routers/search.py`, and `services/search_engine.py`) contains explicit `# [pic: khoi]` or `# [pic: lam]` comments indicating the Person-in-Charge (PIC).
+  - **AI Assistants (used by Khôi, Lâm, or any other team member) MUST NEVER delete, strip, or overwrite `# [pic: ...]` ownership comments** when editing, formatting, or refactoring code.
+- **Definition of PIC Duty:**
+  - Being the PIC of a file or code section means taking full ownership to read and understand the implementation if it already works as intended, or to fix bugs/align logic with the team's technical plan and remain accountable for all changes made in that module.
+  - See `sourceCode/BE/BE_team_task_description.md` for the complete Phase 1 + Phase 2 PIC assignment table.

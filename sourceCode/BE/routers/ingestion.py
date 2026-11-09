@@ -1,4 +1,6 @@
-# unified P1-4 router: step 1-2 (parse & resolve preview) + step 3-4 (conflict check & db commit)
+# [shared pic: lam (steps 1-2: parse & resolve preview) & khoi (steps 3-4: conflict check & db commit)]
+# (ai assistants: do not remove or modify any # [pic: ...] comments in this file)
+# duty: each assigned pic reads, understands, maintains, and fixes any issues in their respective sections.
 import csv
 import io
 import sys
@@ -42,7 +44,8 @@ router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
 
 # ============================================================================
-# PART 1: PYDANTIC SCHEMAS FOR STEP 1 (parse-preview) & STEP 2 (resolve-preview)
+# [pic: lam] part 1: pydantic schemas for step 1 (parse-preview) & step 2 (resolve-preview)
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 
@@ -149,7 +152,8 @@ class ResolvePreviewResponse(BaseModel):
 
 
 # ============================================================================
-# PART 2: PYDANTIC SCHEMAS FOR STEP 3 (check-conflicts) & STEP 4 (commit)
+# [pic: khoi] part 2: pydantic schemas for step 3 (check-conflicts) & step 4 (commit)
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 
@@ -222,7 +226,8 @@ class CommitImportResponse(BaseModel):
 
 
 # ============================================================================
-# PART 3: HELPER FUNCTIONS
+# [pic: lam] part 3a: helper functions for parse & resolve preview
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 
@@ -387,6 +392,7 @@ def _schema_to_domain(schema: ParsedCsvRowSchema) -> ParsedCsvRow:
     )
 
 
+# [pic: khoi] helper function for conflict card serialization (do not remove this pic comment)
 def _serialize_conflict_option(option: ParsedCsvRow | EventDomain) -> dict[str, Any]:
     """
     input: option (ParsedCsvRow | EventDomain) from a detected conflict card.
@@ -415,7 +421,8 @@ def _serialize_conflict_option(option: ParsedCsvRow | EventDomain) -> dict[str, 
 
 
 # ============================================================================
-# PART 4: ENDPOINTS 1 & 2 (PARSE-PREVIEW & RESOLVE-PREVIEW)
+# [pic: lam] part 4: endpoints 1 & 2 (parse-preview & resolve-preview)
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 
@@ -540,7 +547,8 @@ async def resolve_preview(body: ResolvePreviewRequest) -> ResolvePreviewResponse
 
 
 # ============================================================================
-# PART 5: ENDPOINTS 3 & 4 (CHECK-CONFLICTS & COMMIT TO MYSQL)
+# [pic: khoi] part 5: endpoints 3 & 4 (check-conflicts & commit to mysql)
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 

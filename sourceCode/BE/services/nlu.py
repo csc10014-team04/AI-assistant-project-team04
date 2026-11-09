@@ -1,4 +1,5 @@
-# owner: Database & AI (P1-7 natural language understanding: intent + entity extraction with deterministic fallback)
+# [pic: khoi] p1-7 & p2-1 natural language understanding & fallback (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
 import os
 import re

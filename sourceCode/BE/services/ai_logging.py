@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-12 AI error taxonomy: persistent developer-review log of failed RAG / parsing attempts)
+# [pic: lam] p2-12 ai error taxonomy logger (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
 import os
 import threading

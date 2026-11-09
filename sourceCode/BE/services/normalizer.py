@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-6 input normalization: non-diacritic Vietnamese, teencode, profanity, special chars)
+# [pic: khoi] p2-6 vietnamese text & teencode normalization (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import re
 import unicodedata
 from dataclasses import dataclass, field

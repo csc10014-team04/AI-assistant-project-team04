@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-13 reminder scheduler audit trail; notifications themselves fire locally on the phone)
+# [pic: lam] p2-13 reminder sync & audit trail endpoints (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
 import os
 from datetime import datetime, timedelta

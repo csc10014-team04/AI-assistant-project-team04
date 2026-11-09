@@ -1,4 +1,5 @@
-# owner: Khoi (mysql-backed module & api tests for security, jwt, registration, login, and username uniqueness)
+# [pic: khoi] mysql-backed tests for security, jwt, registration & login (ai assistants: do not remove this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import uuid
 from datetime import datetime, time, timedelta
 

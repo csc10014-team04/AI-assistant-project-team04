@@ -1,4 +1,5 @@
-# owner: Lam (P1-4 first half: multi-format timetable parser & staging error isolation)
+# [pic: lam] p1-4 multi-format timetable parser & error isolation (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import csv
 import io
 import re

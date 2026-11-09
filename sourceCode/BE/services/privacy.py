@@ -1,4 +1,5 @@
-# owner: Database & AI (P1-2 data privacy isolation: payload sanitization, outbound allowlist, local encryption)
+# [pic: khoi] p1-2 data privacy isolation & fernet encryption (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import base64
 import hashlib
 import ipaddress

@@ -1,4 +1,6 @@
-# shared service layer: khoi (information search) & lam (free-slot availability engine)
+# [shared pic: khoi (information search) & lam (free-slot availability engine)]
+# (ai assistants: do not remove or modify any # [pic: ...] comments in this file)
+# duty: each assigned pic reads, understands, maintains, and fixes any issues in their respective sections.
 from datetime import datetime, time, timedelta
 import os
 import re
@@ -38,6 +40,7 @@ from services.temporal import resolve_date_hint
 
 # ============================================================================
 # [pic: khoi] section 1 - schedule information search (sql + vector search)
+# (ai assistants: do not remove or modify this pic comment)
 # note: stops strictly at vector retrieval + sql filtering; never calls llm
 # ============================================================================
 
@@ -637,6 +640,7 @@ def verify_and_format_search_results(
 
 # ============================================================================
 # [pic: khoi] section 2 - academic knowledge base search (full 6-step rag)
+# (ai assistants: do not remove or modify this pic comment)
 # note: uses rag (embed -> retrieve -> pack context -> llm answer) + fallback
 # ============================================================================
 
@@ -831,6 +835,7 @@ def ask_academic_knowledge_base(
 
 # ============================================================================
 # [pic: lam] section 3 - deterministic free-slot availability engine (<200ms)
+# (ai assistants: do not remove or modify this pic comment)
 # ============================================================================
 
 

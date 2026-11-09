@@ -1,4 +1,5 @@
-# owner: Khoi (P1-3 password hashing, jwt creation, and get_current_user dependency)
+# [pic: khoi] p1-3 password hashing, jwt & current user guard (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import os
 from datetime import datetime, timedelta
 

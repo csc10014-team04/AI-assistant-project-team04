@@ -1,4 +1,5 @@
-# owner: Khoi (P1-6 hard constraint validator + P1-4 second half: conflict detection & db commit)
+# [pic: khoi] p1-6 hard constraint validator & import commit (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 from datetime import date, datetime, time, timedelta
 from typing import Any
 

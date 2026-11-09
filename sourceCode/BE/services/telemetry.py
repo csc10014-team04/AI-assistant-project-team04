@@ -1,4 +1,5 @@
-# owner: Database & AI (P2-11 IT telemetry: latency, RAM, VRAM, queue depth -> telemetry_metric_logs)
+# [pic: lam] p2-11 system telemetry sampler for latency, ram & vram (ai assistants: do not remove or modify this pic comment)
+# duty: pic reads, understands, maintains, and fixes any issues in this module.
 import os
 import shutil
 import subprocess
