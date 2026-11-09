@@ -5,7 +5,7 @@ and plain-language requests such as *"xếp cho mình 3 tiếng làm đồ án C
 conflict-free calendar, with the student confirming every change.
 
 Group 04 · CSC10014 Computational Thinking · 10-week project · Team: Ngô Vũ Khôi Nguyên, Huỳnh Nhật Duy, Nguyễn Tường Lâm,
-Đinh Quang Thịnh, Trương Anh Khôi, Phạm Phúc Nguyên.
+Đinh Quang Thịnh, Trương Anh Khôi.
 
 ---
 
@@ -63,6 +63,24 @@ Key rules (enforced in code, see `AGENTS.md`):
 
 | Duty | Feature | State |
 |---|---|---|
+| P1-1 | Calendar UI (Kivy; Android build file) | 🟡 month / week calendar and search show the user's real events; Android build not yet run on a phone |
+| P1-2 | Privacy isolation (auth-only API, PII redaction, private-host-only LLM calls, encrypted index) | ✅ (MySQL data at rest and the phone's token file are not encrypted yet) |
+| P1-3 | Username/password auth, bcrypt, JWT | ✅ |
+| P1-4 | Timetable ingestion: preview, error isolation, conflict cards, safe re-import, search index | ✅ |
+| P1-5 | Availability engine ≤ 200 ms | ✅ sort-and-sweep, tested |
+| P1-6 | Zero-overlap validator | ✅ re-checked at Accept |
+| P1-7 | Natural-language understanding | ✅ (accuracy on the live model not yet measured) |
+| P1-8 / P1-9 | Chat buttons · manual fallback | ✅ server and app code; AI timeout opens the manual picker |
+| P2-1…3, 6 | Few-shot JSON pipeline, PDF/image RAG, date ambiguity (incl. vague dates), input normalizer | ✅ |
+| P2-4 | Task splitting across free gaps; low-priority tasks reported as dropped | ✅ (an urgent task cannot displace an already confirmed event) |
+| P2-5 | Priority queue (`/api/v1/tasks`, `/tasks/schedule`) | ✅ |
+| P2-7 | Abandon pending proposals on a new request | ✅ |
+| P2-8 | Google / GitHub OAuth | 🟡 server done and tested with a fake provider; needs real client ids and app buttons |
+| P2-9 | Local notifications | 🟡 scheduler done; AlarmManager route untested on a device |
+| P2-10…13 | FIFO inference queue, telemetry, AI error log, reminder audit | ✅ (no load test on the GPU, no dashboard) |
+| extra | University knowledge base: collected pages, `kb_*` schema, extractor and loader | 🟡 lecturers, departments, programmes, publications loaded from FIT / Math; courses and Chemistry are empty; lookup in chat not built |
+
+---|---|---|
 | P1-1 | Android calendar UI | ❌ not started (`sourceCode/FE` is empty) |
 | P1-2 | Privacy isolation (auth-only API, PII redaction, private-host-only LLM calls, encrypted index) | ✅ |
 | P1-3 | Username/password auth, bcrypt, JWT | ✅ |
@@ -237,6 +255,21 @@ curl -X PUT  $B/api/v1/reminders/<event_id> -H "Authorization: Bearer $TOKEN" -H
 Timetable CSV columns: `course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind`
 (`kind` = `CLASS` | `EXAM` | `DEADLINE` | `EVENT`; times `HH:MM`, dates `YYYY-MM-DD`, UTF-8).
 
+### API at a glance
+
+| Area | Endpoints (all under `/api/v1`, JWT except register/login) |
+|---|---|
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/oauth/{google\|github}/start`, `POST /auth/oauth/{provider}/exchange` |
+| Chat | `POST /assistant/understand` (returns `nlu`, optional `proposal`), `POST /assistant/index-file` |
+| Proposals | `POST /proposals/{id}/confirm`, `/reject`, `POST /proposals/manual` (reschedule = `understand` with `reschedule_proposal_id`) |
+| Tasks | `POST/GET /tasks`, `PATCH/DELETE /tasks/{id}`, `POST /tasks/schedule` (priority queue) |
+| Calendar | `GET /search/events`, `POST /search/free-slots`, `POST /search/academic/ask`, `POST /search/academic/documents` |
+| Import | `POST /ingestion/parse-preview`, `/resolve-preview`, `/check-conflicts`, `/commit` |
+| Reminders | `PUT /reminders/{event_id}`, `POST /reminders/{event_id}/scheduled`, `/delivered`, `GET /reminders/audit` |
+| Health | `GET /health` (process), `GET /health/db` (database) |
+
+The full, always-current list is the Swagger page at `http://<host>:8080/docs`.
+
 If the AI is down or slow, `/assistant/understand` still returns `200` with `"fallback_mode": true`, the extracted duration/title and a
 message, so the client shows the manual form instead of an error.
 
@@ -246,28 +279,32 @@ message, so the client shows the manual form instead of an error.
 
 ```
 AGENTS.md                      architectural contracts (read before changing code)
-docs/                          duties.pdf, Problem_analysis.pdf, architecture decisions
-sourceCode/
+docs/                          duties.pdf, Problem_analysis.pdf, architecture.md, guides      -> docs/README.md
+scripts/                       check_readmes.py (empty READMEs, broken links, team list)
+database/UniInfo/              collected university information (pages + structured rows)   -> database/README.md
+sourceCode/                                                                                  -> sourceCode/README.md
   BE/                          FastAPI backend: routers/, services/, models.py, database.py, tests/, tools/
-  Database/                    infra guide + assistant_deploy/ (docker-compose.yml, init.sql, .env.example)
+  FE/                          the Kivy app (login, calendar, search, AI chat)                -> sourceCode/FE/README.md
+  Database/                    infra guide, assistant_deploy/ (docker-compose.yml, init.sql), user_data/, knowledgebase/
   AI-host/                     notes on the AI/server layer (NLU, RAG, queue, telemetry)
-  FE/                          Android app (to be built)
-tests/                         system test suite (BE + DB + AI + FE) – see tests/README.md
+tests/                         system test suite (BE + DB + AI + FE + knowledge base) – see tests/README.md
 ```
 
 Locked shared files: `models.py`, `database.py`, `schema`/`init.sql` change only through an agreed migration.
+The knowledge-base tables live in their own file, `sourceCode/Database/knowledgebase/search_engine_schema.sql`.
 
 ---
 
 ## 8. Testing
 
 ```bash
-python -m pytest tests -rx          # system suite: in-memory SQLite, simulated AI, ~15 s
-cd sourceCode/BE && python -m pytest  # developers' module tests against the Docker MySQL (needs `docker compose up -d db`)
-python sourceCode/BE/tools/eval_nlu.py          # measure JSON adherence against the live model (target ≥ 98 %)
+python -m pytest tests -rx                       # system suite: in-memory SQLite, simulated AI, about 20 s, no Docker
+cd sourceCode/BE && python -m pytest             # module tests: Docker MySQL when reachable, otherwise in-memory SQLite (REQUIRE_MYSQL=1 forbids the fallback)
+python scripts/check_readmes.py                  # empty READMEs, broken links, current team list
+python sourceCode/BE/tools/eval_nlu.py           # measure JSON adherence against the live model (target ≥ 98 %)
 ```
 
-`tests/README.md` lists every test and the known defects/gaps.
+`tests/README.md` lists every test and what is not covered.
 
 ---
 

@@ -1,0 +1,121 @@
+[
+  {
+    "site_id": "fit",
+    "name": "Chất lượng cao",
+    "level": "undergraduate",
+    "description": "Với mục tiêu đào tạo nguồn nhân lực chất lượng cao, đáp ứng nhu cầu của các doanh nghiệp trong và ngoài nước, Khoa Công nghệ thông tin triển khai tuyển sinh chương trình đào tạo Chất lượng cao theo học chế tín chỉ, kiểm định theo tiêu chuẩn AUN-QA khóa đầu tiên vào năm 2013.",
+    "source_url": "https://www.fit.hcmus.edu.vn/dai-hoc/chat-luong-cao"
+  },
+  {
+    "site_id": "fit",
+    "name": "Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Chương trình đào tạo bậc cử nhân (4 năm) được xây dựng theo hướng cung cấp kiến thức khoa học cơ bản, cơ sở ngành vững chắc, kiến thức ngành chuyên sâu, chú trọng phát triển năng lực người học, phát triển các kỹ năng nghiên cứu, kỹ năng mềm, cũng như các kỹ năng cơ bản để đạt được thành công về nghề nghiệp trong lĩnh vực công nghệ thông tin, đáp ứng nhu cầu của xã hội.",
+    "source_url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-chuan"
+  },
+  {
+    "site_id": "fit",
+    "name": "Chương trình tiên tiến",
+    "level": "undergraduate",
+    "description": "Chương trình cử nhân Khoa học máy tính 4 năm, giảng dạy hoàn toàn bằng tiếng Anh và được xây dựng trên cơ sở chương trình của Đại học Portland State (Hoa Kỳ). Sinh viên được chuẩn bị kiến thức để làm việc trong ngành hoặc học tiếp sau đại học.",
+    "source_url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien"
+  },
+  {
+    "site_id": "fit",
+    "name": "Cử nhân tài năng",
+    "level": "undergraduate",
+    "description": "Chương trình đào tạo Cử nhân tài năng (4 năm) được xây dựng dựa trên chương trình đại học Chính quy Chuẩn, bổ sung kiến thức khoa học nền tảng và chuyên ngành nâng cao theo định hướng nghiên cứu.",
+    "source_url": "https://www.fit.hcmus.edu.vn/dai-hoc/cu-nhan-tai-nang"
+  },
+  {
+    "site_id": "fit",
+    "name": "Trí tuệ nhân tạo",
+    "level": "undergraduate",
+    "description": "Chương trình trang bị nền tảng toán học, khoa học máy tính và kiến thức chuyên sâu về trí tuệ nhân tạo (AI). Sinh viên thực hành xây dựng giải pháp AI cho các bài toán thực tế.",
+    "source_url": "https://www.fit.hcmus.edu.vn/dai-hoc/tri-tue-nhan-tao"
+  },
+  {
+    "site_id": "fit",
+    "name": "Chương trình Việt Pháp",
+    "level": "undergraduate",
+    "description": "Hệ thống Thông tin (HTTT) là một chuyên ngành của Công nghệ thông tin (CNTT) mà đối tượng nghiên cứu là các giải pháp tự động hóa các HTTT trong các tổ chức kinh tế - xã hội. Ngày nay xuất hiện ngày càng nhiều nhu cầu nghiên cứu và ứng dụng trí tuệ nhân tạo, học máy, phân tích dữ liệu, v.v… trong các HTTT của các tổ chức, cơ quan, và doanh nghiệp. Các HTTT thông minh cũng là mục tiêu của các dự án lớn về thành phố thông minh của TP. Hồ Chí Minh, các các thành phố trong nước cũng như ngoài nước.",
+    "source_url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/chuong-trinh-viet-phap"
+  },
+  {
+    "site_id": "math",
+    "name": "Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Chương trình chuẩn là loại hình đào tạo đại trà của Khoa Toán – Tin học, cung cấp nền tảng Toán học, Khoa học tính toán, Khoa học máy tính, Thống kê và Khoa học dữ liệu, đồng thời phát triển năng lực phân tích, tư duy logic và khả năng ứng dụng trong thực tiễn.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Khoa học dữ liệu - Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng về Toán học, Xác suất, Thống kê, Máy học và Trí tuệ nhân tạo. Sinh viên được trang bị năng lực thu thập, xử lý, phân tích dữ liệu và xây dựng các mô hình, hệ thống thông minh. Mã ngành 7460108.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-khoa-hoc-du-lieu"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Thống kê - Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng vững chắc về Toán học, Xác suất, Suy luận thống kê, Mô hình thống kê và Phân tích dữ liệu. Sinh viên có khả năng phân tích, dự báo, đánh giá rủi ro và hỗ trợ ra quyết định trong điều kiện bất định. Mã ngành 7460201.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-thong-ke"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Toán học - Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng vững chắc về Toán học, tư duy logic, tư duy trừu tượng và năng lực nghiên cứu. Sinh viên có khả năng tiếp tục học tập ở trình độ cao hơn hoặc tham gia giảng dạy, nghiên cứu và ứng dụng Toán học trong nhiều lĩnh vực. Mã ngành 7460101.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-hoc"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Toán tin - Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng kết hợp giữa Toán học, Khoa học tính toán và Khoa học máy tính. Sinh viên được trang bị năng lực lập trình, thiết kế thuật toán, xử lý dữ liệu và phát triển các ứng dụng trong trí tuệ nhân tạo, khoa học dữ liệu, kỹ thuật phần mềm và các lĩnh vực công nghệ hiện đại. Mã ngành 7460117.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-tin"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Toán ứng dụng - Chương trình chuẩn",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có khả năng vận dụng Toán học và công cụ tính toán để mô hình hóa, mô phỏng, tối ưu hóa và giải quyết các vấn đề thực tiễn. Sinh viên có thể làm việc trong các lĩnh vực khoa học tính toán, tài chính định lượng, định phí bảo hiểm, tối ưu hóa, giáo dục toán học và các lĩnh vực ứng dụng Toán học. Mã ngành 7460112.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-ung-dung"
+  },
+  {
+    "site_id": "math",
+    "name": "Cử nhân tài năng",
+    "level": "undergraduate",
+    "description": "Chương trình dành cho những sinh viên có năng lực học tập xuất sắc, đam mê Toán học và có định hướng nghiên cứu khoa học. Sinh viên được đào tạo chuyên sâu theo các hướng Đại số, Giải tích, Giải tích số và Xác suất – Thống kê, qua đó hình thành nền tảng Toán học vững chắc, tư duy nghiên cứu độc lập và khả năng tiếp cận các vấn đề chuyên sâu. Mã ngành 7460101.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-cntn"
+  },
+  {
+    "site_id": "math",
+    "name": "Tăng cường tiếng Anh",
+    "level": "undergraduate",
+    "description": "Chương trình Tăng cường tiếng Anh được xây dựng nhằm đào tạo nguồn nhân lực chất lượng cao, có kiến thức chuyên môn vững vàng và năng lực sử dụng tiếng Anh trong học tập và làm việc.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Khoa học dữ liệu - Tăng cường tiếng Anh",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng về Toán học, Xác suất, Thống kê, Máy học và Trí tuệ nhân tạo. Sinh viên được trang bị năng lực thu thập, xử lý, phân tích dữ liệu và xây dựng các mô hình, hệ thống thông minh. Mã ngành 7460108_DKD.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-khoa-hoc-du-lieu"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Toán tin - Tăng cường tiếng Anh",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có nền tảng kết hợp giữa Toán học, Khoa học tính toán và Khoa học máy tính. Sinh viên được trang bị năng lực lập trình, thiết kế thuật toán, xử lý dữ liệu và phát triển các ứng dụng trong trí tuệ nhân tạo, khoa học dữ liệu, kỹ thuật phần mềm và các lĩnh vực công nghệ hiện đại. Mã ngành 7460117_DKD.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-tin"
+  },
+  {
+    "site_id": "math",
+    "name": "Ngành Toán ứng dụng - Tăng cường tiếng Anh",
+    "level": "undergraduate",
+    "description": "Đào tạo cử nhân có khả năng vận dụng Toán học và công cụ tính toán để mô hình hóa, mô phỏng, tối ưu hóa và giải quyết các vấn đề thực tiễn. Sinh viên có thể làm việc trong các lĩnh vực khoa học tính toán, tài chính định lượng, định phí bảo hiểm, tối ưu hóa, giáo dục toán học và các lĩnh vực ứng dụng Toán học. Mã ngành 7460112_DKD.",
+    "source_url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-ung-dung"
+  }
+]

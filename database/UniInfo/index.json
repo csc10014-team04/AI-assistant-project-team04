@@ -1,0 +1,1319 @@
+{
+  "generated_at": "2026-11-09T01:15:06+07:00",
+  "pages": [
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/bo-mon.html",
+      "title": "Bộ môn",
+      "file": "fbb/bo-mon-html-493af8.md",
+      "fetched_at": "2026-11-09T00:18:35+07:00",
+      "sha256": "e51fa35c543c43d7dc51cad5420c05136e5c3d385759bdb1a5d5d8a2316f1686",
+      "chars": 224
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/boston-biopharma-research-center-tuyen-dung.html",
+      "title": "Boston Biopharma Research Center tuyển dụng",
+      "file": "fbb/boston-biopharma-research-center-tuyen-dung-html-2f3905.md",
+      "fetched_at": "2026-11-09T00:19:45+07:00",
+      "sha256": "a5bd50269071f1876003a8b6662058267ec4b4f8716ae96e0266396c8bc77ace",
+      "chars": 562
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/buoi-gioi-thieu-va-phong-van-voi-dai-hoc-thanh-hoa-dai-loan.html",
+      "title": "BUỔI GIỚI THIỆU VÀ PHỎNG VẤN VỚI ĐẠI HỌC THANH HOA, ĐÀI LOAN",
+      "file": "fbb/buoi-gioi-thieu-va-phong-van-voi-dai-hoc-thanh-hoa-dai-loan-html-0d9379.md",
+      "fetched_at": "2026-11-09T00:19:01+07:00",
+      "sha256": "dd69585f4ba193967a606e1f360e1b1331d8b53dfe7c088f334f908a45a70536",
+      "chars": 1368
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/buoi-seminar-hoc-thuat-va-gioi-thieu-dai-hoc-quoc-gia-chonnam-han-quoc.html",
+      "title": "BUỔI SEMINAR HỌC THUẬT VÀ GIỚI THIỆU ĐẠI HỌC QUỐC GIA CHONNAM, HÀN QUỐC",
+      "file": "fbb/buoi-seminar-hoc-thuat-va-gioi-thieu-dai-hoc-quoc-gia-chonnam-han-quoc-html-84728c.md",
+      "fetched_at": "2026-11-09T00:19:03+07:00",
+      "sha256": "f01d37cbc7aa92e3bacd11643ba6452a9af7ef64f61d15c5aa79ad82ffed9111",
+      "chars": 1588
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/-call-for-applications-ms-phd-and-integrated-phd-positions-in-medical-research-center-mrc-.html",
+      "title": "[Call for Applications] MS, PhD and Integrated PhD Positions in Medical Research Center (MRC)",
+      "file": "fbb/call-for-applications-ms-phd-and-integrated-phd-positions-in-medical-research-ce-df03c0.md",
+      "fetched_at": "2026-11-09T00:18:43+07:00",
+      "sha256": "b7ba462c0740facde3ac5b3fc21c4adc8321864e3da9f9780f00e5e03aafac41",
+      "chars": 2475
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/camellia-nganiana-nguyen-phi-1790737039.html",
+      "title": "Camellia nganiana Nguyen-Phi & Luu, loài Hồng trà mới được công bố từ Việt Nam",
+      "file": "fbb/camellia-nganiana-nguyen-phi-1790737039-html-9052f9.md",
+      "fetched_at": "2026-11-09T00:18:41+07:00",
+      "sha256": "e2cabce976fee99207dd52458792b1c8b208ca1bfa4f3413273d4edcb9beba0f",
+      "chars": 4130
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/chuong-trinh-tuyen-dung-heineken-vietnam-nextgen-2027-supply-chain.html",
+      "title": "CHƯƠNG TRÌNH TUYỂN DỤNG HEINEKEN VIETNAM NEXTGEN 2027-SUPPLY CHAIN",
+      "file": "fbb/chuong-trinh-tuyen-dung-heineken-vietnam-nextgen-2027-supply-chain-html-c4e4e5.md",
+      "fetched_at": "2026-11-09T00:19:47+07:00",
+      "sha256": "b11dce7bee657d9d02cd788725b5ea50c43ff11bdb0d3ddbdf4456c3a0098b3a",
+      "chars": 1214
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/co-hoi-nghe-nghiep-nganh-sinh-hoc-cnsh.html",
+      "title": "Co hoi nghe nghiep nganh Sinh hoc - CNSH",
+      "file": "fbb/co-hoi-nghe-nghiep-nganh-sinh-hoc-cnsh-html-efee67.md",
+      "fetched_at": "2026-11-09T00:19:43+07:00",
+      "sha256": "d7f766cfa24d97a47637d992e3b2f69dad759f7c540135241fcbcc0527b28a8a",
+      "chars": 715
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dao-tao-sau-dai-hoc.html",
+      "title": "Đào tạo sau đại học",
+      "file": "fbb/dao-tao-sau-dai-hoc-html-7dc0b5.md",
+      "fetched_at": "2026-11-09T00:18:29+07:00",
+      "sha256": "9c89762b0733149c5afbdf6e2b4ab5e9bd5d14db41291ffd7a66d78664cd8dc1",
+      "chars": 690
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-cnsh-ctda-gioi-thieu-chung.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-cnsh-ctda-gioi-thieu-chung-html-e592eb.md",
+      "fetched_at": "2026-11-09T00:19:37+07:00",
+      "sha256": "182576dc2f506c4206db4ed71779a6e73995dfe974cb4e5b93063df4c338a2de",
+      "chars": 2250
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-cnsh-gioi-thieu-chung.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-cnsh-gioi-thieu-chung-html-cdadf4.md",
+      "fetched_at": "2026-11-09T00:19:25+07:00",
+      "sha256": "9b4bc21c025107128975135bd106e17d5cc33664b96698e7ccd3e8f3f907e5f5",
+      "chars": 2233
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-cong-nghe-sinh-hoc.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-cong-nghe-sinh-hoc-html-269b31.md",
+      "fetched_at": "2026-11-09T00:19:21+07:00",
+      "sha256": "9b4bc21c025107128975135bd106e17d5cc33664b96698e7ccd3e8f3f907e5f5",
+      "chars": 2233
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-cong-nghe-sinh-hoc-tang-cuong-tieng-anh.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-cong-nghe-sinh-hoc-tang-cuong-tieng-anh-html-76f5ce.md",
+      "fetched_at": "2026-11-09T00:19:33+07:00",
+      "sha256": "182576dc2f506c4206db4ed71779a6e73995dfe974cb4e5b93063df4c338a2de",
+      "chars": 2250
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-sh-ctda-gioi-thieu-chung.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-sh-ctda-gioi-thieu-chung-html-6b0aec.md",
+      "fetched_at": "2026-11-09T00:19:31+07:00",
+      "sha256": "b4712f944db74e3afaa141fa5d535dfb06b8efb4f58358dc8b83510f2f400167",
+      "chars": 2147
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-sh-gioi-thieu-chung105.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-sh-gioi-thieu-chung105-html-964e25.md",
+      "fetched_at": "2026-11-09T00:19:19+07:00",
+      "sha256": "2968b54dfc048b8d3afd179095eb4af9c519da44481d69684138eeb12e3dfd37",
+      "chars": 1952
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-sinh-hoc.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-sinh-hoc-html-913889.md",
+      "fetched_at": "2026-11-09T00:19:16+07:00",
+      "sha256": "2968b54dfc048b8d3afd179095eb4af9c519da44481d69684138eeb12e3dfd37",
+      "chars": 1952
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/dtdh-sinh-hoc-tang-cuong-tieng-anh.html",
+      "title": "GIỚI THIỆU CHUNG",
+      "file": "fbb/dtdh-sinh-hoc-tang-cuong-tieng-anh-html-f4aa41.md",
+      "fetched_at": "2026-11-09T00:19:27+07:00",
+      "sha256": "b4712f944db74e3afaa141fa5d535dfb06b8efb4f58358dc8b83510f2f400167",
+      "chars": 2147
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/gioi-thieu.html",
+      "title": "Về Khoa Sinh học -  Công nghệ Sinh học",
+      "file": "fbb/gioi-thieu-html-ed7c40.md",
+      "fetched_at": "2026-11-09T00:18:23+07:00",
+      "sha256": "49eb09755439fea6fb28c25662eb107a7d22cf408bb1c9e63e29730e41ad2c28",
+      "chars": 768
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/gioi-thieu-tuyen-sinh.html",
+      "title": "Giới thiệu",
+      "file": "fbb/gioi-thieu-tuyen-sinh-html-37fa5f.md",
+      "fetched_at": "2026-11-09T00:18:39+07:00",
+      "sha256": "b43b582ca9057a62077340fd17e5cd47d0cced2ffe61a0ef4da47e314c7ca918",
+      "chars": 1172
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/hm-clause-internship-program-1777367720.html",
+      "title": "HM.CLAUSE INTERNSHIP PROGRAM",
+      "file": "fbb/hm-clause-internship-program-1777367720-html-98806a.md",
+      "fetched_at": "2026-11-09T00:18:59+07:00",
+      "sha256": "68658fd1070627ac1bc6b5730f130914ca5fdb8c8cf6a1fe32b3cc1c34fe770a",
+      "chars": 5260
+    },
+    {
+      "site": "fbb",
+      "url": "http://fbb.hcmus.edu.vn",
+      "title": "Khoa Sinh học - Công nghệ Sinh học, Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "fbb/home-0e26b0.md",
+      "fetched_at": "2026-11-09T00:19:05+07:00",
+      "sha256": "50176371aecda2ae02f7cc775eb9c1c17b07cff8cff7690caf622945b7ef69f0",
+      "chars": 2222
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/",
+      "title": "Khoa Sinh học - Công nghệ Sinh học, Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "fbb/home-173962.md",
+      "fetched_at": "2026-11-09T00:18:19+07:00",
+      "sha256": "50176371aecda2ae02f7cc775eb9c1c17b07cff8cff7690caf622945b7ef69f0",
+      "chars": 2222
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/le-trao-hoc-bong-dong-manh-nam-2026-lan-toa-tinh-than-dong-hanh-va-tiep-suc-sinh-vien.html",
+      "title": "LỄ TRAO HỌC BỔNG ĐỒNG MẠNH NĂM 2026 - LAN TỎA TINH THẦN ĐỒNG HÀNH VÀ TIẾP SỨC SINH VIÊN",
+      "file": "fbb/le-trao-hoc-bong-dong-manh-nam-2026-lan-toa-tinh-than-dong-hanh-va-tiep-suc-sinh-d5f165.md",
+      "fetched_at": "2026-11-09T00:19:51+07:00",
+      "sha256": "189e12f8a18c68208cf15f27684f556cf1c511a1f5e0fe022ed90c3830c7947e",
+      "chars": 2737
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/lich-bao-ve-khoa-luan-tot-nghiep-chuong-trinh-de-an-hoc-ky-2-nam-hoc-2025-2026.html",
+      "title": "LỊCH BẢO VỆ KHOÁ LUẬN TỐT NGHIỆP - CHƯƠNG TRÌNH ĐỀ ÁN - HỌC KỲ 2 NĂM HỌC 2025-2026",
+      "file": "fbb/lich-bao-ve-khoa-luan-tot-nghiep-chuong-trinh-de-an-hoc-ky-2-nam-hoc-2025-2026-h-316252.md",
+      "fetched_at": "2026-11-09T00:18:45+07:00",
+      "sha256": "cb180336366698773682382e44c48d82e02f04437cf238ce324ce83ff151ee3d",
+      "chars": 737
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/lien-he.html",
+      "title": "Liên hệ",
+      "file": "fbb/lien-he-html-be7aa1.md",
+      "fetched_at": "2026-11-09T00:19:49+07:00",
+      "sha256": "166b16e20a0c4985c5c97df030fb30f22c4ca9becb3542130c19a74d73e1a22e",
+      "chars": 519
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/nghien-cuu-hop-tac.html",
+      "title": "Khoa học - đối ngoại",
+      "file": "fbb/nghien-cuu-hop-tac-html-9c04f4.md",
+      "fetched_at": "2026-11-09T00:18:31+07:00",
+      "sha256": "23415a7a9b874024f30db570074e1d335dc081e342dc9adda37ab6c263e9ea74",
+      "chars": 639
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/nguoi-hoc.html",
+      "title": "Người học",
+      "file": "fbb/nguoi-hoc-html-ebf416.md",
+      "fetched_at": "2026-11-09T00:19:41+07:00",
+      "sha256": "40f5a9e0cfb644b9dd6da12353b9bb182abc0d82319096a41e64d872ec833cbd",
+      "chars": 715
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/phong-thi-nghiem.html",
+      "title": "Phòng Thí Nghiệm",
+      "file": "fbb/phong-thi-nghiem-html-d30124.md",
+      "fetched_at": "2026-11-09T00:18:37+07:00",
+      "sha256": "9e5ae5499e30ace13ce5eacfef3904198ee1c016ea405ce7f038aaa2b039ecdf",
+      "chars": 283
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/quy-trinh-viet-thu-gioi-thieu-tu-khoa-sinh-hoc-cong-nghe-sinh-hoc.html",
+      "title": "Quy trình viết Thư giới thiệu từ Khoa Sinh học - Công nghệ Sinh học",
+      "file": "fbb/quy-trinh-viet-thu-gioi-thieu-tu-khoa-sinh-hoc-cong-nghe-sinh-hoc-html-e3abe7.md",
+      "fetched_at": "2026-11-09T00:18:47+07:00",
+      "sha256": "41eeb0be6c0d6b3a3b6208c6f49f3b179a040e04911924534e39bd18553b6c6f",
+      "chars": 984
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/suc-khoe-va-co-cuoc-song-tot.html",
+      "title": "Sức khỏe và có cuộc sống tốt",
+      "file": "fbb/suc-khoe-va-co-cuoc-song-tot-html-b49b00.md",
+      "fetched_at": "2026-11-09T00:19:55+07:00",
+      "sha256": "fa673ea8b7949d07cbdc8183746cd5521b59aaed353781748eef286c9e99cbdc",
+      "chars": 2024
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-1/2025-2026-chuong-trinh-chuan.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 1/2025-2026 CHƯƠNG TRÌNH CHUẨN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-1-2025-2026-chuong-trinh-chuan-html-058050.md",
+      "fetched_at": "2026-11-09T00:18:51+07:00",
+      "sha256": "81962ef9b23cc45149b550d66d8944df2a1a9a69c84bd473008011d40d13cecc",
+      "chars": 802
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-1/2025-2026-chuong-trinh-de-an.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 1/2025-2026 CHƯƠNG TRÌNH ĐỀ ÁN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-1-2025-2026-chuong-trinh-de-an-html-69cc72.md",
+      "fetched_at": "2026-11-09T00:18:53+07:00",
+      "sha256": "1d995289a6ad7601ab0f195bd975a432724911e0003ea799a816ba54dc1a5ec1",
+      "chars": 802
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-1/2026-2027-chuong-trinh-chuan.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 1/2026-2027 CHƯƠNG TRÌNH CHUẨN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-1-2026-2027-chuong-trinh-chuan-html-082eb1.md",
+      "fetched_at": "2026-11-09T00:19:09+07:00",
+      "sha256": "ca28516bc3ec574f4c82c9bb00c4ac5c151bb7d04e304067e43a391b471dd44d",
+      "chars": 792
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-2/2024-2025-chuong-trinh-chuan.html",
+      "title": "THỜI KHOÁ BIỂU HỌC KỲ 2/2024-2025 CHƯƠNG TRÌNH CHUẨN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-2-2024-2025-chuong-trinh-chuan-html-483a98.md",
+      "fetched_at": "2026-11-09T00:19:11+07:00",
+      "sha256": "39d073922efaea4c96b26f017fbaa20acf101c79de900e7d58f49db66a9fda87",
+      "chars": 836
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-2/2025-2026-chuong-trinh-chuan.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 2/2025-2026 CHƯƠNG TRÌNH CHUẨN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-2-2025-2026-chuong-trinh-chuan-html-bcdd7e.md",
+      "fetched_at": "2026-11-09T00:18:57+07:00",
+      "sha256": "4593f5d21a602f24e4a4a55a21555d933b10ec5b74053a94c8e013ff4b6b8236",
+      "chars": 1032
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-2/2025-2026-chuong-trinh-de-an.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 2/2025-2026 CHƯƠNG TRÌNH ĐỀ ÁN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-2-2025-2026-chuong-trinh-de-an-html-944251.md",
+      "fetched_at": "2026-11-09T00:18:55+07:00",
+      "sha256": "1403be3fa98d1f83066f0c4191c415982863d89d7a7b9a3e8ba3bac799809581",
+      "chars": 801
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/thoi-khoa-bieu-hoc-ky-3/2025-2026-chuong-trinh-de-an.html",
+      "title": "THỜI KHÓA BIỂU HỌC KỲ 3/2025-2026 CHƯƠNG TRÌNH ĐỀ ÁN",
+      "file": "fbb/thoi-khoa-bieu-hoc-ky-3-2025-2026-chuong-trinh-de-an-html-0a3618.md",
+      "fetched_at": "2026-11-09T00:18:49+07:00",
+      "sha256": "454ffc4f449880c99e8b8c04ecf0a9667c98f2dfcb34f3fd9afe216b6998d061",
+      "chars": 1029
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/tin-tuc.html",
+      "title": "Tin tức",
+      "file": "fbb/tin-tuc-html-9916c6.md",
+      "fetched_at": "2026-11-09T00:19:07+07:00",
+      "sha256": "29b341ba56424dabc0c92c412785c58d510a6c1e7b99aecc816fe6083efecc35",
+      "chars": 1485
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/ve-khoa-sinh-hoc-cong-nghe-sinh-hoc.html",
+      "title": "Về Khoa Sinh học -  Công nghệ Sinh học",
+      "file": "fbb/ve-khoa-sinh-hoc-cong-nghe-sinh-hoc-html-a18c05.md",
+      "fetched_at": "2026-11-09T00:18:25+07:00",
+      "sha256": "49eb09755439fea6fb28c25662eb107a7d22cf408bb1c9e63e29730e41ad2c28",
+      "chars": 768
+    },
+    {
+      "site": "fbb",
+      "url": "https://fbb.hcmus.edu.vn/xoa-ngheo.html",
+      "title": "Xóa nghèo",
+      "file": "fbb/xoa-ngheo-html-73725e.md",
+      "fetched_at": "2026-11-09T00:19:53+07:00",
+      "sha256": "b8c5040e6fcbc6673d6e981548bd6d6fd9193efac62a34066b2cbdd5b295154b",
+      "chars": 1980
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/about/staff-handbook",
+      "title": "Staff Handbook - Faculty of Information Technology - VNUHCM-University of Science",
+      "file": "fit/about-staff-handbook-b26820.md",
+      "fetched_at": "2026-11-09T00:18:31+07:00",
+      "sha256": "4d8b85d426272f247c7ac2347a39f96aaffccf79309340bb476c8ed64d78d921",
+      "chars": 5954
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc",
+      "title": "Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-c61202.md",
+      "fetched_at": "2026-11-09T01:04:53+07:00",
+      "sha256": "b5a3fa6325ed1a855a77c112ac30e71aefbcaa55f3801d2479e567402a00d172",
+      "chars": 6094
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chat-luong-cao",
+      "title": "Chất lượng cao - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chat-luong-cao-410da9.md",
+      "fetched_at": "2026-11-09T01:05:19+07:00",
+      "sha256": "5792b083cc034626e850af6c79737ee6855b6f5a15f5e13120d9d4006bf6f3dc",
+      "chars": 3283
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-chuan",
+      "title": "Chương trình chuẩn - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-chuan-8bf9c1.md",
+      "fetched_at": "2026-11-09T01:05:05+07:00",
+      "sha256": "a61d6d1020050017dfd36f2aea8d078bdd1b33abcdecd8679f24ef5b32bd7409",
+      "chars": 3349
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien",
+      "title": "Chương trình tiên tiến - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-tien-tien-63cfbd.md",
+      "fetched_at": "2026-11-09T00:04:59+07:00",
+      "sha256": "a6fc282036b4ca62406ee6f6a75d5a641df9d30c68f4e414eb5b52171ad32e58",
+      "chars": 5705
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien/chat-luong",
+      "title": "Chất lượng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-tien-tien-chat-luong-e80ac5.md",
+      "fetched_at": "2026-11-09T00:19:31+07:00",
+      "sha256": "caff47903e7e2be4f712101df6482a67534f694fa61679670511ea139efa3ae9",
+      "chars": 2979
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien/chuong-trinh",
+      "title": "Chương trình học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-tien-tien-chuong-trinh-99fd41.md",
+      "fetched_at": "2026-11-09T00:18:53+07:00",
+      "sha256": "fdbff165ce4dc3b5a79fefffabb3ad33a4a32d660a481e01c6b536ba4616671a",
+      "chars": 11426
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien/ho-tro",
+      "title": "Hỗ trợ sinh viên - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-tien-tien-ho-tro-2d8e7e.md",
+      "fetched_at": "2026-11-09T00:19:29+07:00",
+      "sha256": "8674ff960365f9ba9ae30bd074738992d731a217a8a2ac40ee9ff40681444b3a",
+      "chars": 4433
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/chuong-trinh-tien-tien/thuc-tap",
+      "title": "Thực tập & việc làm - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-chuong-trinh-tien-tien-thuc-tap-ea1976.md",
+      "fetched_at": "2026-11-09T00:19:27+07:00",
+      "sha256": "454a4582e8ae9701f250bebc88288cdd89d7e99f20e226406294b1e61ebeb539",
+      "chars": 3300
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/cu-nhan-tai-nang",
+      "title": "Cử nhân tài năng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-cu-nhan-tai-nang-5cf3de.md",
+      "fetched_at": "2026-11-09T01:05:17+07:00",
+      "sha256": "5407c8d3027233672bdbf42d9538530761917220c834ebf67ad1a2c26a2ff474",
+      "chars": 1998
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/thong-tin-mon-hoc",
+      "title": "Thông tin môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-thong-tin-mon-hoc-46e23b.md",
+      "fetched_at": "2026-11-09T01:03:46+07:00",
+      "sha256": "2b81a328b77421a25310e0b4892ce361dddfe98a51a8e340cd2fd4df3b74e1ed",
+      "chars": 4377
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dai-hoc/tri-tue-nhan-tao",
+      "title": "Trí tuệ nhân tạo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dai-hoc-tri-tue-nhan-tao-a43776.md",
+      "fetched_at": "2026-11-09T00:20:15+07:00",
+      "sha256": "8b4718b1e35a5d58fd3b73bf117d73e7cdaae96b8dbd28939f545455266a9829",
+      "chars": 4827
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/dao-tao/lien-thong-mon-hoc",
+      "title": "Liên thông môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/dao-tao-lien-thong-mon-hoc-2a8cad.md",
+      "fetched_at": "2026-11-09T00:18:39+07:00",
+      "sha256": "00e6b34c7bd63a07a16f0846b53feb84c4864ae6aa86e44ce9ef6db21c59116f",
+      "chars": 5128
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bcn-khoa",
+      "title": "Lãnh đạo Khoa - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-bcn-khoa-fbce86.md",
+      "fetched_at": "2026-11-09T01:04:43+07:00",
+      "sha256": "9ff46d11eb6abacd2892b0b141029bf009047bda347c6dc358a31200f5aec5c9",
+      "chars": 1911
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/bo-phan-ho-tro",
+      "title": "Các bộ phận hỗ trợ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-bo-phan-ho-tro-72b189.md",
+      "fetched_at": "2026-11-09T01:04:51+07:00",
+      "sha256": "2712dbd4f9f01d9d0264015dff1ea01414d1d588c61c83c6af2c77a180ce4100",
+      "chars": 548
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu-chung",
+      "title": "Giới thiệu chung - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-chung-fa89e7.md",
+      "fetched_at": "2026-11-09T01:04:41+07:00",
+      "sha256": "fe6608a447b6ecb8e7a8732a0c49dd66e0449e333b751f6ae3ea0daecc245bff",
+      "chars": 5194
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/co-so-vat-chat",
+      "title": "Cơ sở vật chất - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-co-so-vat-chat-321292.md",
+      "fetched_at": "2026-11-09T01:04:47+07:00",
+      "sha256": "3bca5e578c7cafcfff194eb1fd46b747d4e72fa1590f72fa2f92119827984936",
+      "chars": 9134
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/hop-tac-doanh-nghiep",
+      "title": "Hợp tác doanh nghiệp - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-hop-tac-doanh-nghiep-116b23.md",
+      "fetched_at": "2026-11-09T01:04:49+07:00",
+      "sha256": "76faf8a0ffb913d703fc5313e45ab52e46b059735a6604102487b71b7306342c",
+      "chars": 8280
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/gioi-thieu/thong-tin-doi-ngu",
+      "title": "Thông tin đội ngũ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/gioi-thieu-thong-tin-doi-ngu-02cc82.md",
+      "fetched_at": "2026-11-09T00:04:53+07:00",
+      "sha256": "5142ffa991bd78fe09d7e0dd9a8a258edadb1d44071ce44ba8e3043a1ba09c0e",
+      "chars": 6340
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/",
+      "title": "Trang chủ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/home-4edf0d.md",
+      "fetched_at": "2026-11-09T01:04:40+07:00",
+      "sha256": "8b2dd517cdd1cc0f42820195299276992abe463a19f22218295ccec46214465b",
+      "chars": 55613
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/cong-bo-khoa-hoc",
+      "title": "Công bố khoa học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-cong-bo-khoa-hoc-4e79e7.md",
+      "fetched_at": "2026-11-09T00:19:13+07:00",
+      "sha256": "52b573eaa9a64de936c62378e715d5bd847b5b239d32db7eabc2467ab1e9d9a6",
+      "chars": 508078
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/cong-trinh-khoa-hoc",
+      "title": "Công trình NCKH - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-cong-trinh-khoa-hoc-d0c6e1.md",
+      "fetched_at": "2026-11-09T00:52:42+07:00",
+      "sha256": "e3fefd3b9b97ad30e842d3bf9e7c2e8d369d2535c3c7d49e46f980c64e10b847",
+      "chars": 26210
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/nhom-nghien-cuu",
+      "title": "Nhóm nghiên cứu - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-nhom-nghien-cuu-3c0008.md",
+      "fetched_at": "2026-11-09T01:04:59+07:00",
+      "sha256": "d81d8d4b24bfc99f6bd5a14d751c591a1744d2b1dbd5cb49be40f4f5e44db57f",
+      "chars": 662
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/nghien-cuu/thanh-tich-nckh",
+      "title": "Thành tích NCKH - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/nghien-cuu-thanh-tich-nckh-66985b.md",
+      "fetched_at": "2026-11-09T00:18:45+07:00",
+      "sha256": "0cb420a054fa98c5242253559dc84af9259066de976b520ebe826e935fba0e92",
+      "chars": 1953
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc",
+      "title": "Giới thiệu chung - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sau-dai-hoc-ae7be0.md",
+      "fetched_at": "2026-11-09T00:19:03+07:00",
+      "sha256": "763103e8a546ae4d3d52d3d196ad73ba7cf6f6b8bb243bffcd658c60b9bbf64b",
+      "chars": 3535
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/chuong-trinh-viet-phap",
+      "title": "Chương trình Việt Pháp - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sau-dai-hoc-chuong-trinh-viet-phap-9a816b.md",
+      "fetched_at": "2026-11-09T00:20:05+07:00",
+      "sha256": "59fdce1bcc6ef18d2c2629234cb7a4dc3d5e4e8679280e051b2e67f8bdb23cf5",
+      "chars": 6465
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/giang-vien",
+      "title": "Đội ngũ giảng viên - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sau-dai-hoc-giang-vien-b59f8a.md",
+      "fetched_at": "2026-11-09T00:04:51+07:00",
+      "sha256": "54e8031549e66e087b8c0cdeda9f02d4c5a7de7d7d6262b87ebc2ab3295af9f9",
+      "chars": 20019
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sau-dai-hoc/thong-tin-mon-hoc",
+      "title": "Thông tin môn học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sau-dai-hoc-thong-tin-mon-hoc-aa694d.md",
+      "fetched_at": "2026-11-09T00:18:37+07:00",
+      "sha256": "b3a345f8e0c13cbffd4c05bd4eacb5f4acb9ee530ea4bc13e5db997ff45c71c4",
+      "chars": 849
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sinh-vien/bang-vang-thanh-tich",
+      "title": "Bảng vàng thành tích - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sinh-vien-bang-vang-thanh-tich-12d5e1.md",
+      "fetched_at": "2026-11-09T00:18:43+07:00",
+      "sha256": "ac474d152cbcd11e9979b2fbd5fd1c32a975390c196db85994ee953e5d153dcc",
+      "chars": 403
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sinh-vien/hoat-dong",
+      "title": "Hoạt động sinh viên - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sinh-vien-hoat-dong-766d2f.md",
+      "fetched_at": "2026-11-09T01:04:58+07:00",
+      "sha256": "c13baaa4d6fe27bbdccdae7de705cb5daf3e378da749f56b5c3d331408015344",
+      "chars": 12489
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/sinh-vien/thanh-tich-sinh-vien",
+      "title": "Thành tích sinh viên - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/sinh-vien-thanh-tich-sinh-vien-0ce977.md",
+      "fetched_at": "2026-11-09T00:18:41+07:00",
+      "sha256": "416d463dbe9e679e3793f8fe424610787d1ac750ee90783130f0255124e3b93b",
+      "chars": 1900
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/c/thanh-tich-sinh-vien",
+      "title": "Danh sách thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-c-thanh-tich-sinh-vien-e15082.md",
+      "fetched_at": "2026-11-09T00:18:51+07:00",
+      "sha256": "416d463dbe9e679e3793f8fe424610787d1ac750ee90783130f0255124e3b93b",
+      "chars": 1899
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/bang-vang-thanh-tich-khoa-cong-nghe-thong-tin-nam-hoc-2022-2023",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-bang-vang-thanh-tich-khoa-cong-nghe-thong-tin-nam-hoc-2022-2023-9ac1c8.md",
+      "fetched_at": "2026-11-09T00:19:43+07:00",
+      "sha256": "35ebce106af47aab651b714d277af2d949762c705d057300a2498f3ce144acfe",
+      "chars": 394
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/bang-vang-thanh-tich-nam-hoc-2023-2024",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-bang-vang-thanh-tich-nam-hoc-2023-2024-3dd2f9.md",
+      "fetched_at": "2026-11-09T00:19:41+07:00",
+      "sha256": "37eaae12678ae97e1d7984ca9712983726270815d316855c843bea40923205f5",
+      "chars": 510
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/bang-vang-thanh-tich-sinh-vien-khoa-cong-nghe-thong-tin-nam-hoc-2024-2025",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-bang-vang-thanh-tich-sinh-vien-khoa-cong-nghe-thong-tin-nam-hoc-2024-2-5bd4ec.md",
+      "fetched_at": "2026-11-09T00:19:39+07:00",
+      "sha256": "d928da854b1111ebe3ef30bceb01d44304fa22dd55dbc392af2832e1e2ab3e64",
+      "chars": 421
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-nhom-sinh-vien-chuong-trinh-chat-luong-cao-cua-fithcmus-da-co-de-tai-tot-nghiep-xuat-sac-cung-voi-cong-bo-tren-hoi-nghi-uy-tin-quoc-te",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-nhom-sinh-vien-chuong-trinh-chat-luong-cao-cua-fithcmus-da-c-fce13a.md",
+      "fetched_at": "2026-11-09T00:19:57+07:00",
+      "sha256": "e2bd23148cea1a40c582b51d71378229e7b364d4dcad464159560624ce736665",
+      "chars": 5612
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-nhom-sinh-vien-chuong-trinh-chinh-quy-cua-fithcmus-da-co-de-tai-tot-nghiep-xuat-sac-cung-voi-cac-cong-bo-tren-hoi-nghi-uy-tin-quoc-te-rank-b",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-nhom-sinh-vien-chuong-trinh-chinh-quy-cua-fithcmus-da-co-de--7c15d4.md",
+      "fetched_at": "2026-11-09T00:20:03+07:00",
+      "sha256": "f434ff66062d13716583e05898eb65f215df0a15ba94f8d7d92a898fa2cceab5",
+      "chars": 5302
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-nhom-sinh-vien-chuong-trinh-tien-tien-cua-fithcmus-da-co-de-tai-tot-nghiep-xuat-sac-cung-voi-cong-bo-tren-hoi-nghi-uy-tin-quoc-te-rank-b",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-nhom-sinh-vien-chuong-trinh-tien-tien-cua-fithcmus-da-co-de--7b9b57.md",
+      "fetched_at": "2026-11-09T00:19:59+07:00",
+      "sha256": "2f971adcfa8024b0fdb565f2e9cd7884c7ed9f7fcaf8f7f0c14cb2ed469b8923",
+      "chars": 4891
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-nhom-sinh-vien-chuong-trinh-tri-tue-nhan-tao-cua-fithcmus-da-co-cac-cong-bo-duoc-chap-nhan-dang-tren-hoi-nghi-uy-tin-quoc-te-rank-a-xep-hang-1-trong-linh-vuc-tri-tue-nhan-tao-2026",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-nhom-sinh-vien-chuong-trinh-tri-tue-nhan-tao-cua-fithcmus-da-9e04de.md",
+      "fetched_at": "2026-11-09T00:20:01+07:00",
+      "sha256": "8faedcd0dc27ee63a46668048162ba6151e53d8016a3e4d84139f148eb7ade5c",
+      "chars": 3063
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-sinh-vien-chuong-trinh-cu-nhan-tai-nang-cua-fithcmus-da-co-cong-bo-tren-hoi-nghi-uy-tin-quoc-te-nam-trong-top-20-cac-cong-bo-khoa-hoc-hang-dau-the-gioi-cua-nhom-nganh-computer-vision-pattern-recognition",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-sinh-vien-chuong-trinh-cu-nhan-tai-nang-cua-fithcmus-da-co-c-44b34b.md",
+      "fetched_at": "2026-11-09T00:18:59+07:00",
+      "sha256": "4ec5ffd4a75336351eb78867b15c7eea0b44e4dfdee60ed483f9d3fea9e71a5c",
+      "chars": 4174
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-sinh-vien-chuong-trinh-cu-nhan-tai-nang-cua-fithcmus-da-co-cong-bo-tren-hoi-nghi-uy-tin-quoc-te-uy-tin-rank-b-va-nhan-duoc-giai-thuong-women-in-technology-innovation-award-witi-tu-australia-vietnam-strategic-technology-centre-avstc",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-sinh-vien-chuong-trinh-cu-nhan-tai-nang-cua-fithcmus-da-co-c-b8dee5.md",
+      "fetched_at": "2026-11-09T00:18:57+07:00",
+      "sha256": "7363c7add1e3549756e1d070648a965e7086147d5b19da0431fd6aed3e44ad9c",
+      "chars": 2674
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/chuc-mung-thanh-tich-cua-sinh-vien-khoa-cong-nghe-thong-tin-tai-ky-thi-olympic-toan-hoc-lan-thu-31",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-chuc-mung-thanh-tich-cua-sinh-vien-khoa-cong-nghe-thong-tin-tai-ky-thi-9e4d5d.md",
+      "fetched_at": "2026-11-09T00:19:37+07:00",
+      "sha256": "e36854dc83c05e5fdac272470d2603f330608df14c512037ca562795888c415f",
+      "chars": 1621
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/doi-tuyen-khoa-cong-nghe-thong-tin-dat-thanh-tich-xuat-sac-tai-olympic-tri-tue-nhan-tao-sinh-vien-viet-nam-lan-thu-nhat-2025",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-doi-tuyen-khoa-cong-nghe-thong-tin-dat-thanh-tich-xuat-sac-tai-olympic-8882e0.md",
+      "fetched_at": "2026-11-09T00:19:33+07:00",
+      "sha256": "58696996c5c59a166da595bc2f9b48e0ec05e0c5225e8904f84f61195dbf5a6e",
+      "chars": 5016
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tin-tuc/d/tu-hao-thanh-tich-cua-hcmus-atcoder-tai-vong-chung-ket-icpc-world-finals-2025",
+      "title": "Thông báo - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tin-tuc-d-tu-hao-thanh-tich-cua-hcmus-atcoder-tai-vong-chung-ket-icpc-world-fina-ead0ab.md",
+      "fetched_at": "2026-11-09T00:19:35+07:00",
+      "sha256": "48c092ef985eb74ebf03c2f54069266a433cb2730a1c34600274d85df8a4473f",
+      "chars": 1263
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc",
+      "title": "Đại học - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tuyen-sinh-dai-hoc-62da55.md",
+      "fetched_at": "2026-11-09T00:52:36+07:00",
+      "sha256": "be23444cfbcf5c10d0cd1f28393df0cfa596c3df1c9647fa4b3c0a71dce9a48f",
+      "chars": 6812
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc/hoc-bong-2026",
+      "title": "Thông tin học bổng - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tuyen-sinh-dai-hoc-hoc-bong-2026-8fc87a.md",
+      "fetched_at": "2026-11-09T01:05:23+07:00",
+      "sha256": "d75693612ce1abd1815506a6c7475799344a70a81907bdf0808e66b7ac1407bf",
+      "chars": 3190
+    },
+    {
+      "site": "fit",
+      "url": "https://www.fit.hcmus.edu.vn/tuyen-sinh/dai-hoc/thong-bao",
+      "title": "Thông báo tuyển sinh - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM",
+      "file": "fit/tuyen-sinh-dai-hoc-thong-bao-8e1ee2.md",
+      "fetched_at": "2026-11-09T01:03:48+07:00",
+      "sha256": "8f47983845ffa3a8caec7919c51baa32a535f124de0167fc4985c2ded7a431a7",
+      "chars": 1946
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/",
+      "title": "Đào tạo - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-78c278.md",
+      "fetched_at": "2026-11-09T01:14:51+07:00",
+      "sha256": "fb5f7217716ee13b635134060be8814726144a46a0b699dad22cefa762143404",
+      "chars": 3551
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dai-hoc/chuong-trinh-dao-tao-dai-hoc/",
+      "title": "Chương trình đào tạo Đại học - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dai-hoc-chuong-trinh-dao-tao-dai-hoc-b1510c.md",
+      "fetched_at": "2026-11-09T01:12:51+07:00",
+      "sha256": "20526ea6540ed8ccc9af6414787c86992748c4be5dd544b6c89639f2939a51db",
+      "chars": 3932
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dai-hoc/thong-tin-danh-cho-sinh-vien/",
+      "title": "Thông tin dành cho sinh viên - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dai-hoc-thong-tin-danh-cho-sinh-vien-912dc2.md",
+      "fetched_at": "2026-11-09T01:13:01+07:00",
+      "sha256": "ce3bc98d8d3ab20863f8f1bf118a6f4807bc1a51ef44722d0d2a0c021a4bffb0",
+      "chars": 3428
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/dao-tao-tu-xa/",
+      "title": "Đào tạo từ xa - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-dao-tao-tu-xa-0ec66e.md",
+      "fetched_at": "2026-11-09T01:15:01+07:00",
+      "sha256": "c641cf203f7af9530868b387710da86e6a8280627af0598fa4f07463d3656651",
+      "chars": 2630
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/category/dao-tao/sau-dai-hoc/chuong-trinh-dao-tao-sau-dai-hoc/",
+      "title": "Chương trình đào tạo sau đại học - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/category-dao-tao-sau-dai-hoc-chuong-trinh-dao-tao-sau-dai-hoc-33eaf3.md",
+      "fetched_at": "2026-11-09T01:13:21+07:00",
+      "sha256": "3b75f150ce7155da1a3e4514131f9620b7b1801720ee5bd0ccd8ba5e6d6f7b11",
+      "chars": 4054
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/chuong-trinh-dao-tao-trinh-do-dai-hoc-khoa-2024/",
+      "title": "Chương trình đào tạo trình độ đại học Khóa 2024 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/chuong-trinh-dao-tao-trinh-do-dai-hoc-khoa-2024-0ca6b0.md",
+      "fetched_at": "2026-11-09T01:13:41+07:00",
+      "sha256": "19fc7849dfd241820253ce7c94372ad6f30a2db0dd34b040491b9d979957ebd5",
+      "chars": 1178
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/chuong-trinh-ket-noi-dao-tao-nganh-kinh-te-dat-dai-giua-truong-dai-hoc-khoa-hoc-tu-nhien-dhqg-hcm-va-truong-dai-hoc-kinh-te-luat-dhqg-hcm/",
+      "title": "Chương trình kết nối đào tạo ngành Kinh tế đất đai giữa Trường Đại học Khoa học tự nhiên và Trường Đại học Kinh tế – Luật - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/chuong-trinh-ket-noi-dao-tao-nganh-kinh-te-dat-dai-giua-truong-dai-hoc-khoa-hoc--472791.md",
+      "fetched_at": "2026-11-09T01:13:51+07:00",
+      "sha256": "ecc97f2ddbcc222bf188f87bd5697989d7b9730cd3eeb3c0ab66124f9a006e08",
+      "chars": 2635
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/co-cau-to-chuc-va-doi-ngu-quan-tri/",
+      "title": "Cơ cấu tổ chức và đội ngũ quản trị - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/co-cau-to-chuc-va-doi-ngu-quan-tri-8a66f9.md",
+      "fetched_at": "2026-11-09T00:05:26+07:00",
+      "sha256": "2309bd4b3bd4e5c87c1cb38f01ed7263b757844ae65995f4dedf3928d7984f50",
+      "chars": 303
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/danh-ba-dien-thoai-noi-bo/",
+      "title": "Danh bạ điện thoại nội bộ - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/danh-ba-dien-thoai-noi-bo-829dd4.md",
+      "fetched_at": "2026-11-09T00:13:56+07:00",
+      "sha256": "bd221fa9c8cd9c35479c3be7df22e43aebcbc1ef9a31626e7d49a9f1e02c70e7",
+      "chars": 2300
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/dhqg-tp-hcm-va-cac-don-vi-thanh-vien/",
+      "title": "ĐHQG TP. HCM và các đơn vị thành viên - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/dhqg-tp-hcm-va-cac-don-vi-thanh-vien-71e91a.md",
+      "fetched_at": "2026-11-09T00:14:36+07:00",
+      "sha256": "b0f7ea65261a29c568c1281be36657f96506a88c882736fd69bce8fd9dd0c940",
+      "chars": 2795
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/he-thong-nhan-dien-thuong-hieu/",
+      "title": "Hệ thống nhận diện thương hiệu - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/he-thong-nhan-dien-thuong-hieu-589bac.md",
+      "fetched_at": "2026-11-09T00:15:06+07:00",
+      "sha256": "98f5bb13f3d83e21b770d1462b673bcc84ef02f9b8c2b061d34967e76a70def1",
+      "chars": 4212
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/hinh-thanh-va-phat-trien/",
+      "title": "Hình thành và phát triển - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/hinh-thanh-va-phat-trien-bd1c40.md",
+      "fetched_at": "2026-11-09T00:14:06+07:00",
+      "sha256": "9933ed41cbcb6a27a8489fc4e0c41a82039653e6722710ad150a26b332066635",
+      "chars": 12146
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/hoi-dong-khoa-hoc-va-dao-tao/",
+      "title": "Hội đồng Khoa học và Đào tạo - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/hoi-dong-khoa-hoc-va-dao-tao-be1df5.md",
+      "fetched_at": "2026-11-09T00:06:46+07:00",
+      "sha256": "3d89ce33d2259aefd080d588cf081ee94b015c8a33fddb231ffc26ed76f1f50e",
+      "chars": 3714
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/",
+      "title": "University of Science - VNUHCM",
+      "file": "hcmus/home-f7bd75.md",
+      "fetched_at": "2026-11-09T01:12:41+07:00",
+      "sha256": "9020c85894a974bcf96b596db9e22ed604e3314ce729cc0f1d5e278fc975cf75",
+      "chars": 2844
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/khoa-vien/",
+      "title": "Các Khoa và Viện đào tạo - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/khoa-vien-9e2dad.md",
+      "fetched_at": "2026-11-09T00:06:56+07:00",
+      "sha256": "5f3cb146f01a0df087a61a569fdf2032dee4a206ee1529e553a85a3f199e944f",
+      "chars": 803
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/phong-chuc-nang/",
+      "title": "PHÒNG CHỨC NĂNG - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/phong-chuc-nang-e3bb2d.md",
+      "fetched_at": "2026-11-09T00:14:46+07:00",
+      "sha256": "b7b34947ec66e955d57828da744fae0c8cfca32f1e6a24605fc2a0ac50abc431",
+      "chars": 973
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/postech-call-for-2026-postech-summer-program-research-intensive/",
+      "title": "[POSTECH] Call for 2026 POSTECH Summer Program (Research Intensive) - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/postech-call-for-2026-postech-summer-program-research-intensive-1eea72.md",
+      "fetched_at": "2026-11-09T01:14:11+07:00",
+      "sha256": "97f7a4629b329dedcc6e8c280e1d0755d7e1e89f9aa7502cdcf9099a8e3fe36e",
+      "chars": 3268
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/thong-bao-buoi-noi-chuyen-gioi-thieu-chuong-trinh-vef-2-0-hoc-ky-fall-2027/",
+      "title": "[THÔNG BÁO] BUỔI NÓI CHUYỆN GIỚI THIỆU CHƯƠNG TRÌNH VEF 2.0 – HỌC KỲ FALL 2027 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/thong-bao-buoi-noi-chuyen-gioi-thieu-chuong-trinh-vef-2-0-hoc-ky-fall-2027-878cf2.md",
+      "fetched_at": "2026-11-09T01:14:01+07:00",
+      "sha256": "65948ad3827ad0995682038156608c90a4689ec30139ce52b9ae60dd5b3ee192",
+      "chars": 2406
+    },
+    {
+      "site": "hcmus",
+      "url": "https://hcmus.edu.vn/thong-bao-nop-ho-so-xet-tot-nghiep-dai-hoc-he-chinh-quy-cac-chuong-trinh-cho-cac-dot-cong-bo-danh-sach-tot-nghiep-thang-9-10-va-11-nam-2025/",
+      "title": "Thông báo nộp hồ sơ xét tốt nghiệp đại học hệ chính quy các chương trình cho các đợt công bố danh sách tốt nghiệp tháng 9, 10 và 11 năm 2025 - Trường Đại học Khoa học tự nhiên, ĐHQG-HCM",
+      "file": "hcmus/thong-bao-nop-ho-so-xet-tot-nghiep-dai-hoc-he-chinh-quy-cac-chuong-trinh-cho-cac-8fa67f.md",
+      "fetched_at": "2026-11-09T01:13:31+07:00",
+      "sha256": "358e93f6c36b7e8bdd99e4366e5062a5cfd2d2ef54a1e4f2470d426af1a4baf7",
+      "chars": 8919
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan",
+      "title": "Khoa Toán - Tin học - Chương trình chuẩn",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-682271.md",
+      "fetched_at": "2026-11-09T00:18:30+07:00",
+      "sha256": "1a0dd179063e74a193ee944eb101066df3c716fc48a75200367a71693cbbbe31",
+      "chars": 4084
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-khoa-hoc-du-lieu",
+      "title": "Khoa Toán - Tin học - Ngành Khoa học dữ liệu",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-nganh-khoa-hoc-du-lieu-532ddd.md",
+      "fetched_at": "2026-11-09T00:18:40+07:00",
+      "sha256": "b173d7019906ff806faaaa4d9006d0249f869f45be71e4341d111b7a13146f6d",
+      "chars": 4759
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-thong-ke",
+      "title": "Khoa Toán - Tin học - Ngành Thống kê",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-nganh-thong-ke-635940.md",
+      "fetched_at": "2026-11-09T00:18:42+07:00",
+      "sha256": "f7ab05a147946030af2f51d8adad118d0a2d289a5c4ababb19cee9a9d0b0e63e",
+      "chars": 4399
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-hoc",
+      "title": "Khoa Toán - Tin học - Ngành Toán học",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-hoc-295924.md",
+      "fetched_at": "2026-11-09T00:18:34+07:00",
+      "sha256": "1ce1d865a04a9223730b39bf3c559308e7d61731a2e5b3198317e03bfca82298",
+      "chars": 4232
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-tin",
+      "title": "Khoa Toán - Tin học - Ngành Toán tin",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-tin-4800ab.md",
+      "fetched_at": "2026-11-09T00:18:36+07:00",
+      "sha256": "a7f34db76e29843c3bcd2f65c69d819aa73afbf5759a0495857c4bbe1c44b7b2",
+      "chars": 4439
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-ung-dung",
+      "title": "Khoa Toán - Tin học - Ngành Toán ứng dụng",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-ung-dung-0c68be.md",
+      "fetched_at": "2026-11-09T00:18:38+07:00",
+      "sha256": "f2b21cdb2bd9a181fed12c781896681fc67df6dbebb24ee41187ce3f60ea37c7",
+      "chars": 4571
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-cntn",
+      "title": "Khoa Toán - Tin học - Cử nhân tài năng",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-cntn-0b5566.md",
+      "fetched_at": "2026-11-09T00:21:50+07:00",
+      "sha256": "e863eaf9006806c3283398ba9d887f3fcd6b1ecc86c77960638cc5c3229178a9",
+      "chars": 6086
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta",
+      "title": "Khoa Toán - Tin học - Tăng cường tiếng Anh",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-tcta-3dbc51.md",
+      "fetched_at": "2026-11-09T00:21:52+07:00",
+      "sha256": "23803ff352b36b92181a2243f79dcd047a6a215d86c8e700bb3f787769bedace",
+      "chars": 2572
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-khoa-hoc-du-lieu",
+      "title": "Khoa Toán - Tin học - Ngành Khoa học dữ liệu",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-tcta-nganh-khoa-hoc-du-lieu-e32e7d.md",
+      "fetched_at": "2026-11-09T00:18:48+07:00",
+      "sha256": "6735a81072d70c300ebda9951fabe281a4c9338d1a3d2ce8f2ff0e7ba945988d",
+      "chars": 4749
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-tin",
+      "title": "Khoa Toán - Tin học - Ngành Toán tin",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-tcta-nganh-toan-tin-a58f6c.md",
+      "fetched_at": "2026-11-09T00:18:44+07:00",
+      "sha256": "768023c811d1191fce35587a4b586f020266c8aa6bc8c544a89071a1f0ac531d",
+      "chars": 4446
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-ung-dung",
+      "title": "Khoa Toán - Tin học - Ngành Toán ứng dụng",
+      "file": "math/dao-tao-dai-hoc-chuong-trinh-tcta-nganh-toan-ung-dung-8627ed.md",
+      "fetched_at": "2026-11-09T00:18:46+07:00",
+      "sha256": "e54aabf33e7f0ef7ffcc53493c21c3425f1da9b88388ac036a2f5856e20e6a70",
+      "chars": 4040
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-khoa-hoc-du-lieu",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Khoa học dữ liệu",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-chuan-nganh-khoa-hoc-du-lieu-d2b79c.md",
+      "fetched_at": "2026-11-09T00:21:26+07:00",
+      "sha256": "b173d7019906ff806faaaa4d9006d0249f869f45be71e4341d111b7a13146f6d",
+      "chars": 4783
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-thong-ke",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Thống kê",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-chuan-nganh-thong-ke-6ea777.md",
+      "fetched_at": "2026-11-09T00:21:28+07:00",
+      "sha256": "f7ab05a147946030af2f51d8adad118d0a2d289a5c4ababb19cee9a9d0b0e63e",
+      "chars": 4423
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-hoc",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Toán học",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-hoc-c1e543.md",
+      "fetched_at": "2026-11-09T00:21:20+07:00",
+      "sha256": "1ce1d865a04a9223730b39bf3c559308e7d61731a2e5b3198317e03bfca82298",
+      "chars": 4256
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-tin",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Toán tin",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-tin-e82194.md",
+      "fetched_at": "2026-11-09T00:21:22+07:00",
+      "sha256": "a7f34db76e29843c3bcd2f65c69d819aa73afbf5759a0495857c4bbe1c44b7b2",
+      "chars": 4463
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-chuan/nganh-toan-ung-dung",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Toán ứng dụng",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-chuan-nganh-toan-ung-dung-e7d5ff.md",
+      "fetched_at": "2026-11-09T00:21:24+07:00",
+      "sha256": "f2b21cdb2bd9a181fed12c781896681fc67df6dbebb24ee41187ce3f60ea37c7",
+      "chars": 4595
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-khoa-hoc-du-lieu",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Khoa học dữ liệu",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-tcta-nganh-khoa-hoc-du-lieu-5c2f59.md",
+      "fetched_at": "2026-11-09T00:21:34+07:00",
+      "sha256": "6735a81072d70c300ebda9951fabe281a4c9338d1a3d2ce8f2ff0e7ba945988d",
+      "chars": 4773
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-tin",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Toán tin",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-tcta-nganh-toan-tin-206680.md",
+      "fetched_at": "2026-11-09T00:21:30+07:00",
+      "sha256": "768023c811d1191fce35587a4b586f020266c8aa6bc8c544a89071a1f0ac531d",
+      "chars": 4470
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/dao-tao-dai-hoc/chuong-trinh-tcta/nganh-toan-ung-dung",
+      "title": "Faculty of Mathematics and Computer Science - Ngành Toán ứng dụng",
+      "file": "math/en-dao-tao-dai-hoc-chuong-trinh-tcta-nganh-toan-ung-dung-243d3b.md",
+      "fetched_at": "2026-11-09T00:21:32+07:00",
+      "sha256": "e54aabf33e7f0ef7ffcc53493c21c3425f1da9b88388ac036a2f5856e20e6a70",
+      "chars": 4064
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/en/gioi-thieu/doi-ngu-chuyen-mon",
+      "title": "Faculty of Mathematics and Computer Science - Đội ngũ chuyên môn",
+      "file": "math/en-gioi-thieu-doi-ngu-chuyen-mon-3e8290.md",
+      "fetched_at": "2026-11-09T00:21:17+07:00",
+      "sha256": "8d63c6fa0c7161549f4daf58644fadc82b67dba0ec174e5aeffc891e5ecbc31b",
+      "chars": 4908
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/bcn-khoa-bo-mon",
+      "title": "Khoa Toán - Tin học - Ban chủ nhiệm Khoa và Bộ môn",
+      "file": "math/gioi-thieu-bcn-khoa-bo-mon-cdcc75.md",
+      "fetched_at": "2026-11-09T00:18:22+07:00",
+      "sha256": "49d239bbaf2a9fb43766400e0fa6ca5edd11114943ab25d1fb2091343c32adc4",
+      "chars": 2701
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/bo-phan-ho-tro",
+      "title": "Khoa Toán - Tin học - Bộ phận hỗ trợ",
+      "file": "math/gioi-thieu-bo-phan-ho-tro-812a46.md",
+      "fetched_at": "2026-11-09T00:21:38+07:00",
+      "sha256": "4e5adc8951b91de20ed07aebbc1afd31c8073ab7861903394c115803a6ef5d11",
+      "chars": 1612
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu",
+      "title": "Khoa Toán - Tin học - Giới thiệu",
+      "file": "math/gioi-thieu-c4ae36.md",
+      "fetched_at": "2026-11-09T00:18:26+07:00",
+      "sha256": "3e99e3e839dd2b75e689c527feec2622bf3a2a982120491e942159f869b9ce14",
+      "chars": 3363
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/doi-ngu-chuyen-mon",
+      "title": "Khoa Toán - Tin học - Đội ngũ chuyên môn",
+      "file": "math/gioi-thieu-doi-ngu-chuyen-mon-9b4abb.md",
+      "fetched_at": "2026-11-09T00:18:25+07:00",
+      "sha256": "8d63c6fa0c7161549f4daf58644fadc82b67dba0ec174e5aeffc891e5ecbc31b",
+      "chars": 4884
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/hoi-dong-khoa",
+      "title": "Khoa Toán - Tin học - Hội đồng Khoa",
+      "file": "math/gioi-thieu-hoi-dong-khoa-817230.md",
+      "fetched_at": "2026-11-09T00:21:36+07:00",
+      "sha256": "480571f283c4cd50713c66b8ef9e4699ef377589b0e2cf435de01d361c2fc0d6",
+      "chars": 1475
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/lich-su-khoa",
+      "title": "Khoa Toán - Tin học - Lịch sử hình thành và phát triển",
+      "file": "math/gioi-thieu-lich-su-khoa-f46495.md",
+      "fetched_at": "2026-11-09T00:18:28+07:00",
+      "sha256": "ed96f999338002d46c4cc869feaf0c8a5a98240afac1d7b9871b5c9a3dbeb7cf",
+      "chars": 11717
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/logo-khoa",
+      "title": "Khoa Toán - Tin học - Biểu tượng Khoa",
+      "file": "math/gioi-thieu-logo-khoa-8f0179.md",
+      "fetched_at": "2026-11-09T00:21:40+07:00",
+      "sha256": "f63bf469caf23c9b57c6f75e94911d21df2f16ad7862698f42fd207ff8e4a26d",
+      "chars": 2344
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/mot-so-tu-lieu-ve-khoa/2-t%C3%A0i-nguy%C3%AAn/470-quy%E1%BA%BFt-%C4%91%E1%BB%8Bnh-n%C4%83m-1995-%C4%91i%E1%BB%81u-%C4%91%E1%BB%99ng-c%C3%A1n-b%E1%BB%99-t%E1%BB%AB-khoa-to%C3%A1n-sang-th%C3%A0nh-l%E1%BA%ADp-khoa-c%C3%B4ng-ngh%E1%BB%87-th%C3%B4ng-tin",
+      "title": "Khoa Toán - Tin học - Quyết định năm 1995 điều động cán bộ từ Khoa Toán sang thành lập Khoa Công nghệ thông tin",
+      "file": "math/gioi-thieu-mot-so-tu-lieu-ve-khoa-2-t-c3-a0i-nguy-c3-aan-470-quy-e1-ba-bft-c4-91-d48a5a.md",
+      "fetched_at": "2026-11-09T00:21:44+07:00",
+      "sha256": "d53f8d04603693324daff372211cb618039f3d6510d52ae8dbdad1f087719b78",
+      "chars": 624
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/mot-so-tu-lieu-ve-khoa/20-t%E1%BB%95-ch%E1%BB%A9c/51-b%C3%A0i-vi%E1%BA%BFt-v%E1%BB%81-gs-tskh-nguy%E1%BB%85n-cang",
+      "title": "Khoa Toán - Tin học - Người cán bộ quân quản năm xưa",
+      "file": "math/gioi-thieu-mot-so-tu-lieu-ve-khoa-20-t-e1-bb-95-ch-e1-bb-a9c-51-b-c3-a0i-vi-e1-b-94ab28.md",
+      "fetched_at": "2026-11-09T00:21:46+07:00",
+      "sha256": "89600443ed37a9c87a166d93e0eb9fa8096b54b975782a1f5739e7d6ff515813",
+      "chars": 13912
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/gioi-thieu/mot-so-tu-lieu-ve-khoa",
+      "title": "Khoa Toán - Tin học - Tư liệu về Khoa",
+      "file": "math/gioi-thieu-mot-so-tu-lieu-ve-khoa-780f47.md",
+      "fetched_at": "2026-11-09T00:21:42+07:00",
+      "sha256": "e7564b6b9ebb3ca25f99a49c2f141c36fb3d1418ece0fc7a4199e810313483c7",
+      "chars": 787
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/",
+      "title": "Khoa Toán - Tin học - Trang chủ",
+      "file": "math/home-0c72ee.md",
+      "fetched_at": "2026-11-09T00:18:20+07:00",
+      "sha256": "064de5b53bc46041021e638d03b3a84799bc3a6e2e79a6aa6e6b7eed9bb4a9d3",
+      "chars": 5402
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/html/cam-nang-tra-cuu-hoc-phan.html",
+      "title": "Cẩm nang tra cứu học phần | CTĐT Khóa 2025",
+      "file": "math/html-cam-nang-tra-cuu-hoc-phan-html-b8862b.md",
+      "fetched_at": "2026-11-09T00:18:51+07:00",
+      "sha256": "7446011de279d1aa3ef4722fde7cf8c344b126c1220e42d14ebfaeef4fa2bd36",
+      "chars": 1871
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/html/tuyen_sinh_dai_hoc_2026.html",
+      "title": "Tuyển sinh đại học 2026 - Khoa Toán - Tin học",
+      "file": "math/html-tuyen-sinh-dai-hoc-2026-html-5cb0f2.md",
+      "fetched_at": "2026-11-09T00:21:54+07:00",
+      "sha256": "5d5629e054ddfdff9a3dcef0616cb2a6845e5a5fb028d81e3e1c93525dcc50cb",
+      "chars": 5903
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/nghien-cuu",
+      "title": "Khoa Toán - Tin học - Nghiên cứu",
+      "file": "math/nghien-cuu-6b5aad.md",
+      "fetched_at": "2026-11-09T00:21:56+07:00",
+      "sha256": "6656bd3ed47135f9660b2f91190947ea24127a57d50b019f66f1a3ae5cb9a3b2",
+      "chars": 8295
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/nghien-cuu/cong-trinh-nghien-cuu",
+      "title": "Khoa Toán - Tin học - Công trình nghiên cứu",
+      "file": "math/nghien-cuu-cong-trinh-nghien-cuu-a5f79a.md",
+      "fetched_at": "2026-11-09T00:22:01+07:00",
+      "sha256": "4571614e64fd08fbcece296f259e96cd5feb42a15c28240636f437802a9d4871",
+      "chars": 2359
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/nghien-cuu/huong-nghien-cuu",
+      "title": "Khoa Toán - Tin học - Hướng/nhóm nghiên cứu",
+      "file": "math/nghien-cuu-huong-nghien-cuu-c37dfc.md",
+      "fetched_at": "2026-11-09T00:21:58+07:00",
+      "sha256": "eee1cfda20156d8512fd46de9498c3ada4897a1fbccdd63321a1895cd1472b47",
+      "chars": 8317
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/tin-tuc/1437-ct-hn-xac-suat-thong-ke-ky-nguyen-so",
+      "title": "Khoa Toán - Tin học - Chương trình Hội nghị: Xác suất và Thống kê trong kỷ nguyên số",
+      "file": "math/tin-tuc-1437-ct-hn-xac-suat-thong-ke-ky-nguyen-so-ae63db.md",
+      "fetched_at": "2026-11-09T00:22:03+07:00",
+      "sha256": "b3a1dc18c9b0228a127652ebc0e88915d9fedf8a3b6777d007b83cd72e4cdf2a",
+      "chars": 8132
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/tin-tuc/1438-hnkh15-chuong-trinh",
+      "title": "Khoa Toán - Tin học - Chương trình Hội nghị Khoa học lần thứ 15 – Tiểu ban Toán – Tin học",
+      "file": "math/tin-tuc-1438-hnkh15-chuong-trinh-773af5.md",
+      "fetched_at": "2026-11-09T00:18:53+07:00",
+      "sha256": "89bf552fb63a18e0bee6857689e2788294311dc50847fee841ace7403c1747dc",
+      "chars": 17507
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/tin-tuc/1441-th%C3%B4ng-b%C3%A1o-t%E1%BB%95-ch%E1%BB%A9c-l%E1%BB%85-trao-b%E1%BA%B1ng-t%E1%BB%91t-nghi%E1%BB%87p-khoa-to%C3%A1n-tin-h%E1%BB%8Dc-n%C4%83m-2026",
+      "title": "Khoa Toán - Tin học - Thông báo tổ chức Lễ trao bằng tốt nghiệp Cử nhân Khoa Toán - Tin học năm 2026",
+      "file": "math/tin-tuc-1441-th-c3-b4ng-b-c3-a1o-t-e1-bb-95-ch-e1-bb-a9c-l-e1-bb-85-trao-b-e1-ba-8486db.md",
+      "fetched_at": "2026-11-09T00:22:06+07:00",
+      "sha256": "038dfe830ce7a3f9c9d40fd43525c5e69017b540be2902a13df664f5e0b10f51",
+      "chars": 1707
+    },
+    {
+      "site": "math",
+      "url": "https://www.math.hcmus.edu.vn/tin-tuc/1443-khoa-to%C3%A1n-%E2%80%93-tin-h%E1%BB%8Dc-v%C3%A0-viasm-th%C3%BAc-%C4%91%E1%BA%A9y-h%E1%BB%A3p-t%C3%A1c-%C4%91%C3%A0o-t%E1%BA%A1o-ti%E1%BA%BFn-s%C4%A9-xu%E1%BA%A5t-s%E1%BA%AFc",
+      "title": "Khoa Toán - Tin học - Khoa Toán – Tin học và VIASM thúc đẩy hợp tác đào tạo tiến sĩ xuất sắc",
+      "file": "math/tin-tuc-1443-khoa-to-c3-a1n-e2-80-93-tin-h-e1-bb-8dc-v-c3-a0-viasm-th-c3-bac-c4--80b6f8.md",
+      "fetched_at": "2026-11-09T00:22:04+07:00",
+      "sha256": "1cb4439aff0b9ea62df60380e45035c46c2e3563796f6b2c3785726326db66ff",
+      "chars": 2384
+    }
+  ]
+}

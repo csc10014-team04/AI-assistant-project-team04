@@ -169,7 +169,10 @@ Kiểm thử module **Đọc file Thời khóa biểu Đa định dạng (Văn b
 ---
 
 ### 2.4. File `test_search_engine.py` (Khôi phụ trách phần Information Searching; Lâm phụ trách phần `find_free_slots`)
-Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Thông tin 2 Hướng (Hybrid SQL + Vector 2 tầng & RAG 6 bước)** và **Động cơ Tìm Khung giờ trống `< 200ms`** ([`services/search_engine.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/services/search_engine.py), [`routers/search.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/BE/routers/search.py)), sử dụng `db_session` và `client` từ `conftest.py`.
+
+> **Lưu ý:** file này **chưa tồn tại** trong `sourceCode/BE/tests/`. Các kiểm thử tương ứng hiện nằm trong `tests/test_be_ingestion_search.py` (thư mục gốc, ví dụ BE-39..BE-42 cho `find_free_slots` và tìm kiếm theo loại/ngày). Mục này là yêu cầu bao phủ cần viết thêm.
+
+Kiểm thử trực tiếp trên MySQL 8.0 đối với module **Tìm kiếm Thông tin 2 Hướng (Hybrid SQL + Vector 2 tầng & RAG 6 bước)** và **Động cơ Tìm Khung giờ trống `< 200ms`** ([`services/search_engine.py`](../services/search_engine.py), [`routers/search.py`](../routers/search.py)), sử dụng `db_session` và `client` từ `conftest.py`.
 
 **Các nhóm kịch bản bắt buộc phải bao phủ:**
 1. **[PIC: Khôi] Chuẩn hóa truy vấn, Điều hướng chéo & Hybrid SQL + Vector Search 2 tầng (`optimize_search_query`, `execute_local_search`, `verify_and_format_search_results`):**
@@ -211,7 +214,7 @@ python -m pytest tests/test_validator.py -v
 # 4. Lọc riêng một nhóm kịch bản bằng cờ -k
 python -m pytest tests/test_auth.py -k "register_login or mysql_utc" -v
 
-# 5. Chạy riêng file kiểm thử Parser (của Lâm) hoặc Search Engine (của P.Nguyên)
+# 5. Chạy riêng file kiểm thử Parser (của Lâm) hoặc Search Engine (của Khôi)
 python -m pytest tests/parser_test.py -v
 python -m pytest tests/test_search_engine.py -v
 ```
@@ -245,3 +248,11 @@ Remove-Item Env:PERSIST_TEST_DATA
 
 ### Trường hợp 4: `DESELECTED` / `SKIPPED`
 * Xuất hiện khi dùng cờ `-k` để chỉ lọc chạy một vài hàm kiểm thử đang cần gỡ lỗi nhanh; các hàm còn lại được tạm bỏ qua theo đúng chủ đích của người chạy.
+
+---
+
+## Ghi chú: chạy khi không có Docker MySQL
+
+`conftest.py` thử kết nối MySQL (`TEST_DATABASE_URL` hoặc cổng 3307). Nếu không kết nối được, fixture `mysql_engine` tự chuyển sang
+**SQLite trong bộ nhớ** (mỗi test một schema mới) và in một dòng cảnh báo. Đặt `REQUIRE_MYSQL=1` để thay vào đó báo lỗi. Các kiểm thử về ràng buộc
+riêng của MySQL (CHECK, ENUM, savepoint) chỉ được kiểm chứng đầy đủ khi chạy trên MySQL thật.

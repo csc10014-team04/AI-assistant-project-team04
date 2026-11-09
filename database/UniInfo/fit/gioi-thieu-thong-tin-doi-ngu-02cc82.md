@@ -1,0 +1,288 @@
+---
+source_url: https://www.fit.hcmus.edu.vn/gioi-thieu/thong-tin-doi-ngu
+site: fit
+site_name: Khoa Công nghệ Thông tin
+title: "Thông tin đội ngũ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM"
+fetched_at: 2026-11-09T00:04:53+07:00
+sha256: 5142ffa991bd78fe09d7e0dd9a8a258edadb1d44071ce44ba8e3043a1ba09c0e
+---
+
+# Thông tin đội ngũ - Khoa Công Nghệ Thông Tin - Trường ĐH KHTN, ĐHQG-HCM
+
+# Thông tin đội ngũ
+Cán bộ giảng dạy - Cơ hữu
+- GS.TS. Lê Hoài Bắc
+- PGS.TS. Đinh Điền
+- PGS.TS. Lê Nguyễn Hoài Nam
+- PGS.TS. Lý Quốc Ngọc
+- PGS.TS. Lê Hoàng Thái
+- PGS.TS. Nguyễn Đình Thúc
+- PGS.TS. Trần Minh Triết
+- PGS.TS. Nguyễn Văn Vũ
+- TS. Ngô Huy Biên
+- TS. Phạm Nguyễn Cương
+- TS. Trần Trung Dũng
+- TS. Lê Khánh Duy
+- TS. Bùi Duy Đăng
+- TS. Châu Thành Đức
+- TS. Vũ Thị Mỹ Hằng
+- TS. Lê Trung Hoàng
+- TS. Trần Duy Hoàng
+- TS. Phạm Thị Bạch Huệ
+- TS. Nguyễn Tiến Huy
+- TS. Bùi Tiến Lên
+- TS. Nguyễn Hồng Bửu Long
+- TS. Nguyễn Hải Minh
+- TS. Cao Xuân Nam
+- TS. Nguyễn Tuấn Nam
+- TS. Lê Trung Nghĩa
+- TS. Lê Thị Nhàn
+- TS. Ngô Minh Nhựt
+- TS. Nguyễn Trường Sơn
+- TS. Trần Thái Sơn
+- TS. Đinh Bá Tiến
+- TS. Lê Thanh Tùng
+- TS. Nguyễn Thị Minh Tuyền
+- TS. Bùi Văn Thạch
+- TS. Lê Ngọc Thành
+- TS. Nguyễn Ngọc Thảo
+- TS. Trương Toàn Thịnh
+- TS. Nguyễn Trần Minh Thư
+- TS. Cấn Trần Thành Trung
+- TS. Võ Hoài Việt
+- TS. Lâm Quang Vũ
+- ThS. Lương Hán Cơ
+- ThS. Đỗ Hoàng Cường
+- ThS. Nguyễn Ngọc Minh Châu
+- ThS. Nguyễn Lê Hoàng Dũng
+- ThS. Trần Anh Duy
+- ThS. Huỳnh Lâm Hải Đăng
+- ThS. Võ Nam Thục Đoan
+- ThS. Nguyễn Ngọc Đức
+- ThS. Tuấn Nguyên Hoài Đức
+- ThS. Võ Minh Đức
+- ThS. Đỗ Thị Thanh Hà
+- ThS. Phạm Hoàng Hải
+- ThS. Trần Thị Bích Hạnh
+- ThS. Đặng Trần Minh Hậu
+- ThS. Lê Quốc Hòa
+- ThS. Phạm Minh Hoàng
+- ThS. Vũ Quốc Hoàng
+- ThS. Tiết Gia Hồng
+- ThS. Nguyễn Minh Huy
+- ThS. Nguyễn Văn Quang Huy
+- ThS. Ngô Đình Hy
+- ThS. Đỗ Nguyên Kha
+- ThS. Nguyễn Huy Khánh
+- ThS. Nguyễn Văn Khiết
+- ThS. Ngô Ngọc Đăng Khoa
+- ThS. Chung Thùy Linh
+- ThS. Lê Viết Long
+- ThS. Trương Phước Lộc
+- ThS. Lê Phúc Lữ
+- ThS. Lê Hà Minh
+- ThS. Lương Vĩ Minh
+- ThS. Nguyễn Trần Duy Minh
+- ThS. Lê Nhựt Nam
+- ThS. Văn Chí Nam
+- ThS. Phạm Trọng Nghĩa
+- ThS. Trần Thị Thảo Nhi
+- ThS. Hồ Lê Thị Kim Nhung
+- ThS. Trần Duy Quang
+- ThS. Nguyễn Thanh Quân
+- ThS. Trần Hoàng Quân
+- ThS. Trần Văn Quý
+- ThS. Lê Ngọc Sơn
+- ThS. Phạm Tuấn Sơn
+- ThS. Nguyễn Ngọc Toàn
+- ThS. Phạm Minh Tú
+- ThS. Mai Anh Tuấn
+- ThS. Phạm Minh Tuấn
+- ThS. Phạm Nguyễn Sơn Tùng
+- ThS. Phạm Thanh Tùng
+- ThS. Hồ Tuấn Thanh
+- ThS. Lê Giang Thanh
+- ThS. Trần Duy Thảo
+- ThS. Bùi Huy Thông
+- ThS. Huỳnh Thụy Bảo Trân
+- ThS. Nguyễn Trọng Việt
+- ThS. Hồ Thị Hoàng Vy
+- CN. Phan Quốc Kỳ
+- CN. Lê Đức Khoan
+- CN. Đỗ Hoài Nam
+- CN. Nguyễn Thanh Tình
+- CN. Phạm Bá Thái
+Cán bộ giảng dạy - Thỉnh giảng
+- GS.TS. Vũ Mạnh Chiến
+- GS.TS. Lê Đình Thắng
+- GS.TS. Dương Nguyên Vũ
+- PGS.TS. Mai Hoàng Biên
+- PGS.TS. Nguyễn Thanh Bình
+- PGS.TS. Lê Văn Anh Cường
+- PGS.TS. Lý Kim Hà
+- PGS.TS. Phạm Thị Lệ Hằng
+- PGS.TS. Nguyễn Thanh Hiên
+- PGS.TS. Lê Kim Hùng
+- PGS.TS. Đặng Trần Khánh
+- PGS.TS. Vũ Hải Quân
+- PGS.TS. Đinh Ngọc Thanh
+- PGS.TS. Vũ Thị Hạnh Thu
+- PGS.TS. Trần Đan Thư
+- TS. Đỗ Đức Cường
+- TS. Nguyễn Đình Quốc Cường
+- TS. Vũ Đỗ Huy Cường
+- TS. Trần Kim Chi
+- TS. Huỳnh Nguyên Chính
+- TS. Trần Nam Dũng
+- TS. Nguyễn Tiến Đạt
+- TS. Nguyễn Thị Đông
+- TS. Lê Thụy Thanh Giang
+- TS. Hoàng Văn Hà
+- TS. Lê Ánh Hạ
+- TS. Dương Văn Hải
+- TS. Nguyễn Thanh Hải
+- TS. Đỗ Đức Hào
+- TS. Dương Việt Hằng
+- TS. Giang Hoa
+- TS. Lê Văn Hợp
+- TS. Nguyễn Quang Hùng
+- TS. Nguyễn Thanh Hùng
+- TS. Nguyễn Văn Hùng
+- TS. Trương Phước Hưng
+- TS. Nguyễn Hữu Kế
+- TS. Phạm Xuân Kiên
+- TS. Tô Đức Khánh
+- TS. Trần Thị Khiếu
+- TS. Nguyễn Đăng Khoa
+- TS. Trịnh Hoa Lăng
+- TS. Ngô Thị Kim Liên
+- TS. Lưu Phúc Lợi
+- TS. Phan Thiện Luân
+- TS. Lê Văn Luyện
+- TS. Nguyễn Đăng Minh
+- TS. Tạ Thị Nguyệt Nga
+- TS. Nguyễn Nhật Kim Ngân
+- TS. Nguyễn Kim Ngọc
+- TS. Nguyễn Thị Mộng Ngọc
+- TS. Nguyễn Thị Yến Ngọc
+- TS. Dương Kim Thế Nguyên
+- TS. Nguyễn Hữu Nhã
+- TS. Nguyễn Minh Nhân
+- TS. Nguyễn Hữu Trí Nhật
+- TS. Nguyễn Thị Hồng Nhung (2228)
+- TS. Trần Thanh Phước
+- TS. Ngô Tuấn Phương
+- TS. Đào Minh Sơn (UIT)
+- TS. Nguyễn Văn Tâm
+- TS. Nguyễn An Tế
+- TS. Nguyễn Vinh Tiệp
+- TS. Bùi Anh Tuấn
+- TS. Nguyễn Khánh Tùng
+- TS. Trần Công Thành
+- TS. Bùi Xuân Thắng
+- TS. Nguyễn Anh Thi
+- TS. Nguyễn Đình Thi
+- TS. Lê Ngọc Thiên
+- TS. Nguyễn Văn Thìn
+- TS. Phạm Đức Thịnh
+- TS. Võ Thị Ngọc Thủy
+- TS. Quách Thị Minh Trang
+- TS. Đặng Công Tráng
+- TS. Mạch Thị Khánh Trinh
+- TS. Lương An Vinh
+- TS. Phan Trung Vĩnh
+- ThS. Võ Duy Anh
+- ThS. Hồ Hữu Bình
+- ThS. Lê Văn Chánh
+- ThS. Trần Thị Châu
+- ThS. Nguyễn Thị Thùy Dung
+- ThS. Nguyễn Hải Đăng
+- ThS. Nguyễn Cao Đẳng
+- ThS. Trần Anh Đức
+- ThS. Nguyễn Thành Giang
+- ThS. Lê Hải
+- ThS. Võ Thế Hào
+- ThS. Lê Thị Thúy Hằng
+- ThS. Nguyễn Thị Thu Hằng
+- ThS. Nguyễn Thị Hồng Hoa
+- ThS. Nguyễn Mạnh Hùng
+- ThS. Nguyễn Vũ Huy
+- ThS. Nguyễn Nhựt Hưng
+- ThS. Nguyễn Thị Hường
+- ThS. Trần Trung Kiên
+- ThS. Nguyễn Tấn Trần Minh Khang
+- ThS. Nguyễn Duy Khánh
+- ThS. Trần Mai Khiêm
+- ThS. Trương Tấn Khoa
+- ThS. Đỗ Trọng Lễ
+- ThS. Nguyễn Văn Lĩnh
+- ThS. Đào Thị Trúc Loan
+- ThS. Giang Thị Trúc Mai
+- ThS. Lê Nhân Mỹ
+- ThS. Phạm Thế Nhân
+- ThS. Lê Nguyễn Tường Nhi
+- ThS. Lê Thị Tuyết Nhung
+- ThS. Phạm Minh Nhựt
+- ThS. Quan Văn Ón
+- ThS. Nguyễn Hoàng Phong
+- ThS. Mai Lan Phương
+- ThS. Lường Thị Phượng
+- ThS. Đỗ Thành Quang
+- ThS. Trần Hà Sơn
+- ThS. Võ Nhật Tân
+- ThS. Lê Hữu Toàn
+- ThS. Nguyễn Hữu Toàn
+- ThS. Hoàng Thanh Tú
+- ThS. Huỳnh Thanh Tú
+- ThS. Đào Anh Tuấn
+- ThS. Hồ Thị Thanh Tuyến
+- ThS. Huỳnh Viết Thám
+- ThS. Nguyễn Phú Thành
+- ThS. Nguyễn Văn Thìn
+- ThS. Nguyễn Trọng Thuận
+- ThS. Nguyễn Văn Thuận
+- ThS. Nguyễn Văn Thùy
+- ThS. Đặng Hoài Thương
+- ThS. Trương Hữu Ngân Thy
+- ThS. Nguyễn Thị Thu Trang
+- ThS. Nguyễn Thị Tú Trinh
+- ThS. Nguyễn Ngọc Trường
+- CN. Vũ Phương Anh
+- CN. Trần Huy Bân
+- CN. Nguyễn An Dân
+- CN. Trần Xuân Hùng
+- CN. Lê Khánh Huy
+- CN. Nguyễn Đức Huy
+- CN. Lương Văn Khải
+- CN. Phó Ngọc Đăng Khoa
+- CN. Bùi Thanh Lâm
+- CN. Võ Thanh Lâm
+- CN. Nguyễn Hồ Thăng Long
+- CN. Lý Duy Nam
+- CN. Nguyễn Đại Nghĩa
+- CN. Hồ Lê Minh Quân
+- CN. Lê Long Quốc
+- CN. Lê Trọng Anh Tú
+- CN. Lê Hình Nhựt Thanh
+- CN. Lê Hải Thiên
+- CN. Dương Lê Đình Thuận
+- CN. Nguyễn Quang Thức
+- CN. Nguyễn Đức Trọng
+Cán bộ hỗ trợ
+- ThS. Nguyễn Thị Phương Hoa
+- ThS. Nguyễn Lê Huy
+- ThS. Trần Huy Quang
+- ThS. Trần Viết Sơn
+- ThS. Trần Nhật Tiến
+- ThS. Lê Thu Thảo
+- ThS. Nguyễn Trần Thục Uyên
+- CN. Nguyễn Văn Đức
+- CN. Trịnh Thiện Hiền
+- CN. Đỗ Thị Kim Hương
+- CN. Lê Nguyễn Minh Khoa
+- CN. Hoàng Hà My
+- CN. Nguyễn Thị Minh Phúc
+- CN. Lê Thị Anh Thảo
+- CN. Phạm Anh Thuỷ
+- CN. Đặng Trần Nhã Vân
+Trở về

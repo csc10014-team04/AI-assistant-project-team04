@@ -23,7 +23,8 @@ from kivymd.uix.button import MDIconButton
 from kivy.uix.screenmanager import SlideTransition
 
 # Import mock data từ file mock_data.py
-from mock_data import mock_events
+from api_client import api
+from event_store import store
 
 # ==============================================================================
 # HẰNG SỐ MÀU SẮC
@@ -68,7 +69,7 @@ class EventCard(MDBoxLayout):
         end_time_str = end_dt.strftime("%H:%M")
         title = event["title"]
 
-        is_important = " ⭐" if event.get("important", False) else ""
+        is_important = " ⭐" if event.get("is_important", False) else ""
 
         if event["kind"] == "DEADLINE":
             lbl_deadline = MDLabel(
@@ -331,6 +332,10 @@ class SearchScreen(MDScreen):
         self.filter_modal.dismiss()
         self.perform_search()
 
+    def on_pre_enter(self, *args):
+        """load the user's real events when the tab opens, then repeat the current search."""
+        store.refresh(api, on_done=lambda: self.perform_search() if hasattr(self, "txt_search") else None)
+
     # --- LOGIC TÌM KIẾM ---
     def on_text_change(self, instance, value):
         if self.search_event is not None:
@@ -343,7 +348,7 @@ class SearchScreen(MDScreen):
         count = 0
         MAX_RESULTS = 30
         
-        for event in mock_events:
+        for event in store.events:
             if count >= MAX_RESULTS:
                 self.results_box.add_widget(MDLabel(
                     text=f"Đã hiển thị {MAX_RESULTS} kết quả...", 
@@ -353,7 +358,7 @@ class SearchScreen(MDScreen):
                 break
                 
             kind = event.get("kind", "EVENT")
-            is_important = event.get("important", False)
+            is_important = event.get("is_important", False)
             
             if not self.active_filters.get(kind, True):
                 continue

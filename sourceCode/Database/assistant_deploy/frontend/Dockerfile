@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-RUN pip install fastapi uvicorn sqlalchemy aiomysql httpx
-COPY . .
-EXPOSE 8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+RUN pip install fastapi uvicorn httpx
+COPY status_server.py .
+EXPOSE 80
+CMD ["uvicorn", "status_server:app", "--host", "0.0.0.0", "--port", "80"]

@@ -263,7 +263,10 @@ _TIME_PERIOD_BOUNDS: dict[str, tuple[time, time]] = {
 _QUERY_STOPWORDS_RE = re.compile(
     r"\b(lịch\s+thi|lịch\s+học|lịch\s+trình|lịch|xem|tìm\s+kiếm|tìm|kiếm|tra\s+cứu|"
     r"cho|mình|tôi|hỏi|có\s+gì|có|gì|không|khi\s+nào|mấy\s+giờ|ở\s+đâu|vào|buổi|"
-    r"sáng|chiều|tối|môn|học|schedule|search|find|what|when|where)\b",
+    r"sáng|chiều|tối|môn|học|schedule|search|find|what|when|where|"
+    # words that only say WHICH KIND of item or WHICH DAY; the filters already carry that meaning, so they must not
+    # remain as keywords (otherwise "deadline" or "ngày 9/11" would look for those words inside event titles)
+    r"deadline|hạn\s+nộp|hạn\s+chót|exam|ngày|hôm\s+nay|ngày\s+mai)\b",
     re.IGNORECASE,
 )
 

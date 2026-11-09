@@ -235,3 +235,15 @@ Test-NetConnection -ComputerName 192.168.100.112 -Port 3307
 3. **Timezone Awareness:** All timestamps stored in MySQL are UTC. Use `from_db_to_vn(dt)` to serialize timestamps into `+07:00` (ISO 8601) for mobile clients.
 4. **Driver Consistency:** Stick to `pymysql` and SQLAlchemy 2.0 synchronous sessions as defined in `sourceCode/BE/database.py`.
 
+---
+
+## 6. Folder map of `sourceCode/Database/`
+
+| Folder | What it holds |
+|---|---|
+| [`assistant_deploy/`](assistant_deploy) | Docker Compose setup described above: MySQL 8 (`init.sql` creates the tables), the vLLM / Llama container and the small probe containers. |
+| [`user_data/`](user_data/README.md) | Documentation and rules for **private, per-student data** (accounts, timetables, tasks, reminders, the per-user search index) plus fictional samples. Real data never goes in git. |
+| [`knowledgebase/`](knowledgebase/README.md) | **Tools and rules** for public university information (its MySQL tables are in `knowledgebase/search_engine_schema.sql`, separate from the scheduling `assistant_deploy/init.sql`) collected from the HCMUS websites (faculty introductions, lecturers, programmes, courses): the crawler, its configuration and the collected pages the AI reads. |
+
+Short version of the difference: *user_data* answers "what is MY schedule?"; *knowledgebase* answers "who is this lecturer?" and "which courses does this faculty teach?".
+| [`../../database/UniInfo/`](../../database/UniInfo/README.md) | the **collected data** itself (pages and structured rows from the HCMUS websites), at the repository root |
