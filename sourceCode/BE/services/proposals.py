@@ -81,7 +81,7 @@ def _score(candidate: TimeSlot, prefer: str | None, avoid: str | None) -> float:
 
 
 def _pick_slot(
-    gaps: list[TimeSlot], duration: int, prefer: str | None, avoid: str | None, excluded: list[TimeSlot]
+    gaps: list[TimeSlot], duration: int, prefer: str | None, avoid: str | None, excluded: list[TimeSlot], want_start: str | None = None
 ) -> TimeSlot | None:
     """best duration-long block inside the free gaps, skipping blocks the user already rejected."""
     best: tuple[float, datetime, TimeSlot] | None = None
@@ -91,7 +91,8 @@ def _pick_slot(
         while start + length <= gap.end:
             cand = TimeSlot(start, start + length)
             if not any(cand.overlaps(x) for x in excluded):
-                key = (_score(cand, prefer, avoid), cand.start)
+                exact = want_start is not None and f"{cand.start:%H:%M}" == want_start  # user named this start time
+                key = (-1.0 if exact else _score(cand, prefer, avoid), cand.start)
                 if best is None or key < best[:2]:
                     best = (*key, cand)
             start += STEP
@@ -213,7 +214,7 @@ def create_proposal(
     cap = pref.max_block_minutes if pref else 180  # longest continuous work block the user accepts
     pieces: list[TimeSlot] | None = None
     if duration <= cap:  # a whole block is preferred whenever the task is short enough
-        chosen = _pick_slot(gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, excluded)
+        chosen = _pick_slot(gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, excluded, nlu.requested_start)
         pieces = [chosen] if chosen else None
     if pieces is None:  # too long for one block, or no gap long enough: split it (P2-4)
         small = find_user_free_slots(db, owner_id, window_start, window_end, MIN_BLOCK_MIN)
