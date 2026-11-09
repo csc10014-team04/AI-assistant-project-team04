@@ -1,0 +1,5 @@
+course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind
+CSC10014,Computational Thinking,MON,07:30,09:30,B11.02,2026-09-07,2026-12-14,CLASS
+MTH10001,Calculus 1,WED,09:45,11:45,E203,2026-09-09,2026-12-16,CLASS
+PHY10001,General Physics,FRI,13:00,15:00,F105,2026-09-11,2026-12-18,CLASS
+CSC10014,Final exam,,08:00,10:00,B11.02,2027-01-12,2027-01-12,EXAM
