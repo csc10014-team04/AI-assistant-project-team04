@@ -5,3 +5,4 @@
 !samples/
 !samples/**
 !create_user_db.py
+!user_data_schema.sql
