@@ -23,6 +23,16 @@ from main import app  # noqa: E402
 from models import Base  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_runtime_logs(tmp_path, monkeypatch):
+    """tests simulate AI failures on purpose; keep those records out of the real logs/*.jsonl the live app uses."""
+    from routers import reminders
+    from services import ai_logging
+
+    monkeypatch.setattr(ai_logging, "LOG_PATH", tmp_path / "ai_errors.jsonl")
+    monkeypatch.setattr(reminders, "AUDIT_LOG_PATH", tmp_path / "reminder_audit.jsonl")
+
+
 @compiles(BigInteger, "sqlite")
 def _bigint_as_integer(type_, compiler, **kw):  # SQLite only auto-increments INTEGER primary keys
     return "INTEGER"

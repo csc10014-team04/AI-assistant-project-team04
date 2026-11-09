@@ -1,0 +1,6 @@
+# Real user data must never be committed. Only this README, this file and the fictional samples are tracked.
+*
+!.gitignore
+!README.md
+!samples/
+!samples/**
