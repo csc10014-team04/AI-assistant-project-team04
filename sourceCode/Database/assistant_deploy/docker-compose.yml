@@ -13,6 +13,8 @@ services:
     volumes:
       - db_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # separate schema for the search engine / knowledgebase (public university data, tables kb_*)
+      - ../knowledgebase/search_engine_schema.sql:/docker-entrypoint-initdb.d/02_search_engine.sql
     networks:
       - internal_bridge
     command: --default-authentication-plugin=mysql_native_password --max_connections=200

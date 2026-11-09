@@ -1,0 +1,2 @@
+# only needed to (re)collect data; the backend itself does not need these
+beautifulsoup4>=4.12

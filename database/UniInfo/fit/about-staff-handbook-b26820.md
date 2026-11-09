@@ -1,0 +1,288 @@
+---
+source_url: https://www.fit.hcmus.edu.vn/about/staff-handbook
+site: fit
+site_name: Khoa Công nghệ Thông tin
+title: "Staff Handbook - Faculty of Information Technology - VNUHCM-University of Science"
+fetched_at: 2026-11-09T00:18:31+07:00
+sha256: 4d8b85d426272f247c7ac2347a39f96aaffccf79309340bb476c8ed64d78d921
+---
+
+# Staff Handbook - Faculty of Information Technology - VNUHCM-University of Science
+
+# Staff Handbook
+Academic Staff - Full-time
+- Prof. Le Hoai, Bac
+- Assoc Prof. Dinh, Dien
+- Assoc Prof. Le Nguyen Hoai, Nam
+- Assoc Prof. Ly Quoc, Ngoc
+- Assoc Prof. Le Hoang, Thai
+- Assoc Prof. Nguyen Dinh, Thuc
+- Assoc Prof. Tran Minh, Triet
+- Assoc Prof. Nguyen Van, Vu
+- Dr. Ngo Huy, Bien
+- Dr. Pham Nguyen, Cuong
+- Dr. Bui Duy, Dang
+- Dr. Chau Thanh, Duc
+- Dr. Tran Trung, Dung
+- Dr. Le Khanh, Duy
+- Dr. Vu Thi My, Hang
+- Dr. Le Trung, Hoang
+- Dr. Tran Duy, Hoang
+- Dr. Pham Thi Bach, Hue
+- Dr. Nguyen Tien, Huy
+- Dr. Bui Tien, Len
+- Dr. Nguyen Hong Buu, Long
+- Dr. Nguyen Hai, Minh
+- Dr. Cao Xuan, Nam
+- Dr. Nguyen Tuan, Nam
+- Dr. Le Trung, Nghia
+- Dr. Le Thi, Nhan
+- Dr. Ngo Minh, Nhut
+- Dr. Nguyen Truong, Son
+- Dr. Tran Thai, Son
+- Dr. Bui Van, Thach
+- Dr. Le Ngoc, Thanh
+- Dr. Nguyen Ngoc, Thao
+- Dr. Truong Toan, Thinh
+- Dr. Nguyen Tran Minh, Thu
+- Dr. Dinh Ba, Tien
+- Dr. Can Tran Thanh, Trung
+- Dr. Le Thanh, Tung
+- Dr. Nguyen Thi Minh, Tuyen
+- Dr. Vo Hoai, Viet
+- Dr. Lam Quang, Vu
+- Nguyen Ngoc Minh, Chau
+- Luong Han, Co
+- Do Hoang, Cuong
+- Huynh Lam Hai, Dang
+- Vo Nam Thuc, Doan
+- Nguyen Ngoc, Duc
+- Tuan Nguyen Hoai, Duc
+- Vo Minh, Duc
+- Nguyen Le Hoang, Dung
+- Tran Anh, Duy
+- Do Thi Thanh, Ha
+- Pham Hoang, Hai
+- Tran Thi Bich, Hanh
+- Dang Tran Minh, Hau
+- Le Quoc, Hoa
+- Pham Minh, Hoang
+- Vu Quoc, Hoang
+- Tiet Gia, Hong
+- Nguyen Minh, Huy
+- Nguyen Van Quang, Huy
+- Ngo Dinh, Hy
+- Do Nguyen, Kha
+- Nguyen Huy, Khanh
+- Nguyen Van, Khiet
+- Ngo Ngoc Dang, Khoa
+- Chung Thuy, Linh
+- Truong Phuoc, Loc
+- Le Viet, Long
+- Le Phuc, Lu
+- Le Ha, Minh
+- Luong Vi, Minh
+- Nguyen Tran Duy, Minh
+- Le Nhut, Nam
+- Van Chi, Nam
+- Pham Trong, Nghia
+- Tran Thi Thao, Nhi
+- Ho Le Thi Kim, Nhung
+- Nguyen Thanh, Quan
+- Tran Hoang, Quan
+- Tran Duy, Quang
+- Tran Van, Quy
+- Le Ngoc, Son
+- Pham Tuan, Son
+- Ho Tuan, Thanh
+- Le Giang, Thanh
+- Tran Duy, Thao
+- Bui Huy, Thong
+- Nguyen Ngoc, Toan
+- Huynh Thuy Bao, Tran
+- Pham Minh, Tu
+- Mai Anh, Tuan
+- Pham Minh, Tuan
+- Pham Nguyen Son, Tung
+- Pham Thanh, Tung
+- Nguyen Trong, Viet
+- Ho Thi Hoang, Vy
+- Le Duc, Khoan
+- Phan Quoc, Ky
+- Do Hoai, Nam
+- Pham Ba, Thai
+- Nguyen Thanh, Tinh
+Academic Staff - Part-time
+- Prof. Vũ Mạnh, Chién
+- Prof. Le Dinh, Thang
+- Prof. Duong Nguyen, Vu
+- Assoc Prof. Mai Hoang, Bien
+- Assoc Prof. Nguyen Thanh, Binh
+- Assoc Prof. Le Van Anh, Cuong
+- Assoc Prof. Ly Kim, Ha
+- Assoc Prof. Pham Thi Le, Hang
+- Assoc Prof. Nguyen Thanh, Hien
+- Assoc Prof. Le Kim, Hung
+- Assoc Prof. Dạng Tràn, Khánh
+- Assoc Prof. Vu Hai, Quan
+- Assoc Prof. Dinh Ngoc, Thanh
+- Assoc Prof. Vu Thi Hanh, Thu
+- Assoc Prof. Tran Dan, Thu
+- Dr. Tran Kim, Chi
+- Dr. Huynh Nguyen, Chinh
+- Dr. Do Duc, Cuong
+- Dr. Nguyen Dinh Quoc, Cuong
+- Dr. Vu Do Huy, Cuong
+- Dr. Nguyen Tien, Dat
+- Dr. Nguyen Thi, Dong
+- Dr. Tran Nam, Dung
+- Dr. Le Thuy Thanh, Giang
+- Dr. Hoang Van, Ha
+- Dr. Le Anh, Ha
+- Dr. Duong Van, Hai
+- Dr. Nguyen Thanh, Hai
+- Dr. Duong Viet, Hang
+- Dr. Dõ Dúc, Hào
+- Dr. Giang, Hoa
+- Dr. Le Van, Hop
+- Dr. Nguyẽn Quang, Hùng
+- Dr. Nguyen Thanh, Hung
+- Dr. Nguyen Van, Hung
+- Dr. Truong Phuoc, Hung
+- Dr. Nguyen Huu, Ke
+- Dr. To Duc, Khanh
+- Dr. Tran Thi, Khieu
+- Dr. Nguyen Dang, Khoa
+- Dr. Pham Xuan, Kien
+- Dr. Trinh Hoa, Lang
+- Dr. Ngo Thi Kim, Lien
+- Dr. Luu Phúc, Lọi
+- Dr. Phan Thiẹn, Luan
+- Dr. Le Van, Luyen
+- Dr. Nguyen Dang, Minh
+- Dr. Ta Thi Nguyet, Nga
+- Dr. Nguyen Nhat Kim, Ngan
+- Dr. Nguyen Kim, Ngoc
+- Dr. Nguyen Thi Mong, Ngoc
+- Dr. Nguyen Thi Yen, Ngoc
+- Dr. Duong Kim The, Nguyen
+- Dr. Nguyen Huu, Nha
+- Dr. Nguyen Minh, Nhan
+- Dr. Nguyen Huu Tri, Nhat
+- Dr. Nguyen Thi Hong, Nhung (2228)
+- Dr. Tràn Thanh, Phuóc
+- Dr. Ngo Tuan, Phuong
+- Dr. Dao Minh, Son (UIT)
+- Dr. Nguyen Van, Tam
+- Dr. Nguyen An, Te
+- Dr. Bui Xuan, Thang
+- Dr. Tran Cong, Thanh
+- Dr. Nguyen Anh, Thi
+- Dr. Nguyen Dinh, Thi
+- Dr. Le Ngọc, Thien
+- Dr. Nguyen Van, Thin
+- Dr. Pham Duc, Thinh
+- Dr. Vo Thi Ngoc, Thuy
+- Dr. Nguyen Vinh, Tiep
+- Dr. Quach Thi Minh, Trang
+- Dr. Dang Cong, Trang
+- Dr. Mach Thi Khanh, Trinh
+- Dr. Bui Anh, Tuan
+- Dr. Nguyen Khanh, Tung
+- Dr. Luong An, Vinh
+- Dr. Phan Trung, Vinh
+- Vo Duy, Anh
+- Ho Huu, Binh
+- Le Van, Chánh
+- Tran Thi, Chau
+- Nguyen Hai, Dang
+- Nguyen Cao, Dang
+- Tran Anh, Duc
+- Nguyen Thi Thuy, Dung
+- Nguyen Thanh, Giang
+- Le, Hai
+- Le Thi Thuy, Hang
+- Nguyen Thi Thu, Hang
+- Vo The, Hao
+- Nguyen Thi Hong, Hoa
+- Nguyen Manh, Hung
+- Nguyen Nhut, Hung
+- Nguyen Thi, Huong
+- Nguyen Vu, Huy
+- Nguyen Tan Tran Minh, Khang
+- Nguyen Duy, Khanh
+- Tran Mai, Khiem
+- Truong Tan, Khoa
+- Tran Trung, Kien
+- Do Trong, Le
+- Nguyen Van, Linh
+- Dao Thi Truc, Loan
+- Giang Thi Truc, Mai
+- Le Nhan, My
+- Pham The, Nhan
+- Le Nguyen Tuong, Nhi
+- Le Thi Tuyet, Nhung
+- Pham Minh, Nhut
+- Quan Van, On
+- Nguyen Hoang, Phong
+- Mai Lan, Phuong
+- Luong Thi, Phuong
+- Do Thanh, Quang
+- Tran Ha, Son
+- Vo Nhat, Tan
+- Huynh Viet, Tham
+- Nguyen Phu, Thanh
+- Nguyen Van, Thin
+- Nguyen Trong, Thuan
+- Nguyen Van, Thuan
+- Dang Hoai, Thuong
+- Nguyen Van, Thuy
+- Truong Huu Ngan, Thy
+- Le Huu, Toan
+- Nguyen Huu, Toan
+- Nguyen Thi Thu, Trang
+- Nguyen Thi Tu, Trinh
+- Nguyen Ngoc, Truong
+- Hoang Thanh, Tu
+- Huynh Thanh, Tu
+- Dao Anh, Tuan
+- Ho Thi Thanh, Tuyen
+- Vu Phuong, Anh
+- Tran Huy, Ban
+- Nguyen An, Dan
+- Tran Xuan, Hung
+- Le Khanh, Huy
+- Nguyen Duc, Huy
+- Luong Van, Khai
+- Pho Ngoc Dang, Khoa
+- Bui Thanh, Lam
+- Vo Thanh, Lam
+- Nguyen Ho Thang, Long
+- Ly Duy, Nam
+- Nguyen Dai, Nghia
+- Hò Le Minh, Quan
+- Le Long, Quoc
+- Le Hinh Nhut, Thanh
+- Le Hai, Thien
+- Duong Le Dinh, Thuan
+- Nguyen Quang, Thuc
+- Nguyen Duc, Trong
+- Le Trong Anh, Tu
+Supporting Staff
+- Nguyen Thi Phuong, Hoa
+- Nguyen Le, Huy
+- Tran Huy, Quang
+- Tran Viet, Son
+- Le Thu, Thao
+- Tran Nhat, Tien
+- Nguyen Tran Thuc, Uyen
+- Nguyen Van, Duc
+- Trinh Thien, Hien
+- Do Thi Kim, Huong
+- Le Nguyen Minh, Khoa
+- Hoang Ha, My
+- Nguyen Thi Minh, Phuc
+- Le Thi Anh, Thao
+- Pham Anh, Thuy
+- Dang Tran Nha, Van
+Back

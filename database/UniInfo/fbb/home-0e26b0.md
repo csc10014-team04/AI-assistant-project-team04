@@ -1,0 +1,91 @@
+---
+source_url: http://fbb.hcmus.edu.vn
+site: fbb
+site_name: Khoa Sinh học - Công nghệ Sinh học
+title: "Khoa Sinh học - Công nghệ Sinh học, Trường Đại học Khoa học tự nhiên, ĐHQG-HCM"
+fetched_at: 2026-11-09T00:19:05+07:00
+sha256: 50176371aecda2ae02f7cc775eb9c1c17b07cff8cff7690caf622945b7ef69f0
+---
+
+# Khoa Sinh học - Công nghệ Sinh học, Trường Đại học Khoa học tự nhiên, ĐHQG-HCM
+
+# Logo Khoa SH-CNSH
+Since
+1953
+Chào mừng đến với
+
+## Khoa Sinh học - Công nghệ Sinh học
+Thuộc Trường Đại học Khoa học tự nhiên, ĐHQG‑HCM, Khoa Sinh học – Công nghệ Sinh học là một trong những đơn vị chủ lực trong lĩnh vực khoa học cơ bản và ứng dụng tại miền Nam. Mục tiêu trọng yếu là đào tạo nhân lực chất lượng cao trong lĩnh vực sinh học và công nghệ sinh học. Thực hiện nghiên cứu ứng dụng, chuyển giao công nghệ và gắn kết chặt chẽ giữa học thuật và doanh nghiệp.
+2385
+Sinh viên đại học
+573
+Học viên cao học - Nghiên cứu sinh
+121
+Giảng viên
+Tìm hiểu thêm
+
+## Chương trình đào tạo
+
+### Đào tạo đại học
+
+### Đào tạo sau đại học
+
+## Tuyển sinh
+
+### Giới thiệu
+
+## KHOA HỌC - ĐỐI NGOẠI
+09.2026
+
+### Camellia nganiana Nguyen-Phi & Luu, loài Hồng trà mới được công bố từ Việt Nam
+
+## Tin tức & Sự kiện
+15/05/2026
+
+### LỄ TRAO HỌC BỔNG ĐỒNG MẠNH NĂM 2026 - LAN TỎA TINH THẦN ĐỒNG HÀNH VÀ TIẾP SỨC SINH VIÊN
+17/05/2026
+
+### VÒNG THI SƠ LOẠI CUỘC THI OLYMPIC SINH HỌC SINH VIÊN TOÀN QUỐC NĂM 2026
+
+### RECAP WORKSHOP CV PRIMERS - HƯỚNG DẪN KỸ NĂNG VIẾT CV - TRANG BỊ KỸ NĂNG TỰ TIN CHINH PHỤC NHÀ TUYỂN DỤNG
+07/05/2026
+
+### Call for Applications MS, PhD and Integrated PhD Positions in Medical Research Center (MRC)
+06/05/2026
+
+### PHÒNG THÍ NGHIỆM Y SINH HỌC TÁI TẠO TUYỂN SINH ĐỢT 1 NĂM 2026
+
+### LỊCH BẢO VỆ KHOÁ LUẬN TỐT NGHIỆP - CHƯƠNG TRÌNH ĐỀ ÁN - HỌC KỲ 2 NĂM HỌC 2025-2026
+02/12/2025
+
+### Quy trình viết Thư giới thiệu từ Khoa Sinh học - Công nghệ Sinh học
+28/04/2026
+
+### THỜI KHÓA BIỂU HỌC KỲ 3/2025-2026 CHƯƠNG TRÌNH ĐỀ ÁN
+25/01/2026
+
+### THỜI KHÓA BIỂU HỌC KỲ 2/2025-2026 CHƯƠNG TRÌNH CHUẨN
+30/01/2026
+
+### Hướng dẫn một số quy tắc truyền thông nội bộ Khoa Sinh học - Công nghệ Sinh học
+14/04/2026
+
+### THÔNG BÁO VỀ SINH HOẠT CÔNG DÂN CUỐI KHOÁ - CHUYÊN ĐỀ B DÀNH CHO KHOÁ 2022
+
+### HM.CLAUSE INTERNSHIP PROGRAM
+
+## Người học
+21/09/2026
+
+### OUCRU IS RECRUITING
+01/10/2026
+
+### CÔNG TY TNHH CÔNG NGHỆ MÔI TRƯỜNG TRẦN NGUYỄN TUYỂN DỤNG
+16/10/2026
+
+### TUYỂN NGHIÊN CỨU SINH TIẾN SĨ TỪ ĐẠI HỌC OXFORD
+22/10/2026
+
+### Tuyển dụng nhân viên nghiên cứu trình độ Thạc sĩ và Tiến sĩ làm việc tại Viện Tế bào gốc
+
+## Doanh nghiệp đối tác
