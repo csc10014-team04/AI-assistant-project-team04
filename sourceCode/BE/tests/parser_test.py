@@ -1,4 +1,8 @@
-import parser
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # make `services` importable
+from services.parser import *  # noqa: F401,F403  (bare `import parser` hit the stdlib module Python 3.10 removed)
 # ============================================================================
 # SELF-VERIFICATION SUITE (run: python tests/parser_test.py)
 # ============================================================================

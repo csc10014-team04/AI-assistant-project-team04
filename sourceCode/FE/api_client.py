@@ -119,7 +119,8 @@ class APIClient:
     # 3. SEARCH & PROPOSALS
     # =========================================================================
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
-        endpoint = f"/api/v1/search/events?q={query}&start={start_date}&end={end_date}"
+        from urllib.parse import quote
+        endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
 
@@ -134,6 +135,24 @@ class APIClient:
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    # =========================================================================
+    # 4. PROPOSAL LIFECYCLE (Accept / Reject buttons) AND MANUAL PICKER
+    # =========================================================================
+    def confirm_proposal(self, proposal_id, on_success, on_failure, on_error):
+        self._request(f"/api/v1/proposals/{proposal_id}/confirm", method="POST",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def reject_proposal(self, proposal_id, on_success, on_failure, on_error):
+        self._request(f"/api/v1/proposals/{proposal_id}/reject", method="POST",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def create_manual_event(self, title, duration_minutes, slot_start, slot_end, on_success, on_failure, on_error):
+        payload = {"title": title, "duration_minutes": duration_minutes,
+                   "slot_start": slot_start, "slot_end": slot_end}
+        self._request("/api/v1/proposals/manual", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
 
 # Khởi tạo instance duy nhất
 api = APIClient()

@@ -177,9 +177,8 @@ def test_BE38_commit_rejects_malformed_rows(client, alice, patch):
 
 
 # ---------------- search engine / availability (P1-5) -------------------------------------------
-@pytest.mark.xfail(strict=True, reason="GAP-01: find_free_slots (P1-5) is still NotImplementedError")
 def test_BE39_find_free_slots_returns_gaps_between_events():
-    """P1-5. Known gap: services/search_engine.find_free_slots still raises NotImplementedError."""
+    """P1-5: free windows between events, never overlapping a hard event."""
     from models import TimeSlot
     from services.search_engine import find_free_slots
 
@@ -191,7 +190,6 @@ def test_BE39_find_free_slots_returns_gaps_between_events():
     assert not any(s.overlaps(busy[0].to_slot()) for s in slots)  # zero overlap guarantee
 
 
-@pytest.mark.xfail(strict=True, reason="GAP-01: find_free_slots (P1-5) is still NotImplementedError")
 def test_BE40_availability_engine_meets_200ms_budget_for_a_semester():
     """P1-5 performance criterion: one semester (~15 weeks x 20 classes) in < 200 ms."""
     from services.search_engine import find_free_slots
