@@ -90,6 +90,10 @@ class NluResult(BaseModel):
     deadline_hint: str | None = Field(default=None, max_length=100)
     window_start: date | None = None  # resolved deterministically from date_hint (P2-3)
     window_end: date | None = None
+    # literal clock range from the prompt ("từ 11h sáng đến 5h chiều" -> "11:00" / "17:00", VN time); the manual
+    # picker places the task there instead of at the start of the whole free gap
+    requested_start: str | None = None
+    requested_end: str | None = None
     deadline: date | None = None  # hard upper-bound date resolved from deadline_hint for No-Missed-Deadline gate
     date_assumed: bool = False  # True when a default window was applied
     needs_clarification: bool = False
@@ -158,8 +162,10 @@ _HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap"
 
 # clock times are NOT durations: "từ 7h đến 18h" is a time range, "lúc 9h" is a moment. Reading "7h" in them as
 # "7 hours" produced wrong durations and left words such as "từ ... đến" in the title.
+_PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|pm|am)"
 _CLOCK_RANGE_RE = re.compile(
-    r"(?:từ|tu|from)?\s*(\d{1,2})\s*(?:h|giờ|gio|:)\s*(\d{2})?\s*(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})\s*(?:h|giờ|gio|:)?\s*(\d{2})?",
+    r"(?:từ|tu|from)?\s*(\d{1,2})\s*(?:h|giờ|gio|:)\s*(\d{2})?\s*" + _PERIOD + r"?\s*"
+    r"(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})\s*(?:h|giờ|gio|:)?\s*(\d{2})?\s*" + _PERIOD + r"?",
     re.IGNORECASE,
 )
 _CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
@@ -171,14 +177,35 @@ def _strip_clock_times(text: str) -> str:
     return _CLOCK_POINT_RE.sub(" ", _CLOCK_RANGE_RE.sub(" ", text))
 
 
+def _hour24(hour: int, period: str | None) -> int:
+    period = (period or "").lower()
+    if period in {"chiều", "chieu", "tối", "pm"} and hour < 12:
+        return hour + 12
+    if period in {"trưa", "trua"} and hour < 11:
+        return hour + 12
+    return hour
+
+
+def parse_clock_window(text: str) -> tuple[int, int] | None:
+    """
+    "từ 11h sáng đến 5h chiều" -> (660, 1020): start/end as minutes after midnight (VN local time).
+    A bare end hour that would not be after the start ("từ 11h sáng đến 5h") is read as the afternoon.
+    None when there is no range, an hour is out of range, or the length is not 15..720 minutes.
+    """
+    m = _CLOCK_RANGE_RE.search(text)
+    if not m or int(m.group(1)) >= 24 or int(m.group(4)) > 24:
+        return None
+    start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
+    start, end = start_h * 60 + int(m.group(2) or 0), end_h * 60 + int(m.group(5) or 0)
+    if end <= start and not m.group(6) and start_h < 12 and end_h < 12:
+        end += 12 * 60
+    return (start, end) if 15 <= end - start <= 720 else None
+
+
 def extract_time_range_minutes(text: str) -> int | None:
     """length in minutes of "từ 7h đến 18h" (660); None when there is no range or it is not 15..720 minutes."""
-    m = _CLOCK_RANGE_RE.search(text)
-    if not m:
-        return None
-    start = int(m.group(1)) * 60 + int(m.group(2) or 0)
-    end = int(m.group(3)) * 60 + int(m.group(4) or 0)
-    return end - start if 15 <= end - start <= 720 and int(m.group(1)) < 24 and int(m.group(3)) <= 24 else None
+    window = parse_clock_window(text)
+    return window[1] - window[0] if window else None
 
 
 def has_duration_phrase(text: str) -> bool:
@@ -372,6 +399,12 @@ def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, n
         result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
     if result.priority is None:
         result.priority = rules.priority
+    window_clock = parse_clock_window(prompt)
+    if window_clock:
+        result.requested_start = f"{window_clock[0] // 60:02d}:{window_clock[0] % 60:02d}"
+        result.requested_end = f"{window_clock[1] // 60:02d}:{window_clock[1] % 60:02d}"
+    else:
+        result.requested_start = result.requested_end = None
     result.profanity_found = norm_profanity
     return result
 

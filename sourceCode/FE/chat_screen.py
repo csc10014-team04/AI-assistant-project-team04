@@ -23,7 +23,7 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 
 # Import module API Client kết nối với máy chủ
 from api_client import api
-from fallback import is_timeout, parse_request
+from fallback import clip_slot_to_window, is_timeout, parse_request
 from notifier import ReminderScheduler
 from event_store import store
 
@@ -169,8 +169,9 @@ class ChatBubble(MDBoxLayout):
 # ==============================================================================
 class ManualFallbackModal(ModalView):
     """Bảng chọn giờ Thủ công khi AI Lỗi hoặc không khớp tự động được"""
-    def __init__(self, task_title, duration, available_slots, ai_busy=False, **kwargs):
+    def __init__(self, task_title, duration, available_slots, ai_busy=False, requested_window=None, **kwargs):
         super().__init__(**kwargs)
+        self.requested_window = requested_window  # ("11:00", "17:00") when the user named a clock range
         self.task_title = task_title
         self.duration = duration
         self.size_hint = (0.9, 0.7)
@@ -241,9 +242,10 @@ class ManualFallbackModal(ModalView):
                 
         if selected_slot:
             # Server dat cong viec o dau khung gio da chon (khong lay ca khung trong)
+            slot_start, slot_end = clip_slot_to_window(
+                selected_slot.get("start_time"), selected_slot.get("end_time"), self.requested_window)
             api.create_manual_event(
-                self.task_title, int(self.duration),
-                selected_slot.get("start_time"), selected_slot.get("end_time"),
+                self.task_title, int(self.duration), slot_start, slot_end,
                 on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api), self.dismiss()),
                 on_failure=lambda req, res: self._show_error(res),
                 on_error=lambda req, err: self._show_error({"detail": "Lỗi kết nối Server."}),
@@ -522,9 +524,11 @@ class ChatAssistantScreen(MDScreen):
         end = nlu.get("window_end") or (date.fromisoformat(start) + timedelta(days=6)).isoformat()
         
         busy = bool(nlu.get("fallback_mode"))
+        window = (nlu["requested_start"], nlu["requested_end"]) if nlu.get("requested_start") and nlu.get("requested_end") else None
 
         def show(slots):
-            ManualFallbackModal(task_title=title, duration=duration, available_slots=slots, ai_busy=busy).open()
+            ManualFallbackModal(task_title=title, duration=duration, available_slots=slots, ai_busy=busy,
+                                requested_window=window).open()
         
         api.get_free_slots(
             f"{start}T00:00:00", f"{end}T23:59:59", max(15, min(int(duration), 720)),
