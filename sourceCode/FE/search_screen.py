@@ -80,9 +80,34 @@ class EventCard(MDBoxLayout):
             lbl_deadline.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
             self.add_widget(lbl_deadline)
         else:
-            lbl_date = MDLabel(text=f"[b]{day_str} Ngày {date_str}:[/b]", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
-            lbl_title = MDLabel(text=f"Công việc: {title}{is_important}", halign='left', color=(1,1,1,1), size_hint_y=None)
-            lbl_time = MDLabel(text=f"Thời gian: {start_time_str} - {end_time_str}", halign='left', color=(1,1,1,1), size_hint_y=None)
+            kind_labels = {
+                "CLASS": "Lớp học",
+                "EXAM": "Kỳ thi",
+                "EVENT": "Sự kiện",
+                "TASK": "Công việc"
+            }
+
+            lbl_date = MDLabel(
+                text=f"[b]{day_str} Ngày {date_str}:[/b]",
+                markup=True,
+                halign='left',
+                color=(1, 1, 1, 1),
+                size_hint_y=None
+            )
+
+            lbl_title = MDLabel(
+                text=f"{kind_labels.get(event['kind'], 'Sự kiện')}: {title}{is_important}",
+                halign='left',
+                color=(1, 1, 1, 1),
+                size_hint_y=None
+            )
+
+            lbl_time = MDLabel(
+                text=f"Thời gian: {start_time_str} - {end_time_str}",
+                halign='left',
+                color=(1, 1, 1, 1),
+                size_hint_y=None
+            )
             
             for lbl in [lbl_date, lbl_title, lbl_time]:
                 lbl.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
@@ -336,7 +361,6 @@ class SearchScreen(MDScreen):
         """load the user's real events when the tab opens, then repeat the current search."""
         store.refresh(api, on_done=lambda: self.perform_search() if hasattr(self, "txt_search") else None)
 
-    # --- LOGIC TÌM KIẾM ---
     def on_text_change(self, instance, value):
         if self.search_event is not None:
             self.search_event.cancel()
@@ -347,19 +371,19 @@ class SearchScreen(MDScreen):
         self.results_box.clear_widgets()
         count = 0
         MAX_RESULTS = 30
-        
+
         for event in store.events:
             if count >= MAX_RESULTS:
                 self.results_box.add_widget(MDLabel(
-                    text=f"Đã hiển thị {MAX_RESULTS} kết quả...", 
+                    text=f"Đã hiển thị {MAX_RESULTS} kết quả...",
                     halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
                     font_style="Body", role="medium", size_hint_y=None, height=dp(40)
                 ))
                 break
-                
+
             kind = event.get("kind", "EVENT")
             is_important = event.get("is_important", False)
-            
+
             if not self.active_filters.get(kind, True):
                 continue
             if self.filter_important_only and not is_important:
@@ -368,21 +392,21 @@ class SearchScreen(MDScreen):
             ev_start = datetime.fromisoformat(event["start_time"])
             date_full_str = ev_start.strftime("%d/%m/%Y")
             date_short_str = ev_start.strftime("%d/%m")
-            
+
             match_text = (
-                query in event["title"].lower() or 
+                query in event["title"].lower() or
                 query in kind.lower() or
-                query in date_full_str or 
+                query in date_full_str or
                 query in date_short_str
             )
-            
+
             if match_text:
                 self.results_box.add_widget(EventCard(event))
                 count += 1
-        
+
         if count == 0:
             self.results_box.add_widget(MDLabel(
-                text="Không tìm thấy kết quả nào!", 
+                text="Không tìm thấy kết quả nào!",
                 halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
                 font_style="Body", role="large", size_hint_y=None, height=dp(50)
             ))

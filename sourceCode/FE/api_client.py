@@ -1,10 +1,10 @@
-import os   # at the top of the file
+import os
 import json
+from urllib.parse import urlencode
 from kivy.network.urlrequest import UrlRequest
 from kivy.storage.jsonstore import JsonStore
 
 from fallback import AI_TIMEOUT_SECONDS
-
 
 """
 FILE: api_client.py
@@ -20,18 +20,12 @@ CÁCH HOẠT ĐỘNG:
 """
 
 class APIClient:
-    # Hằng số mặc định
-    BASE_URL = "http://26.211.52.63:8080" 
+    BASE_URL = "http://26.211.52.63:8080"
 
     def __init__(self):
-        # Thuộc tính instance giúp truy cập qua self.base_url
-        # in APIClient.__init__ replace the hard-coded address (8000 is the AI engine, the backend is 8080):
         self.store = JsonStore("auth_session.json")
-        # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
         saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
         self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://127.0.0.1:8080").rstrip("/")
-
-        # Phục hồi token từ bộ nhớ cục bộ nếu có
         self.access_token = None
         self.user_id = None
         self.display_name = None
@@ -147,11 +141,10 @@ class APIClient:
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
-        from urllib.parse import quote
-        endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
+        params = {"q": query, "start_from": start_date, "end_until": end_date}
+        params = {key: value for key, value in params.items() if value is not None and value != ""}
+        endpoint = "/api/v1/search/events?" + urlencode(params)
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
-
-
     # new method, next to the other calls:
     def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
         payload = {"prompt": prompt, "reschedule_proposal_id": reschedule_proposal_id}
