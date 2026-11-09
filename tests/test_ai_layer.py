@@ -101,7 +101,6 @@ def test_AI09_missing_duration_triggers_clarifying_question(client, alice):
     assert n["needs_clarification"] is True and "bao lâu" in n["clarification_question"]
 
 
-@pytest.mark.xfail(strict=True, reason="DEFECT-02: nlu._DATE_HINT_RE never captures vague words (sớm, dạo này...), so temporal.resolve_date_hint never sees them and no clarifying question is asked")
 def test_AI10_vague_date_asks_instead_of_guessing(client, alice):
     n = understand(client, alice, "xếp 2 tiếng học bài sớm").json()["nlu"]
     assert n["needs_clarification"] is True and n["date_assumed"] is True
@@ -210,3 +209,9 @@ def test_AI20_deleted_event_disappears_from_reminder_audit(client, alice, db):
     db.get(Event, eid).deleted_at = datetime(2026, 9, 1)
     db.commit()
     assert client.get("/api/v1/reminders/audit", headers=alice.h).json() == []
+
+
+def test_AI21_other_vague_phrases_also_trigger_a_question(client, alice):
+    for sentence in ("xếp 2 tiếng học bài dạo này", "xếp 90 phút đọc sách sắp tới"):
+        n = understand(client, alice, sentence).json()["nlu"]
+        assert n["needs_clarification"] is True and "ngày nào" in n["clarification_question"], sentence

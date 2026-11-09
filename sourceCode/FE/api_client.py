@@ -3,6 +3,8 @@ import json
 from kivy.network.urlrequest import UrlRequest
 from kivy.storage.jsonstore import JsonStore
 
+from fallback import AI_TIMEOUT_SECONDS
+
 
 """
 FILE: api_client.py
@@ -24,9 +26,10 @@ class APIClient:
     def __init__(self):
         # Thuộc tính instance giúp truy cập qua self.base_url
         # in APIClient.__init__ replace the hard-coded address (8000 is the AI engine, the backend is 8080):
-        self.base_url = os.getenv("ASSISTANT_API_URL", "http://127.0.0.1:8080").rstrip("/")
-        # self.base_url = self.BASE_URL
         self.store = JsonStore("auth_session.json")
+        # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
+        saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
+        self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://127.0.0.1:8080").rstrip("/")
 
         # Phục hồi token từ bộ nhớ cục bộ nếu có
         self.access_token = None
@@ -34,6 +37,11 @@ class APIClient:
         self.display_name = None
         self._load_session()
     
+    def set_base_url(self, url):
+        """remember the backend address on the device (settings screen / first-run prompt)."""
+        self.base_url = url.strip().rstrip("/")
+        self.store.put("settings", base_url=self.base_url)
+
     def _load_session(self):
         """Khôi phục token từ lần đăng nhập trước"""
         if self.store.exists("auth"):
@@ -67,7 +75,7 @@ class APIClient:
             headers["Authorization"] = f"Bearer {self.access_token}"
         return headers
 
-    def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None):
+    def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None, timeout=None):
         """Hàm cốt lõi xử lý gửi HTTP Request"""
         url = f"{self.base_url}{endpoint}"
         req_body = json.dumps(payload) if payload else None
@@ -81,7 +89,8 @@ class APIClient:
             method=method,
             on_success=on_success or default_cb,
             on_failure=on_failure or default_cb,
-            on_error=on_error or default_cb
+            on_error=on_error or default_cb,
+            timeout=timeout,
         )
 
     # =========================================================================
@@ -100,6 +109,18 @@ class APIClient:
     def login(self, username, password, on_success, on_failure, on_error):
         payload = {"username": username, "password": password}
         self._request("/api/v1/auth/login", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def oauth_start(self, provider, redirect_uri, on_success, on_failure, on_error):
+        """provider = "google" | "github". Success body: {"authorize_url", "state"}; open the URL in a browser."""
+        from urllib.parse import quote
+        self._request(f"/api/v1/auth/oauth/{provider}/start?redirect_uri={quote(redirect_uri, safe='')}",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def oauth_exchange(self, provider, code, redirect_uri, state, on_success, on_failure, on_error):
+        """Send the code the provider gave back; success body has access_token / user_id / display_name."""
+        payload = {"code": code, "redirect_uri": redirect_uri, "state": state}
+        self._request(f"/api/v1/auth/oauth/{provider}/exchange", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     # =========================================================================
@@ -127,14 +148,30 @@ class APIClient:
     # new method, next to the other calls:
     def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
         payload = {"prompt": prompt, "reschedule_proposal_id": reschedule_proposal_id}
+        # strict client-side timeout (P1-9): on expiry on_error is called and the chat opens the manual picker
         self._request("/api/v1/assistant/understand", method="POST", payload=payload,
-                on_success=on_success, on_failure=on_failure, on_error=on_error)
+                on_success=on_success, on_failure=on_failure, on_error=on_error, timeout=AI_TIMEOUT_SECONDS)
     def get_free_slots(self, window_start, window_end, duration_minutes, on_success, on_failure, on_error,
                    respect_preferences=True):
         payload = {"window_start": window_start, "window_end": window_end,
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    # =========================================================================
+    # 3b. REMINDER AUDIT (used by notifier.ReminderScheduler)
+    # =========================================================================
+    @staticmethod
+    def _device_time():
+        """aware ISO timestamp from the phone's clock (the body of these two calls is required by the server)."""
+        from datetime import datetime
+        return {"at": datetime.now().astimezone().isoformat()}
+
+    def report_reminder_scheduled(self, event_id):
+        self._request(f"/api/v1/reminders/{event_id}/scheduled", method="POST", payload=self._device_time())
+
+    def report_reminder_delivered(self, event_id):
+        self._request(f"/api/v1/reminders/{event_id}/delivered", method="POST", payload=self._device_time())
 
     # =========================================================================
     # 4. PROPOSAL LIFECYCLE (Accept / Reject buttons) AND MANUAL PICKER

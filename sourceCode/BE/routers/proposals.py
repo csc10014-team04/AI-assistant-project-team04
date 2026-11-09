@@ -23,6 +23,7 @@ class ProposalOut(BaseModel):
     end_time: str
     rationale: str | None
     status: str
+    extra_slots: list[dict[str, str]] = []  # further blocks when a long task was split (first block is start/end)
 
 
 class EventOut(BaseModel):
@@ -57,7 +58,7 @@ def proposal_out(p: Proposal) -> ProposalOut:
         id=p.id, task_id=p.task_id, parent_id=p.parent_id, task_title=p.task.title,
         duration_minutes=p.task.duration_minutes,
         start_time=from_db_to_vn(p.start_time).isoformat(), end_time=from_db_to_vn(p.end_time).isoformat(),
-        rationale=p.rationale, status=p.status.value,
+        rationale=p.rationale, status=p.status.value, extra_slots=p.extra_slots_json or [],
     )
 
 

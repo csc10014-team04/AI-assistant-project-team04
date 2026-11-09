@@ -133,7 +133,10 @@ _DURATION_RE = re.compile(
 _DATE_HINT_RE = re.compile(
     r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
     r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
-    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week)",
+    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week|"
+    # vague phrases (P2-3): captured so temporal.resolve_date_hint can ask a clarifying question
+    r"sớm|som|lúc nào đó|luc nao do|sắp tới|sap toi|dạo này|dao nay|khi nào rảnh|khi nao ranh|"
+    r"một lúc nào|mot luc nao|vài hôm nữa|vai hom nua|soon|sometime|whenever)",
     re.IGNORECASE,
 )
 # matches explicit deadline clauses ("hạn nộp bài tập CTDL là thứ 6", "deadline 25/11", "nộp trước thứ sáu")

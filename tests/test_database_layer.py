@@ -202,3 +202,14 @@ def test_DB20_deploy_backend_stub_has_no_embedded_credentials_or_sql_echo():
     assert not re.search(r"mysql\+\w+://\w+:[^@$\s{]+@", src), "database credentials hard-coded in stub backend"
     code = "\n".join(line.split("#")[0] for line in src.splitlines())  # ignore comments
     assert not re.search(r"echo\s*=\s*True", code), "echo=True logs every SQL statement including schedule data"
+
+
+def test_DB21_health_db_really_queries_mysql_and_reports_503_when_down(client, db, monkeypatch):
+    assert client.get("/health/db").json() == {"status": "ok", "database": "ok"}
+
+    def broken(*a, **k):
+        raise RuntimeError("mysql gone")
+
+    monkeypatch.setattr(db, "execute", broken)
+    res = client.get("/health/db")
+    assert res.status_code == 503 and "database unreachable" in res.json()["detail"]

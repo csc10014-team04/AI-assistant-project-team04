@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from kivy.core.window import Window
 from kivy.metrics import dp
@@ -23,6 +23,10 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 
 # Import module API Client kết nối với máy chủ
 from api_client import api
+from fallback import is_timeout, parse_request
+from notifier import ReminderScheduler
+
+reminder_scheduler = ReminderScheduler(reporter=api)  # one scheduler for the whole app (P2-9)
 
 # ==============================================================================
 # HẰNG SỐ MÀU SẮC
@@ -239,7 +243,7 @@ class ManualFallbackModal(ModalView):
             api.create_manual_event(
                 self.task_title, int(self.duration),
                 selected_slot.get("start_time"), selected_slot.get("end_time"),
-                on_success=lambda req, res: self.dismiss(),
+                on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), self.dismiss()),
                 on_failure=lambda req, res: self._show_error(res),
                 on_error=lambda req, err: self._show_error({"detail": "Lỗi kết nối Server."}),
             )
@@ -313,7 +317,8 @@ class ProposalCard(MDBoxLayout):
         pid = self.proposal.get("id")
         api.confirm_proposal(
             pid,
-            on_success=lambda req, res: self.disable_card("Đã xác nhận thêm vào lịch"),
+            on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res),
+                                         self.disable_card("Đã xác nhận thêm vào lịch")),
             on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
             on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),
         )
@@ -460,6 +465,7 @@ class ChatAssistantScreen(MDScreen):
                 card.disable_card("Đã hủy do chuyển chủ đề")
 
         # 2. Gửi request trực tiếp đến Backend Server
+        self._last_text = user_text  # kept so a timeout can still open the manual picker
         reschedule_id = None
         if self.active_reschedule_proposal:
             reschedule_id = self.active_reschedule_proposal.proposal.get("id")
@@ -511,7 +517,8 @@ class ChatAssistantScreen(MDScreen):
         title = nlu.get("title") or "Hoạt động"
         duration = nlu.get("duration_minutes") or 60
         start = nlu.get("window_start") or datetime.now().date().isoformat()
-        end = nlu.get("window_end") or start
+        # no explicit end (e.g. offline fallback): show a whole week of free gaps
+        end = nlu.get("window_end") or (date.fromisoformat(start) + timedelta(days=6)).isoformat()
         
         busy = bool(nlu.get("fallback_mode"))
 
@@ -539,6 +546,12 @@ class ChatAssistantScreen(MDScreen):
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def on_api_error(self, req, error):
+        if is_timeout(error) and getattr(self, "_last_text", None):
+            # P1-9: the AI request timed out -> go straight to the manual form with offline-parsed values
+            self._open_manual_picker(parse_request(self._last_text))
+            self.append_ai_message("Trợ lý AI phản hồi quá chậm. Bạn hãy chọn khung giờ trống ở bảng trên nhé!")
+            Clock.schedule_once(self.scroll_to_bottom, 0.2)
+            return
         self.append_ai_message(f"Không thể kết nối tới Server ({api.base_url}). Vui lòng kiểm tra lại đường truyền mạng.")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
