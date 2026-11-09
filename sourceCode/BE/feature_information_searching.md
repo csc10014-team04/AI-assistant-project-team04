@@ -138,12 +138,18 @@ $$\text{SearchScore}_{\text{ModeA}}(q) = G_{\text{filter}}(q) \times \left( 10 +
 
 Trong đó:
 1. **Chốt chặn Tuân thủ Ràng buộc & Cô lập Dữ liệu (`+10` điểm; $G_{\text{filter}} \in \{0, 1\}$):** 100% sự kiện trả về phải thuộc đúng `owner_id`, `deleted_at IS NULL`, nằm trong đúng cửa sổ thời gian `[window_start, window_end]` quy đổi từ câu hỏi, đúng `kind` và `room`. Nếu lọt bất kỳ bản ghi sai ngày, sai loại sự kiện hoặc của người dùng khác -> $G_{\text{filter}} = 0$ (toàn câu nhận `0/30` điểm).
+
 2. **Độ phủ Ngữ nghĩa & Từ viết tắt - Semantic Recall@K ($S_{\text{recall}} \in [0, 10]$):**
+
    $$S_{\text{recall}}(q) = 10 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{gt}}|}$$
+
    Trong đó $E_{\text{gt}}$ là tập sự kiện đáp án chuẩn thực tế của câu hỏi $q$, và $E_{\text{returned}}$ là tập sự kiện hệ thống trả về.
+
 3. **Độ tinh khiết & Thứ hạng Đầu - Precision & Reciprocal Rank ($S_{\text{rank}} \in [0, 10]$):**
-   $$S_{\text{rank}}(q) = 5 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{returned}}|} + 5 \times \frac{1}{\text{rank}_{\text{first}}}$$
-   Trong đó thành phần đầu (`+5` điểm) đo độ tinh khiết chống kéo nhầm môn khác ngành, và thành phần thứ hai (`+5` điểm) thưởng cho việc xếp sự kiện đúng lên vị trí đầu tiên ($\text{rank}_{\text{first}} = 1$).
+
+   $$S_{\text{rank}}(q) = 5 \times \frac{|E_{\text{returned}} \cap E_{\text{gt}}|}{|E_{\text{returned}}|} + 5 \times \frac{1}{r_1}$$
+
+   Trong đó thành phần đầu (`+5` điểm) đo độ tinh khiết chống kéo nhầm môn khác ngành, và thành phần thứ hai (`+5` điểm) thưởng cho việc xếp sự kiện đúng lên vị trí đầu tiên ($r_1 = 1$).
 
 #### Ví dụ minh họa cách tính điểm Hướng 1 (Kịch bản phức tạp đa điều kiện):
 * **Trạng thái cơ sở dữ liệu của Sinh viên A (`owner_id = 7`) trong tuần sau (`09/11/2026 - 15/11/2026`):**
@@ -164,7 +170,7 @@ Trong đó:
   2. **Giả định 2 (Nếu chỉ tìm khớp chữ thuần túy, thiếu Vector cụm khái niệm và ngưỡng lọc kém):** Trả về `E_returned = [E5, E1]` (kéo nhầm môn `E5 - Mạng máy tính` lên vị trí số 1, tìm được `E1` ở vị trí số 2, và làm sót mất `E2 - Vi tích phân 2` vì tên môn không có chữ `"toán"`):
      * Kiểm tra cổng $G_{\text{filter}}$: Cả `E5, E1` đều đúng là `EXAM` vào buổi chiều tuần sau của `owner_id = 7` -> **$G_{\text{filter}} = 1$** (`+10` điểm nền).
      * Tính $S_{\text{recall}}$: Chỉ tìm đúng được `{E1}` trên tập chuẩn `{E1, E2}` -> $S_{\text{recall}} = 10 \times \frac{1}{2} = \mathbf{5.0}$ điểm.
-     * Tính $S_{\text{rank}}$: Độ tinh khiết chỉ đạt $\frac{1}{2}$ (vì `E5` sai môn), và sự kiện đúng đầu tiên `E1` nằm ở vị trí thứ 2 ($\text{rank}_{\text{first}} = 2$) -> $S_{\text{rank}} = 5 \times \frac{1}{2} + 5 \times \frac{1}{2} = 2.5 + 2.5 = \mathbf{5.0}$ điểm.
+     * Tính $S_{\text{rank}}$: Độ tinh khiết chỉ đạt $\frac{1}{2}$ (vì `E5` sai môn), và sự kiện đúng đầu tiên `E1` nằm ở vị trí thứ 2 ($r_1 = 2$) -> $S_{\text{rank}} = 5 \times \frac{1}{2} + 5 \times \frac{1}{2} = 2.5 + 2.5 = \mathbf{5.0}$ điểm.
      * **Tổng điểm Giả định 2:** $1 \times (10 + 5.0 + 5.0) = \mathbf{20 / 30}$ **điểm**.
   3. **Giả định 3 (Nếu bộ Query Optimizer tách sai chữ `"lich thi"` hoặc sai `"buoi chieu"`, trả lọt `E3` thi buổi sáng hoặc `E4` lớp học thường):**
      * Vi phạm bộ lọc thời gian/loại sự kiện -> **$G_{\text{filter}} = 0$**, tổng điểm lập tức bằng **$0 \times (\dots) = \mathbf{0 / 30}$ điểm**.
@@ -182,7 +188,7 @@ Trong đó:
    * Đạt `+5` điểm nếu đoạn tài liệu chuẩn nằm ở vị trí thứ 3 đến `top_k`.
    * Nhận `0` điểm nếu `top_k` đoạn lấy lên trượt hoàn toàn thông tin cần tìm.
 3. **Độ đầy đủ & Súc tích của Câu trả lời ($S_{\text{generation}} \in [0, 10]$ - chấm Bước 4-6):**
-   * **Độ phủ ý cốt lõi (`+5` điểm):** $5 \times \frac{\text{Số ý chính trả lời đúng}}{\text{Tổng số ý chính của đáp án chuẩn}}$.
+   * **Độ phủ ý cốt lõi (`+5` điểm):** $5 \times \frac{N_{\text{correct}}}{N_{\text{target}}}$ (với $N_{\text{correct}}$ là số ý chính trả lời đúng và $N_{\text{target}}$ là tổng số ý chính của đáp án chuẩn).
    * **Độ súc tích & Trích dẫn hợp lệ (`+5` điểm):** Trả lời trực tiếp bằng tiếng Việt chuẩn xác, không mâu thuẫn nội tại và đính kèm danh sách `citations` khớp với nội dung trả lời.
 
 #### Ví dụ minh họa cách tính điểm Hướng 2 (Kịch bản hỏi quy chế học vụ phức tạp):

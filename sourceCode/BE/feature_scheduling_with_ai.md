@@ -151,10 +151,14 @@ $$\text{ScheduleScore}(p_i) = G_{\text{overlap}}(p_i) \times G_{\text{deadline}}
    * **No Missed Deadline (`+10` điểm; $G_{\text{deadline}} \in \{0, 1\}$):** Thời điểm hoàn thành công việc không vượt quá mốc hạn chót thực tế nêu trong câu gốc ($t_{\text{end}} \le t_{\text{deadline}}$). Vi phạm (ví dụ hạn Thứ Sáu nhưng gợi ý sáng Thứ Bảy) -> $G_{\text{deadline}} = 0$ (toàn phương án nhận `0/35` điểm).
 2. **Ba tiêu chí tối ưu chất lượng sắp xếp (Kế thừa mục 1, 2, 4; mỗi mục tối đa `+5` điểm):**
    * **Mục 1 - Cân bằng tải trong ngày & Tuân thủ buổi ($S_{1,\text{balance}} \in [0, 5]$):**
+
      $$S_{1,\text{balance}}(p_i) = 5 \times I_{\text{pref}}(p_i) \times \max\left(0, 1 - \frac{t_{\text{busy}}}{480}\right)$$
+
      Trong đó $t_{\text{busy}}$ là tổng số phút đã bận sẵn trong ngày chứa khung giờ $p_i$ (trường `busy_minutes_in_day` trước khi xếp việc mới), ngưỡng tải chuẩn mỗi ngày là `480` phút (8 tiếng); $I_{\text{pref}} = 1$ nếu khung giờ tuân thủ đúng buổi ưu tiên / buổi cần tránh trong câu gốc, và bằng $0$ nếu AI hiểu sai dẫn tới xếp vào buổi người dùng đã cấm.
    * **Mục 2 - Độ an toàn hạn chót & Trọng số ưu tiên ($S_{2,\text{margin}} \in [0, 5]$):**
+
      $$S_{2,\text{margin}}(p_i) = 5 \times \min\left(1.0, \frac{\Delta t_{\text{margin}}}{24.0}\right)$$
+
      Với việc có mức ưu tiên cao (`priority = 1` - gấp/ôn thi/sắp nộp), khung giờ hoàn thành trước hạn chót $\Delta t_{\text{margin}} \ge 24$ giờ đạt trọn `+5.0` điểm; nếu xếp sát nút trước hạn chót dưới `24` giờ thì điểm giảm tỷ lệ thuận theo số giờ đệm thực tế.
    * **Mục 4 - Chống phân mảnh lịch trống ($S_{4,\text{packing}} \in [0, 5]$):**
      * Đạt **`+5.0` điểm** nếu công việc được xếp nguyên 1 khối liên tục và đặt sát biên đầu hoặc biên cuối của khoảng trống lớn (khoảng trống còn dư ở đầu/cuối bằng `0` phút hoặc $\ge 60$ phút để tái sử dụng được cho việc khác).
@@ -163,7 +167,7 @@ $$\text{ScheduleScore}(p_i) = G_{\text{overlap}}(p_i) \times G_{\text{deadline}}
 
 ### 6.3. Ví dụ minh họa cách tính điểm trực tiếp (Kịch bản phức tạp đa ràng buộc)
 
-* ** Thời điểm hiện tại (`reference_now`):** Sáng Thứ Tư `11/11/2026` lúc `08:00 (+07:00)`.
+* **Thời điểm hiện tại (`reference_now`):** Sáng Thứ Tư `11/11/2026` lúc `08:00 (+07:00)`.
 * **Câu Prompt gốc của sinh viên đưa vào khung Trợ lý AI:**
   > *"Hạn nộp bài tập lớn CTDL là 23:59 thứ sáu tuần này, xếp gấp cho mình 2 tiếng làm bài trong tuần này nhé, đừng xếp vào buổi tối vì tối mình bận việc nhà."*
 * **Nhãn chuẩn từ câu Prompt gốc (Ground-Truth Constraints):**
@@ -185,11 +189,17 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
   1. **Zero-Overlap:** Không đè lên giờ học `09:00 - 11:00`, cách giờ học buổi sáng 2 tiếng (> 15 phút nghỉ đệm) -> **$G_{\text{overlap}} = 1$** (`+10` điểm).
   2. **No Missed Deadline:** Hoàn thành lúc `15:00 Thứ Tư`, trước hạn chót `23:59 Thứ Sáu` -> **$G_{\text{deadline}} = 1$** (`+10` điểm).
   3. **Mục 1 ($S_{1,\text{balance}}$):** Xếp vào buổi chiều (tuân thủ đúng lệnh cấm buổi tối -> $I_{\text{pref}} = 1$). Ngày Thứ Tư chỉ mới bận `120` phút:
+
      $$S_{1,\text{balance}} = 5 \times 1 \times \left(1 - \frac{120}{480}\right) = 5 \times 0.75 = \mathbf{3.75} \text{ điểm}$$
+
   4. **Mục 2 ($S_{2,\text{margin}}$):** Hoàn thành lúc `15:00 Thứ Tư`, sớm hơn hạn chót `23:59 Thứ Sáu` tới **`57` giờ** ($\ge 24$ giờ):
+
      $$S_{2,\text{margin}} = 5 \times \min\left(1.0, \frac{57.0}{24.0}\right) = \mathbf{5.00} \text{ điểm}$$
+
   5. **Mục 4 ($S_{4,\text{packing}}$):** Xếp liền 1 khối 120 phút sát mép đầu `13:00`, phần dư phía sau còn `120` phút ($\ge 60$ phút) không gây phân mảnh -> **$S_{4,\text{packing}} = \mathbf{5.00}$ điểm**.
+
   * **Tổng điểm Trường hợp 1:**
+
     $$\text{ScheduleScore}(p_1) = 1 \times 1 \times (10 + 10 + 3.75 + 5.00 + 5.00) = \mathbf{33.75 / 35} \text{ điểm}$$
 
 #### Trường hợp 2: AI làm sót thông tin phủ định (`avoid_time_of_day = null`)
@@ -205,9 +215,13 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
 * **Chấm điểm:**
   1. $G_{\text{overlap}} = 1$ (`+10` điểm), $G_{\text{deadline}} = 1$ (`+10` điểm).
   2. **Mục 1 ($S_{1,\text{balance}}$):** Ngày Thứ Sáu đã bận sẵn `360` phút:
+
      $$S_{1,\text{balance}} = 5 \times 1 \times \left(1 - \frac{360}{480}\right) = 5 \times 0.25 = \mathbf{1.25} \text{ điểm}$$
+
   3. **Mục 2 ($S_{2,\text{margin}}$):** Làm xong lúc `18:00 Thứ Sáu`, chỉ cách hạn chót `23:59 Thứ Sáu` đúng **`6` giờ**:
+
      $$S_{2,\text{margin}} = 5 \times \min\left(1.0, \frac{6.0}{24.0}\right) = 5 \times 0.25 = \mathbf{1.25} \text{ điểm}$$
+
   4. **Mục 4 ($S_{4,\text{packing}}$):** Đặt ở giữa khoảng trống làm dư 2 mảnh 30 phút (< 60 phút) ở hai đầu -> **$S_{4,\text{packing}} = \mathbf{2.50}$ điểm**.
   * **Tổng điểm Trường hợp 3:** $1 \times 1 \times (10 + 10 + 1.25 + 1.25 + 2.50) = \mathbf{25.00 / 35}$ **điểm** (thấp hơn hẳn mức `33.75` điểm của thuật toán tối ưu).
 
@@ -216,4 +230,5 @@ Hãy chấm điểm trực tiếp **4 trường hợp kết quả đầu ra** đ
 * **Chấm điểm:**
   * Dù ngày Thứ Bảy rảnh rỗi đạt điểm cân bằng tải và chống phân mảnh tuyệt đối, nhưng $t_{\text{end}} = \text{10:00 Thứ Bảy} > \text{23:59 Thứ Sáu}$ (trễ hạn nộp bài).
   * Chốt chặn cứng **$G_{\text{deadline}}(p_4) = 0$** lập tức kích hoạt:
+
     $$\text{ScheduleScore}(p_4) = 1 \times 0 \times (10 + 0 + 5.00 + 0.00 + 5.00) = \mathbf{0.00 / 35} \text{ điểm (Loại bỏ)}$$
