@@ -215,3 +215,30 @@ def test_AI21_other_vague_phrases_also_trigger_a_question(client, alice):
     for sentence in ("xếp 2 tiếng học bài dạo này", "xếp 90 phút đọc sách sắp tới"):
         n = understand(client, alice, sentence).json()["nlu"]
         assert n["needs_clarification"] is True and "ngày nào" in n["clarification_question"], sentence
+
+
+
+# ---------------- clock times are not durations; titles keep only the activity -----------------------
+@pytest.mark.parametrize("sentence,title,minutes", [
+    ("hãy xếp lịch học tư duy tính toán từ 7h đến 18h", "học tư duy tính toán", 660),
+    ("xếp lịch học bài từ 8h đến 10h30", "học bài", 150),
+    ("học bài 2h từ 7h đến 11h", "học bài", 120),            # an explicit length beats the range
+    ("xếp 1h30 làm đồ án", "làm đồ án", 90),
+    ("xếp 2 tiếng 15 phút đọc sách", "đọc sách", 135),
+    ("họp nhóm lúc 9h30 xếp 45 phút", "họp nhóm", 45),
+])
+def test_AI22_rules_read_ranges_clock_times_and_compound_durations(sentence, title, minutes):
+    r = nlu.rule_based_understand(sentence)
+    assert r.duration_minutes == minutes and r.title == title, (r.title, r.duration_minutes)
+
+
+def test_AI23_a_clock_time_alone_is_not_a_duration_so_the_server_asks(client, alice):
+    n = understand(client, alice, "xếp lịch họp nhóm lúc 9h ngày mai").json()["nlu"]
+    assert n["duration_minutes"] is None and n["needs_clarification"] is True and "bao lâu" in n["clarification_question"]
+
+
+def test_AI24_range_longer_than_twelve_hours_or_backwards_gives_no_duration():
+    assert nlu.extract_time_range_minutes("từ 6h đến 22h") is None      # 16 h is outside 15..720 minutes
+    assert nlu.extract_time_range_minutes("từ 18h đến 7h") is None      # backwards
+    assert nlu.extract_time_range_minutes("từ 7h đến 7h10") is None     # shorter than 15 minutes
+    assert nlu.extract_time_range_minutes("từ 7h đến 18h") == 660

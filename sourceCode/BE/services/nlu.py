@@ -156,15 +156,50 @@ _NEGATION = ("không", "khong", "ko", "đừng", "dung", "tránh", "tranh", "not
 _HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap", "deadline", "thi", "exam")
 
 
+# clock times are NOT durations: "từ 7h đến 18h" is a time range, "lúc 9h" is a moment. Reading "7h" in them as
+# "7 hours" produced wrong durations and left words such as "từ ... đến" in the title.
+_CLOCK_RANGE_RE = re.compile(
+    r"(?:từ|tu|from)?\s*(\d{1,2})\s*(?:h|giờ|gio|:)\s*(\d{2})?\s*(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})\s*(?:h|giờ|gio|:)?\s*(\d{2})?",
+    re.IGNORECASE,
+)
+_CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
+_HOURS_MINUTES_RE = re.compile(r"(\d{1,2})\s*(?:h|giờ|gio|tiếng|tieng)\s*(\d{1,2})\s*(?:phút|phut|p|min)?\b", re.IGNORECASE)
+
+
+def _strip_clock_times(text: str) -> str:
+    """remove time ranges and clock moments so that their numbers are not read as durations."""
+    return _CLOCK_POINT_RE.sub(" ", _CLOCK_RANGE_RE.sub(" ", text))
+
+
+def extract_time_range_minutes(text: str) -> int | None:
+    """length in minutes of "từ 7h đến 18h" (660); None when there is no range or it is not 15..720 minutes."""
+    m = _CLOCK_RANGE_RE.search(text)
+    if not m:
+        return None
+    start = int(m.group(1)) * 60 + int(m.group(2) or 0)
+    end = int(m.group(3)) * 60 + int(m.group(4) or 0)
+    return end - start if 15 <= end - start <= 720 and int(m.group(1)) < 24 and int(m.group(3)) <= 24 else None
+
+
+def has_duration_phrase(text: str) -> bool:
+    """true when the text states a length ("2 tiếng", "1h30", "45 phút") or a time range ("từ 7h đến 11h")."""
+    return bool(_DURATION_RE.search(_strip_clock_times(text)) or extract_time_range_minutes(text))
+
+
 def extract_duration_minutes(text: str) -> int | None:
     """
     input: text (str) sanitized prompt.
     output: int minutes (15..720) from the first "<number> <unit>" phrase, else None.
-    typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180.
+    typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180; "1h30" -> 90; "từ 7h đến 18h" -> 660.
     """
-    match = _DURATION_RE.search(text)
+    hm = _HOURS_MINUTES_RE.search(_strip_clock_times(text))
+    if hm:  # "1h30" / "2 tiếng 15 phút" -> hours plus minutes
+        total = int(hm.group(1)) * 60 + int(hm.group(2))
+        if 15 <= total <= 720:
+            return total
+    match = _DURATION_RE.search(_strip_clock_times(text))
     if not match:
-        return None
+        return extract_time_range_minutes(text)  # no explicit length: a range such as "từ 7h đến 11h" gives one
     value = float(match.group(1).replace(",", "."))
     unit = match.group(2).lower()
     minutes = round(value * (1 if unit in {"phút", "phut", "p", "min", "mins", "minute", "minutes"} else 60))
@@ -189,10 +224,13 @@ def _time_of_day_flags(text: str) -> tuple[TimeOfDay | None, TimeOfDay | None]:
 
 def _extract_title(text: str) -> str | None:
     """strip request boilerplate, duration and date words; what remains is the activity name."""
-    cleaned = _DURATION_RE.sub(" ", text)
+    cleaned = _strip_clock_times(text)
+    cleaned = _HOURS_MINUTES_RE.sub(" ", cleaned)
+    cleaned = _DURATION_RE.sub(" ", cleaned)
+    cleaned = re.sub(r"\b(?:xếp|xep|sắp xếp|sap xep)\s+lịch\b", " ", cleaned, flags=re.IGNORECASE)  # the request words, not the activity
     cleaned = _DATE_HINT_RE.sub(" ", cleaned)
     cleaned = re.sub(
-        r"\b(xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|"
+        r"\b(xếp|xep|sắp xếp|sap xep|hãy|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|lịch|lich|"
         r"hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|là|trong|"
         r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
         " ",
@@ -294,7 +332,7 @@ def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, n
     """shared post-processing: literal-text guards, deterministic date window, clarification, profanity flag."""
     if rules.duration_minutes is not None:
         result.duration_minutes = rules.duration_minutes  # literal text wins over the model
-    elif not _DURATION_RE.search(prompt):
+    elif not has_duration_phrase(prompt):
         result.duration_minutes = None  # model invented a duration
     # literal text guard: arranging/scheduling words must never be treated as schedule query
     if result.intent == "query_schedule" and rules.intent == "schedule_task":
