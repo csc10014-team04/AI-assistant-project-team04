@@ -1,6 +1,7 @@
-# Real user data must never be committed. Only this README, this file and the fictional samples are tracked.
+# Real user data must never be committed. Only this README, this file, the script that creates the local database, and the fictional samples are tracked.
 *
 !.gitignore
 !README.md
 !samples/
 !samples/**
+!create_user_db.py
