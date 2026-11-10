@@ -32,6 +32,15 @@ from models import (
 from services import rag
 from services.ai_logging import log_ai_failure
 from services.inference_queue import QueueWaitTimeout, broker
+from services.kb_models import (
+    KbAchievement,
+    KbCourse,
+    KbDepartment,
+    KbFaculty,
+    KbLecturer,
+    KbProgram,
+    KbSource,
+)
 from services.normalizer import normalize_text
 from services.privacy import assert_private_endpoint, sanitize_prompt
 from services.telemetry import record_latency_ms
@@ -679,6 +688,157 @@ def ingest_academic_document(
     return rag.ingest_file(ACADEMIC_KB_OWNER_ID, file_bytes, filename, directory=kb_dir)
 
 
+_KB_QUERY_STOPWORDS = {
+    "la", "ai", "gi", "cua", "va", "co", "khong", "nao", "o", "dau",
+    "cho", "hoi", "ve", "thong", "tin", "gioi", "thieu", "truong",
+}
+
+
+def _retrieve_structured_kb_hits(
+    db: Session | None,
+    normalized_query: str,
+    top_k: int = 3,
+) -> list[rag.Hit]:
+    """
+    input: db (Session | None), normalized_query (str), and top_k (int).
+    core logic: query structured kb_* tables (lecturers, departments, programs, courses, achievements)
+                using folded token matching and format matching rows as rag.Hit records.
+    output: list[rag.Hit] sorted by relevance score; safely returns [] if kb_* tables are absent.
+    typical flow: fold query -> match KbLecturer/KbDepartment/KbProgram/KbCourse -> return top-k hits.
+    """
+    if db is None or not normalized_query:
+        return []
+    q_fold = rag.fold(normalized_query).strip()
+    q_tokens = [
+        tok for tok in re.findall(r"\w+", q_fold)
+        if len(tok) >= 2 and tok not in _KB_QUERY_STOPWORDS
+    ]
+    if not q_tokens:
+        return []
+
+    hits: list[rag.Hit] = []
+    try:
+        faculties = {f.id: f for f in db.scalars(select(KbFaculty)).all()}
+        departments = {d.id: d for d in db.scalars(select(KbDepartment)).all()}
+        sources = {s.id: s for s in db.scalars(select(KbSource)).all()}
+
+        # 1. check active lecturers (preferring APPROVED rows, falling back to non-REJECTED)
+        lecturers = list(
+            db.scalars(
+                select(KbLecturer).where(
+                    KbLecturer.is_active.is_(True),
+                    KbLecturer.review_status != "REJECTED",
+                )
+            ).all()
+        )
+        achievements = list(
+            db.scalars(
+                select(KbAchievement).where(KbAchievement.review_status != "REJECTED")
+            ).all()
+        )
+        ach_by_lecturer: dict[int, list[KbAchievement]] = {}
+        for ach in achievements:
+            if ach.lecturer_id is not None:
+                ach_by_lecturer.setdefault(ach.lecturer_id, []).append(ach)
+
+        for lec in lecturers:
+            dept = departments.get(lec.department_id) if lec.department_id else None
+            fac = faculties.get(lec.faculty_id)
+            candidate_fold = rag.fold(
+                f"{lec.full_name} {lec.name_folded} {lec.academic_title or ''} "
+                f"{lec.position or ''} {dept.name if dept else ''} "
+                f"{fac.name if fac else ''} {lec.bio or ''}"
+            )
+            matched = sum(1 for tok in q_tokens if tok in candidate_fold)
+            if matched == 0 and q_fold not in candidate_fold:
+                continue
+            score = 0.95 if lec.name_folded and lec.name_folded in q_fold else 0.85 * (matched / len(q_tokens))
+            if score < 0.35:
+                continue
+            title_prefix = f"{lec.academic_title} " if lec.academic_title else ""
+            parts = [f"Giảng viên: {title_prefix}{lec.full_name}".strip()]
+            if lec.position:
+                parts.append(f"Chức vụ: {lec.position}")
+            if dept is not None:
+                parts.append(f"Bộ môn: {dept.name}")
+            if fac is not None:
+                parts.append(f"Khoa: {fac.name}")
+            if lec.bio:
+                parts.append(f"Thông tin: {lec.bio[:240]}")
+            lec_achs = ach_by_lecturer.get(lec.id, [])
+            if lec_achs:
+                ach_titles = "; ".join(
+                    f"{a.title} ({a.year})" if a.year else a.title for a in lec_achs[:3]
+                )
+                parts.append(f"Thành tựu/Công bố: {ach_titles}")
+            src = sources.get(lec.source_id) if lec.source_id else None
+            src_label = (src.url if src else None) or lec.profile_url or "kb_lecturers"
+            hits.append(rag.Hit(text=" | ".join(parts), score=round(score, 4), source=src_label))
+
+        # 2. check departments, programs, and kb courses
+        for dept in departments.values():
+            if dept.review_status == "REJECTED":
+                continue
+            fac = faculties.get(dept.faculty_id)
+            cand = rag.fold(f"{dept.name} {dept.name_folded} {dept.description or ''} {fac.name if fac else ''}")
+            matched = sum(1 for tok in q_tokens if tok in cand)
+            if matched == 0:
+                continue
+            score = 0.82 * (matched / len(q_tokens))
+            if score >= 0.4:
+                src = sources.get(dept.source_id) if dept.source_id else None
+                text = f"Bộ môn: {dept.name}"
+                if fac is not None:
+                    text += f" | Khoa: {fac.name}"
+                if dept.description:
+                    text += f" | Mô tả: {dept.description[:240]}"
+                hits.append(rag.Hit(text=text, score=round(score, 4), source=src.url if src else "kb_departments"))
+
+        programs = list(
+            db.scalars(select(KbProgram).where(KbProgram.review_status != "REJECTED")).all()
+        )
+        for prog in programs:
+            fac = faculties.get(prog.faculty_id)
+            cand = rag.fold(f"{prog.name} {prog.name_folded} {prog.level or ''} {prog.description or ''}")
+            matched = sum(1 for tok in q_tokens if tok in cand)
+            if matched == 0:
+                continue
+            score = 0.82 * (matched / len(q_tokens))
+            if score >= 0.4:
+                src = sources.get(prog.source_id) if prog.source_id else None
+                text = f"Chương trình đào tạo: {prog.name}"
+                if prog.level:
+                    text += f" ({prog.level})"
+                if fac is not None:
+                    text += f" | Khoa: {fac.name}"
+                if prog.description:
+                    text += f" | Mô tả: {prog.description[:240]}"
+                hits.append(rag.Hit(text=text, score=round(score, 4), source=src.url if src else "kb_programs"))
+
+        kb_courses = list(
+            db.scalars(select(KbCourse).where(KbCourse.review_status != "REJECTED")).all()
+        )
+        for crs in kb_courses:
+            cand = rag.fold(f"{crs.course_code or ''} {crs.name} {crs.name_folded} {crs.description or ''}")
+            matched = sum(1 for tok in q_tokens if tok in cand)
+            if matched == 0:
+                continue
+            score = 0.85 * (matched / len(q_tokens))
+            if score >= 0.4:
+                src = sources.get(crs.source_id) if crs.source_id else None
+                code_str = f"[{crs.course_code}] " if crs.course_code else ""
+                credits_str = f" ({crs.credits} tín chỉ)" if crs.credits is not None else ""
+                text = f"Học phần: {code_str}{crs.name}{credits_str}"
+                if crs.description:
+                    text += f" | Mô tả: {crs.description[:240]}"
+                hits.append(rag.Hit(text=text, score=round(score, 4), source=src.url if src else "kb_courses"))
+    except Exception:
+        return []
+
+    hits.sort(key=lambda item: item.score, reverse=True)
+    return hits[:top_k]
+
+
 def ask_academic_knowledge_base(
     raw_query: str,
     *,
@@ -690,7 +850,7 @@ def ask_academic_knowledge_base(
 ) -> dict[str, Any]:
     """
     input: raw_query (str), top_k (int), optional db/user_id for ai error logging, optional httpx client.
-    core logic: run 6-step rag (embed query -> retrieve top-k chunks -> pack prompt -> call vllm -> answer).
+    core logic: run 6-step rag (embed query -> retrieve structured kb_* + vector chunks -> pack prompt -> vllm -> answer).
     output: dict with query, normalized_query, answer, citations, and fallback_mode.
     typical flow: hits found -> vllm synthesizes grounded answer; vllm down -> fallback returns citations.
     """
@@ -722,9 +882,19 @@ def ask_academic_knowledge_base(
             "redirect_button_label": "Trợ lý AI",
         }
 
-    # steps 1, 2, 3: embed query, scan academic vector store, and collect top-k chunks
+    # steps 1, 2, 3: retrieve from structured kb_* sql tables + academic vector store, and collect top-k chunks
     kb_dir = _get_academic_kb_dir(directory)
-    hits = rag.retrieve(ACADEMIC_KB_OWNER_ID, normalized_query, k=top_k, directory=kb_dir)
+    structured_hits = _retrieve_structured_kb_hits(db, normalized_query, top_k=top_k)
+    vector_hits = rag.retrieve(ACADEMIC_KB_OWNER_ID, normalized_query, k=top_k, directory=kb_dir)
+    combined_hits = sorted(structured_hits + vector_hits, key=lambda h: h.score, reverse=True)
+    hits: list[rag.Hit] = []
+    seen_texts: set[str] = set()
+    for h in combined_hits:
+        if h.text not in seen_texts:
+            seen_texts.add(h.text)
+            hits.append(h)
+            if len(hits) >= top_k:
+                break
     citations = [
         {"source": h.source, "text": h.text, "score": round(h.score, 4)}
         for h in hits
