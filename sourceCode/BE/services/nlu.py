@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from database import VN_TZ
 from models import AiErrorLog, AiErrorType
-from services import rag
 from services.ai_logging import log_ai_failure
 from services.inference_queue import QueueWaitTimeout, broker
 from services.normalizer import normalize_text
@@ -439,16 +438,10 @@ def understand_prompt(
 
     base = rule_based_understand(safe_prompt)
     rules = _finalize(base.model_copy(), base, safe_prompt, reference_now, normalized.profanity_found)
+    # nlu extracts intent/entities/deadline_hint only; schedule queries & free slots run on live mysql events
     context: list[str] = []
-    if user_id is not None:
-        try:
-            context = [h.text for h in rag.retrieve(user_id, safe_prompt, k=2)]
-        except Exception:
-            context = []  # a corrupt/missing index must never block the request
     now_vn = reference_now.astimezone(VN_TZ)
     system = f"{SYSTEM_PROMPT} Now: {now_vn:%Y-%m-%d %A %H:%M} (+07:00)."
-    if context:
-        system += " Known schedule: " + " | ".join(c.replace("\n", "; ")[:200] for c in context)
     messages = [{"role": "system", "content": system}, *FEW_SHOT, {"role": "user", "content": safe_prompt}]
     payload = {"model": MODEL_NAME, "messages": messages, "max_tokens": 200, "temperature": 0.0}
 
