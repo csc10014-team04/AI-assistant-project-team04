@@ -38,7 +38,11 @@ from services.parser import (  # noqa: E402
     parse_timetable_content,
 )
 from services.security import get_current_user  # noqa: E402
-from services.validator import commit_resolved_import, detect_import_conflicts  # noqa: E402
+from services.validator import (  # noqa: E402
+    commit_resolved_import,
+    detect_import_conflicts,
+    filter_existing_for_conflict_check,
+)
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
@@ -564,13 +568,18 @@ def check_conflicts_endpoint(
     output: dict containing 'non_conflicting_rows' and serialized 'conflict_cards' in +07:00.
     typical flow: query active_events_stmt -> run detect_import_conflicts -> serialize cards -> return.
     """
-    db_events = db.scalars(active_events_stmt(current_user.id)).all()
-    existing_domains = [
-        ev.to_domain()
-        for ev in db_events
-        if not (payload.replace_previous_imports and ev.source == EventSource.IMPORTED)
-    ]
+    db_events = list(db.scalars(active_events_stmt(current_user.id)).all())
     incoming_domains = [row.to_domain() for row in payload.incoming_rows]
+    # xem file validator_FUNC_commit_resolved_import.txt (sourceCode/BE/learning/)
+    # loại trừ lịch cũ của chính môn đang được cập nhật (hoặc toàn bộ IMPORTED nếu replace_previous_imports=True)
+    # nhưng vẫn giữ nguyên các môn học khác để phát hiện nếu giờ mới / lịch làm thêm mới đụng giờ các môn đó
+    existing_domains = filter_existing_for_conflict_check(
+        db=db,
+        owner_id=current_user.id,
+        incoming_rows=incoming_domains,
+        db_events=db_events,
+        replace_previous_imports=payload.replace_previous_imports,
+    )
     result = detect_import_conflicts(incoming_domains, existing_domains)
 
     serialized_cards = [

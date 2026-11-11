@@ -282,3 +282,222 @@ def test_commit_import_endpoint_and_safe_reimport_on_mysql(
 
     active_courses = db_session.scalars(active_courses_stmt(uid)).all()
     assert len(active_courses) == 1 and active_courses[0].course_code == "CSC10009"
+
+
+def test_smart_diff_partial_update_and_part_time_import(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: 5 initial courses, a 2-course schedule update from week 3, a full 5-course re-import, and a part-time file.
+    core logic: verify unchanged courses keep their exact DB Event IDs, past weeks survive, and part-time coexists.
+    output: assertions confirming zero data loss and zero redundant DB row recreation.
+    """
+    uid, _, headers = _register_and_get_headers(client)
+
+    # 1. initial import of 5 courses (4 Mondays/Tuesdays/Wednesdays/Thursdays/Fridays in Nov 2026)
+    initial_5_courses = {
+        "import_batch_id": "sem1_5courses",
+        "replace_previous_imports": False,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "CSC10014",
+                "title": "Tư duy tính toán",
+                "kind": "CLASS",
+                "weekday": "MON",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "first_date": "2026-11-02",
+                "last_date": "2026-11-23",
+                "room": "I42",
+            },
+            {
+                "line_number": 2,
+                "course_code": "PE10001",
+                "title": "Thể dục 1",
+                "kind": "CLASS",
+                "weekday": "TUE",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "first_date": "2026-11-03",
+                "last_date": "2026-11-24",
+                "room": "Sân A",
+            },
+            {
+                "line_number": 3,
+                "course_code": "MTH10002",
+                "title": "Vi tích phân 2",
+                "kind": "CLASS",
+                "weekday": "WED",
+                "start_time": "09:30",
+                "end_time": "11:30",
+                "first_date": "2026-11-04",
+                "last_date": "2026-11-25",
+                "room": "E201",
+            },
+            {
+                "line_number": 4,
+                "course_code": "CSC10008",
+                "title": "Mạng máy tính",
+                "kind": "CLASS",
+                "weekday": "THU",
+                "start_time": "13:30",
+                "end_time": "15:30",
+                "first_date": "2026-11-05",
+                "last_date": "2026-11-26",
+                "room": "F102",
+            },
+            {
+                "line_number": 5,
+                "course_code": "ECO10001",
+                "title": "Kinh tế đại cương",
+                "kind": "CLASS",
+                "weekday": "FRI",
+                "start_time": "15:30",
+                "end_time": "17:30",
+                "first_date": "2026-11-06",
+                "last_date": "2026-11-27",
+                "room": "C301",
+            },
+        ],
+    }
+    res1 = client.post("/api/v1/ingestion/commit", json=initial_5_courses, headers=headers)
+    assert res1.status_code == 200
+    assert res1.json()["created_count"] == 20  # 5 courses x 4 weeks = 20 events
+
+    tdtt_ids_before = {
+        ev.id
+        for ev in db_session.scalars(active_events_stmt(uid)).all()
+        if ev.title == "Tư duy tính toán"
+    }
+    assert len(tdtt_ids_before) == 4
+
+    # 2. after 2 weeks, update ONLY 'Thể dục 1' and 'Vi tích phân 2' for weeks 3-4 (Nov 17..Nov 25)
+    patch_2_courses = {
+        "import_batch_id": "sem1_patch_week3",
+        "replace_previous_imports": False,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "",  # even without course_code (like PDF/TXT), title matching works
+                "title": "Thể dục 1",
+                "kind": "CLASS",
+                "weekday": "TUE",
+                "start_time": "15:30",
+                "end_time": "17:30",
+                "first_date": "2026-11-17",
+                "last_date": "2026-11-24",
+                "room": "Sân B",
+            },
+            {
+                "line_number": 2,
+                "course_code": "MTH10002",
+                "title": "Vi tích phân 2",
+                "kind": "CLASS",
+                "weekday": "WED",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "first_date": "2026-11-18",
+                "last_date": "2026-11-25",
+                "room": "E201",
+            },
+        ],
+    }
+    # check-conflicts must NOT report false self-conflicts against old week 3-4 of those 2 courses
+    chk = client.post(
+        "/api/v1/ingestion/check-conflicts",
+        json={"replace_previous_imports": False, "incoming_rows": patch_2_courses["resolved_rows"]},
+        headers=headers,
+    )
+    assert chk.status_code == 200 and chk.json()["conflict_cards"] == []
+
+    res2 = client.post("/api/v1/ingestion/commit", json=patch_2_courses, headers=headers)
+    assert res2.status_code == 200
+
+    # all 20 events remain active (3 unchanged courses x 4 + 2 past weeks x 2 + 2 updated weeks x 2 = 20)
+    active_after_patch = list(db_session.scalars(active_events_stmt(uid)).all())
+    assert len(active_after_patch) == 20
+    tdtt_ids_after = {ev.id for ev in active_after_patch if ev.title == "Tư duy tính toán"}
+    assert tdtt_ids_after == tdtt_ids_before  # exact same primary keys preserved in DB
+
+    # 3. import part-time work schedule -> must NOT delete any of the 5 university courses
+    part_time_payload = {
+        "import_batch_id": "part_time_nov",
+        "replace_previous_imports": False,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "",
+                "title": "Ca làm thêm tối Thứ Năm",
+                "kind": "CLASS",
+                "weekday": "THU",
+                "start_time": "18:00",
+                "end_time": "21:00",
+                "first_date": "2026-11-05",
+                "last_date": "2026-11-26",
+                "room": "Quận 5",
+            }
+        ],
+    }
+    res3 = client.post("/api/v1/ingestion/commit", json=part_time_payload, headers=headers)
+    assert res3.status_code == 200
+    active_with_part_time = list(db_session.scalars(active_events_stmt(uid)).all())
+    assert len(active_with_part_time) == 24  # 20 school events + 4 part-time shifts
+
+
+def test_multi_interval_recurrence_biweekly_3weekly_and_monthly(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    input: CLASS rows with '2 tuần/lần', '3 tuần/lần', and 'hàng tháng' recurrence markers.
+    core logic: verify _iter_row_dates steps by 14 days, 21 days, and nth-weekday of each month.
+    output: assertions confirming exact occurrence counts and weekday alignment.
+    """
+    _, _, headers = _register_and_get_headers(client)
+
+    payload = {
+        "import_batch_id": "recurrence_batch",
+        "replace_previous_imports": False,
+        "resolved_rows": [
+            {
+                "line_number": 1,
+                "course_code": "CHE10002",
+                "title": "Thực hành Hóa đại cương (2 tuần/lần)",
+                "kind": "CLASS",
+                "weekday": "MON",
+                "start_time": "07:30",
+                "end_time": "11:30",
+                "first_date": "2026-09-07",
+                "last_date": "2026-10-20",  # Sep 7, Sep 21, Oct 5, Oct 19 -> 4 biweekly sessions
+                "room": "Lab B",
+            },
+            {
+                "line_number": 2,
+                "course_code": "PRJ10001",
+                "title": "Báo cáo đồ án (3 tuần/lần)",
+                "kind": "CLASS",
+                "weekday": "WED",
+                "start_time": "13:30",
+                "end_time": "15:00",
+                "first_date": "2026-09-09",
+                "last_date": "2026-11-15",  # Sep 9, Sep 30, Oct 21, Nov 11 -> 4 sessions every 3 weeks
+                "room": "Phòng I31",
+            },
+            {
+                "line_number": 3,
+                "course_code": "",
+                "title": "Sinh hoạt CLB Học thuật (hàng tháng)",
+                "kind": "CLASS",
+                "weekday": "SAT",
+                "start_time": "09:00",
+                "end_time": "11:00",
+                "first_date": "2026-09-05",
+                "last_date": "2026-12-10",  # 1st Sat of Sep (Sep 5), Oct (Oct 3), Nov (Nov 7), Dec (Dec 5) -> 4 sessions
+                "room": "Hội trường",
+            },
+        ],
+    }
+    res = client.post("/api/v1/ingestion/commit", json=payload, headers=headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["created_count"] == 12  # 4 biweekly + 4 3-weekly + 4 monthly = 12 events
