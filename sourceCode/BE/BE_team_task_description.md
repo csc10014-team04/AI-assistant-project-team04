@@ -115,21 +115,40 @@ Tệp .csv / .md / .pdf / Ảnh chụp                             Danh sách s�
 ### 3.1. Xử lý Input & Cách ly lỗi khi Parse (PIC: Lâm - `services/parser.py`)
 * **Lược đồ 9 cột chuẩn hóa:** `course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind`.
 * **Quy định về `course_code` (`Optional[str] = None`):**
-  * Chỉ các buổi học chính khóa (`kind == CLASS`) hoặc lịch thi học phần mới có mã môn học; đối với lịch họp câu lạc bộ, ca làm thêm hoặc sự kiện cá nhân (`EVENT`, `DEADLINE`), `course_code` được phép để trống (`None` hoặc `""`).
+  * Chỉ các buổi học chính khóa (`kind == CLASS`) hoặc lịch thi học phần mới có mã môn học; đối với lịch họp câu lạc bộ, ca làm thêm, lớp kỹ năng ngoài trường hoặc sự kiện cá nhân (`CLASS`, `EVENT`, `DEADLINE`), `course_code` được phép để trống (`None` hoặc `""`).
+* **Quy chuẩn Tệp `.txt` do Người dùng Tự soạn thảo (Khi không có file PDF/Ảnh từ trường):**
+  * **Bối cảnh thực tế:** Khi người dùng nhận lịch học đàn, lớp tâm lý học, lớp đầu tư hoặc lịch làm thêm qua tin nhắn Zalo / bài đăng Facebook (ví dụ: *"Lớp học đàn: hàng tuần Thứ 3, Thứ 5 từ 18:30 đến 20:00 tại Phòng Nhạc A, từ 2026-09-01 đến 2026-11-30"*), họ có thể tự tạo một tệp `.txt` ngắn gọn (3 đến 5 dòng) hoặc dán trực tiếp vào ô văn bản của ứng dụng.
+  * **Quy tắc cú pháp nhất quán để hệ thống đọc được (`_split_line_into_cells` & `_parse_and_validate_row`):**
+    1. **Dấu phân cách cột (Delimiter):** Mỗi dòng biểu diễn 1 khung lịch cố định, gồm đúng **9 trường** ngăn cách bởi dấu phẩy `,` (hoặc dấu chấm phẩy `;`, ký tự ống `|`, hoặc phím `Tab`). Nếu trường tùy chọn (`course_code` ở cột 1 hoặc `room` ở cột 6) bỏ trống thì vẫn giữ dấu phẩy ngăn cách vị trí.
+    2. **Quy tắc tách dòng cho lịch học nhiều buổi/tuần:** Nếu thông báo Zalo ghi *"hàng tuần Thứ 3, 5"*, người dùng tách thành 2 dòng độc lập (1 dòng cho `T3` / `TUE`, 1 dòng cho `T5` / `THU`):
+       ```text
+       ,Học đàn Guitar,T3,18:30,20:00,Phòng Nhạc A,2026-09-01,2026-11-30,CLASS
+       ,Học đàn Guitar,T5,18:30,20:00,Phòng Nhạc A,2026-09-01,2026-11-30,CLASS
+       ,Lớp Tâm lý học (2 tuần/lần),T7,09:00,11:00,Online,2026-09-05,2026-11-28,CLASS
+       ```
+    3. **Linh hoạt cách viết Thứ trong tuần (`WEEKDAY_LOOKUP`):** Cột 3 chấp nhận cả tiếng Việt lẫn tiếng Anh không phân biệt hoa thường: `T2..T7`, `CN`, `Thứ 2..Thứ 7`, `Chủ nhật`, `Thu 2..Thu 7`, `Chu nhat`, hoặc `MON..SUN`, `MONDAY..SUNDAY`.
+    4. **Định dạng Giờ và Ngày:** Giờ theo chuẩn 24h `HH:MM` (ví dụ `08:30`, `18:30`); ngày theo chuẩn ISO `YYYY-MM-DD` (`2026-09-01`).
+  * **Cách ứng dụng thông báo và hướng dẫn cú pháp `.txt` cho người dùng:**
+    1. **Placeholder & Mẫu sao chép nhanh trên màn hình Import (Onboarding Hint):** Ngay tại khung tải tệp / dán văn bản trên UI, ứng dụng hiển thị dòng mẫu 9 cột kèm chú thích ngắn để người dùng nhìn theo viết đúng ngay từ đầu.
+    2. **Báo lỗi trực quan từng dòng kèm hướng dẫn sửa tại chỗ (`Human-in-the-Loop Preview`):** Nếu người dùng gõ thiếu dấu phẩy (ví dụ chỉ có 7 hoặc 8 cột) hoặc gõ sai định dạng ngày/giờ, hàm `parse_timetable_content` **không làm sập quá trình tải lên** mà trả về dòng đó trong danh sách vàng `invalid_rows` kèm mã lỗi tường minh (`INVALID_COLUMN_COUNT: Expected exactly 9 columns, found 7`, `INVALID_WEEKDAY`, `INVALID_START_TIME`, `INVALID_FIRST_DATE`) để người dùng sửa trực tiếp từng ô trên màn hình Preview rồi bấm xác nhận (`/resolve-preview`).
 * **Bốn phân loại `CsvRowKind`:**
-  * `CLASS`: Lặp lại hằng tuần vào thứ `weekday` (`MON..SUN`) từ `first_date` đến `last_date` (`start_time < end_time`).
+  * `CLASS`: Lặp lại theo chu kỳ vào thứ `weekday` (`MON..SUN`) từ `first_date` đến `last_date` (`start_time < end_time`).
   * `EXAM` & `EVENT`: Diễn ra 1 lần duy nhất (`first_date == last_date`, `start_time < end_time`).
   * `DEADLINE`: Mốc hạn chót thời lượng bằng 0 (`start_time == end_time`, `first_date == last_date`; nếu khuyết `start_time` thì tự động gán bằng `end_time`).
 * **Xử lý tệp `.pdf`, Ảnh chụp và Các trường hợp biên (Edge Cases):**
   * Nếu người dùng tải lên tệp nhị phân giả mạo hoặc ảnh không chứa cấu trúc thời khóa biểu (ví dụ: ảnh mèo, ảnh phong cảnh, hóa đơn), bộ lọc cấu trúc sau OCR phát hiện thiếu tổ hợp mỏ neo (khung giờ `HH:MM` đi kèm thứ/ngày) và từ chối ngay với `HTTP 422` (`NO_TIMETABLE_DETECTED`), không sinh dữ liệu rác.
   * Nếu trong bảng thời khóa biểu 50 dòng có vài dòng bị nhòe chữ hoặc sai định dạng giờ, hàm `parse_timetable_content` cô lập riêng những dòng đó vào `invalid_rows` kèm mã lỗi cụ thể, giữ nguyên các dòng đúng trong `valid_rows` để người dùng chỉnh sửa trên màn hình Preview.
 
-### 3.2. Phát hiện Xung đột Chuỗi lặp & Bung tuần học (PIC: Khôi - `services/validator.py`)
+### 3.2. Phát hiện Xung đột Chuỗi lặp, Chu kỳ Lặp Đa dạng & Đồng bộ Thông minh (PIC: Khôi - `services/validator.py`)
 * **Gom nhóm xung đột cấp chuỗi lặp (`detect_import_conflicts`):**
   * Khi gộp 2 nguồn lịch (ví dụ: môn học 15 tuần sáng Thứ Hai `07:30 - 09:30` trùng với ca làm thêm 15 tuần sáng Thứ Hai `08:00 - 11:00`), thay vì báo 15 lỗi rời rạc cho 15 tuần, thuật toán gom lại thành **1 Thẻ Xung Đột (`ConflictCard`)** duy nhất để sinh viên chọn 1 lần (`KEEP_A`, `KEEP_B`, hoặc `KEEP_BOTH`).
-* **Bung tuần học & Bảo toàn lịch cá nhân khi nạp lại (`commit_resolved_import`):**
-  * Bung từng dòng `CLASS` từ `first_date` đến `last_date` thành các bản ghi cụ thể trong bảng `events` (`is_hard = True`, `source = IMPORTED`, chuyển giờ sang UTC qua `to_db_utc`).
-  * Với `DEADLINE`, lưu `start_time = end_time` (`blocks_availability = False`) để hiển thị nhắc hạn trên đầu ngày nhưng không chặn thuật toán tìm giờ trống của Lâm.
-  * Khi người dùng chọn nạp đè thời khóa biểu mới (`replace_previous_imports = True`), hệ thống chỉ đánh dấu xóa mềm (`deleted_at = now`) các sự kiện mang nguồn `IMPORTED`, bảo toàn 100% các sự kiện cá nhân (`MANUAL` và `AI_CREATED`).
+* **Hỗ trợ Chu kỳ Lặp Đa dạng (`_parse_recurrence_spec` & `_iter_row_dates`):**
+  * Không chỉ hỗ trợ lặp mỗi tuần 1 lần (`+7 ngày`), hàm `_iter_row_dates` tự động nhận diện các ghi chú chu kỳ lặp trong `title`, `room` hoặc `course_code`:
+    * **Lặp cách tuần / $k$ tuần 1 lần (`("WEEKLY", k)`):** Nhận diện cụm `cách tuần`, `2 tuần/lần`, `3 tuần/lần`, `mỗi k tuần`, `biweekly`, `every k weeks`, hoặc nhãn `[2w]`, `[3w]` -> nhảy bước `timedelta(days=7 * k)`.
+    * **Lặp hàng tháng / $k$ tháng 1 lần (`("MONTHLY", k)`):** Nhận diện cụm `hàng tháng`, `mỗi tháng`, `k tháng/lần`, `monthly`, `[1m]` -> xác định buổi đầu tiên là ngày thứ `weekday` tuần thứ `nth` trong tháng (`_nth_weekday_of_month`) và lặp lại vào đúng ngày thứ `weekday` tuần thứ `nth` của mỗi `k` tháng tiếp theo, đảm bảo không bao giờ lệch thứ trong tuần.
+* **Đồng bộ Thông minh `Smart Diff & Subject-Scoped Upsert` (`commit_resolved_import` & `filter_existing_for_conflict_check`):**
+  * **Cờ `replace_previous_imports`:** Mặc định luôn là `False` (chỉ bằng `True` khi người dùng chủ động tích chọn xóa toàn bộ thời khóa biểu học kỳ cũ trên UI; hệ thống không bao giờ tự động suy diễn hết hạn tuần học để xóa lịch cũ).
+  * **Khoanh vùng theo môn học và cửa sổ ngày (`_subject_keys_for_row` & `_build_incoming_subject_windows`):** Khi `replace_previous_imports = False`, hệ thống chỉ đối chiếu những bản ghi `IMPORTED` cũ có cùng khóa môn (`course_code` hoặc `title` chuẩn hóa) và nằm trong đoạn `[min_first_date, max_last_date]` của môn đó ở file mới. Nhờ vậy: (1) nạp file vá 2 môn không làm mất 3 môn kia và không mất các tuần đầu đã học; (2) nạp tiếp lịch nửa kỳ sau không làm mất lịch 5 tuần đầu; (3) nạp thêm lịch làm thêm part-time không đụng chạm đến lịch học chính khóa.
+  * **Chống xóa đi tạo lại dữ liệu không đổi (`_event_occurrence_sig`):** Những buổi học có chữ ký `(kind, norm_title, norm_room, start_utc, end_utc)` trùng khớp với bản ghi đang có trong MySQL được giữ nguyên tại chỗ (`0 DELETE`, `0 INSERT`), chỉ xóa mềm các buổi thực sự thay đổi và chỉ chèn mới các buổi chưa tồn tại.
 * **Chốt chặn Ràng buộc cứng (`check_hard_conflict`):**
   * Được gọi trước mọi thao tác xác nhận đề xuất của AI hoặc tạo sự kiện mới nhằm đảm bảo không có bất kỳ công việc mới nào đè lên các sự kiện mang cờ `is_hard = True`.
