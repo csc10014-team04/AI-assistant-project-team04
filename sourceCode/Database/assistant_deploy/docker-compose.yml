@@ -55,7 +55,7 @@ services:
     restart: always
     environment:
       DATABASE_URL: mysql+aiomysql://${DB_USER}:${DB_PASSWORD}@db:3306/university_assistant
-      LLAMA_API_URL: http://llama_engine:8000
+      VLLM_ENDPOINT: http://llama_engine:8000/v1/chat/completions
     ports:
       - "8080:8080"
     depends_on:

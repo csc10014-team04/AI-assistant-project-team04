@@ -222,3 +222,4 @@ __marimo__/
 # AI / telemetry runtime output
 sourceCode/BE/logs/
 sourceCode/BE/data/
+auth_session.json

@@ -34,6 +34,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: int
+    display_name: str
 
 
 class UpdateUsernameRequest(BaseModel):
@@ -130,6 +131,7 @@ def login_user(
         access_token=token,
         token_type="bearer",
         user_id=identity.user_id,
+        display_name=identity.user.display_name,
     )
 
 

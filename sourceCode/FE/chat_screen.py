@@ -486,6 +486,7 @@ class ChatAssistantScreen(MDScreen):
 
         # /assistant/understand tra ve {"nlu": {...}, "abandoned_proposals": n, "message": str|None}
         nlu = result.get("nlu") or {}
+        print("[DEBUG FRONTEND]",nlu.get("duration_minutes"),nlu.get("needs_clarification"),nlu.get("intent"),"proposal:",bool(result.get("proposal")),"message:",result.get("message"))
         if nlu.get("fallback_mode"):
             print(f"[AI FALLBACK] {nlu.get('fallback_reason')}")
 

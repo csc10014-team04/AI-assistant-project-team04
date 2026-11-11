@@ -139,7 +139,8 @@ class AuthScreen(MDScreen):
         self.update_main_container_width()
 
     def on_enter(self, *args):
-        self.update_main_container_width()
+        if hasattr(self, "main_container"):
+            self.update_main_container_width()
 
     def setup_login_tab(self):
         login_screen = MDScreen(name="login_tab")
@@ -320,6 +321,10 @@ class AuthScreen(MDScreen):
             user_id=result.get("user_id"),
             display_name=result.get("display_name")
         )
+        import os
+        print("LOGIN CWD:",os.getcwd())
+        print("TOKEN SAVED:",bool(api.access_token))
+        print("USER ID:",api.user_id)
         print(f"Đăng nhập thành công! Chào {api.display_name}")
         if app.root and hasattr(app.root, 'current'):
             app.root.current = "calendar_home"

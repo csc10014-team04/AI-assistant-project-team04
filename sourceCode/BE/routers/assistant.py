@@ -57,7 +57,7 @@ def understand(
             raise HTTPException(409, f"proposal is already {parent.status.value}")
     now = datetime.now(UTC_TZ)
     result = understand_prompt(body.prompt, now, db=db, user_id=current_user.id)
-
+    print("DEBUG_NLU:",repr(body.prompt),result.duration_minutes,result.intent,result.needs_clarification,flush=True)
     proposal = None
     message = None
     if result.fallback_mode:
