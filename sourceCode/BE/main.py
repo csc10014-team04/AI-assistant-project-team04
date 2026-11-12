@@ -16,8 +16,10 @@ from services.telemetry import collector
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     collector.start()  # no-op unless TELEMETRY_INTERVAL_SECONDS > 0
-    yield
-    collector.stop()
+    try:
+        yield
+    finally:
+        collector.stop()
 
 
 app = FastAPI(
