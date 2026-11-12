@@ -1171,16 +1171,13 @@ def find_user_free_slots(
     """
     ensure_aware(window_start, "window_start")
     ensure_aware(window_end, "window_end")
+    if duration_minutes <= 0:
+        raise ValueError("duration_minutes must be positive")
+    if window_end <= window_start:
+        return []
+
     ws_vn = window_start.astimezone(VN_TZ)
     we_vn = window_end.astimezone(VN_TZ)
-
-    # expand sql fetch bounds by 1 hour so break buffers around boundary events are respected
-    fetch_start = ws_vn - timedelta(hours=1)
-    fetch_end = we_vn + timedelta(hours=1)
-    orm_events = list(
-        db.scalars(active_events_stmt(owner_id, fetch_start, fetch_end)).all()
-    )
-    domain_events = [ev.to_domain() for ev in orm_events]
 
     sleep_start: time | None = None
     sleep_end: time | None = None
@@ -1196,6 +1193,15 @@ def find_user_free_slots(
             sleep_end = pref.sleep_end
             min_break = pref.min_break_minutes
             slot_step = pref.slot_step_minutes
+
+    # Fetch exactly far enough beyond the window to include events whose break buffer overlaps it.
+    buffer_minutes = max(0, min_break)
+    fetch_start = ws_vn - timedelta(minutes=buffer_minutes)
+    fetch_end = we_vn + timedelta(minutes=buffer_minutes)
+    orm_events = list(
+        db.scalars(active_events_stmt(owner_id, fetch_start, fetch_end)).all()
+    )
+    domain_events = [ev.to_domain() for ev in orm_events]
 
     return find_free_slots(
         existing_events=domain_events,

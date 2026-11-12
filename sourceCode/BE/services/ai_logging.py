@@ -1,6 +1,7 @@
 # [pic: lam] p2-12 ai error taxonomy logger (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
+import logging
 import os
 import threading
 from datetime import datetime
@@ -12,6 +13,7 @@ from services.privacy import sanitize_prompt
 
 LOG_PATH = Path(os.getenv("AI_ERROR_LOG_PATH", str(Path(__file__).resolve().parent.parent / "logs" / "ai_errors.jsonl")))
 _lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 # fine-grained taxonomy -> coarse DB enum (models.py is locked, so the exact category lives in the file log)
 CATEGORY_TO_DB: dict[str, AiErrorType] = {
@@ -51,8 +53,8 @@ def log_ai_failure(
         "user_id": user_id,
         "prompt": sanitize_prompt(prompt, max_chars=2000),
         "retrieved_context": [sanitize_prompt(c, max_chars=600) for c in (retrieved_context or [])],
-        "raw_output": (raw_output or "")[:4000] or None,
-        "reason": reason[:500],
+        "raw_output": sanitize_prompt(raw_output or "", max_chars=4000) or None,
+        "reason": sanitize_prompt(reason, max_chars=500),
         "retry_count": retry_count,
     }
     try:
@@ -61,5 +63,5 @@ def log_ai_failure(
             with LOG_PATH.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError:
-        pass  # logging must never break a request
+        _logger.warning("Could not append the AI error log at %s", LOG_PATH, exc_info=True)
     return record

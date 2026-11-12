@@ -3,7 +3,7 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, abandon_pending_proposals, active_tasks_stmt, get_db
@@ -39,6 +39,13 @@ class TaskOut(BaseModel):
 class ScheduleRequest(BaseModel):
     window_start: date | None = None
     window_end: date | None = None
+
+    @model_validator(mode="after")
+    def validate_window_order(self) -> "ScheduleRequest":
+        """Input: optional inclusive date bounds. Output: validated request. Edge Cases: reversed bounds."""
+        if self.window_start and self.window_end and self.window_end < self.window_start:
+            raise ValueError("window_end must not be earlier than window_start")
+        return self
 
 
 class UnscheduledOut(BaseModel):
