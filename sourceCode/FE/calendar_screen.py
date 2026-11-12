@@ -1,5 +1,5 @@
 import calendar
-
+from event_modals import AddEventModal, ImportStep1Modal, ImportStep2Modal, ImportStep3Modal
 from api_client import api
 from event_store import store
 
@@ -652,9 +652,11 @@ class CalendarHomeScreen(MDScreen):
         self.add_menu.open()
         
     def add_menu_callback(self, action):
-        # [CẦN BACKEND XỬ LÝ]: Tích hợp luồng gọi API thêm Event hoặc Upload File
-        print(f"Gọi luồng: {action}")
         self.add_menu.dismiss()
+        if action == "Thêm sự kiện":
+            AddEventModal().open()
+        elif action == "Import lịch":
+            ImportStep1Modal().open()
 
     def update_top_title(self):
         if self.content_sm.current == "month_view":
