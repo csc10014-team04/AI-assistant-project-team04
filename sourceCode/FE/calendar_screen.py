@@ -3,6 +3,9 @@ import calendar
 from api_client import api
 from event_store import store
 
+# Import SideBarMenu để hiển thị menu khi người dùng bấm nút 3 gạch
+from side_bar_menu import SideBarMenu
+
 from datetime import datetime, date, timedelta
 from kivy.core.window import Window
 
@@ -22,8 +25,9 @@ from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.screenmanager import SlideTransition
+from kivy.uix.label import Label
 
-
+from kivymd.uix.relativelayout import MDRelativeLayout
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -31,6 +35,7 @@ from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 from kivymd.uix.card import MDCard
+from kivymd.uix.label import MDIcon
 from kivymd.uix.menu import MDDropdownMenu
 
 
@@ -170,31 +175,54 @@ class NavTab(ButtonBehavior, MDBoxLayout):
             sm.transition = SlideTransition(direction='left' if target_idx > current_idx else 'right')
             sm.current = self.target_screen
 
-
 class DayNode(MDCard):
-    """Ô hiển thị từng ngày trong View Lịch Tháng, bao gồm nhãn ngày và các vạch màu sự kiện."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.elevation = 1
         self.radius = [dp(6)]
         self.md_bg_color = WHITE_COLOR
         
-        # Sử dụng BoxLayout chính để chia phần chữ số và phần vạch
-        self.main_layout = MDBoxLayout(orientation='vertical', padding=[dp(2), dp(2), dp(2), dp(4)])
-        self.add_widget(self.main_layout)
+        self.container = MDRelativeLayout()
+        self.add_widget(self.container)
         
-        self.lbl = MDLabel(text="", halign="center", theme_text_color="Custom", text_color=BLACK_COLOR)
+        self.main_layout = MDBoxLayout(
+            orientation='vertical', 
+            padding=[dp(2), dp(2), dp(2), dp(4)],
+            size_hint=(1, 1) # Bắt buộc phải là (1,1) để đẩy các vạch màu xuống đúng chân node
+        )
+        self.container.add_widget(self.main_layout)
+        
+        self.lbl = MDLabel(
+            text="", 
+            halign="center", 
+            theme_text_color="Custom", 
+            text_color=BLACK_COLOR
+        )
         self.main_layout.add_widget(self.lbl)
         
-        # Vùng dưới cùng chứa các vạch màu sự kiện
         self.indicator_box = MDBoxLayout(
             orientation='vertical',
             size_hint_y=None,
-            height=dp(18), # Giới hạn không gian vạch
+            height=dp(18),
             spacing=dp(2),
             padding=[dp(6), 0, dp(6), 0]
         )
         self.main_layout.add_widget(self.indicator_box)
+        
+        # SỬ DỤNG LABEL THUẦN: Ép size chính xác, hỗ trợ viền mỏng không gây lỗi
+        self.icon_important = Label(
+            text="!", 
+            color=[1, 0, 0, 1],         # Chữ màu đỏ
+            outline_color=[0, 0, 0, 1], # Viền màu đen
+            outline_width=1,            # Nét viền 1px
+            bold=True,
+            font_size=dp(14),           # Kích thước chữ nhỏ gọn
+            size_hint=(None, None),
+            size=(dp(14), dp(14)),      # Khung chứa ép sát chữ
+            pos_hint={"right": 0.95, "top": 0.95}, 
+            opacity=0 
+        )
+        self.container.add_widget(self.icon_important)
         
         self.day_date = None
         self.register_event_type('on_release')
@@ -214,23 +242,23 @@ class DayNode(MDCard):
         self.lbl.text_color = BLACK_COLOR if is_current_month else GRAY_TEXT
 
     def set_events(self, events_list):
-        """Vẽ các vạch màu ngang dưới chân Node dựa trên dữ liệu sự kiện của ngày."""
         self.indicator_box.clear_widgets()
+        self.icon_important.opacity = 0  
+        
         if not events_list:
             return
+            
+        has_important = any(ev.get("is_important", False) for ev in events_list)
+        if has_important:
+            self.icon_important.opacity = 1
         
-        # 1. Lọc các loại (kind) duy nhất có trong ngày
         unique_kinds = set(ev.get("kind", "TASK") for ev in events_list)
-        
-        # 2. Sắp xếp loại sự kiện theo quy tắc: Class -> Exam -> Event -> Task -> Deadline
         sorted_kinds = sorted(unique_kinds, key=lambda k: KIND_ORDER.get(k, 99))
         
-        # 3. Kivy layout Vertical tự động xếp từ trên xuống dưới
         for kind in sorted_kinds:
             color = KIND_COLORS.get(kind, EV_TASK)
             self.indicator_box.add_widget(EventIndicatorLine(color=color))
             
-        # 4. Spacer giúp dồn các vạch sát vào nhau ở phía trên thay vì dãn đều khung
         spacer = MDBoxLayout()
         self.indicator_box.add_widget(spacer)
 
@@ -350,6 +378,11 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
     """
     def __init__(self, event_data, col_index, **kwargs):
         super().__init__(**kwargs)
+        
+        # SỬA LỖI Ở ĐÂY: Cố định size_hint ngay từ đầu để tránh bị FloatLayout kéo giãn toàn màn hình
+        self.size_hint = (None, None)
+        self.size = (0, 0)
+        
         self.event_data = event_data
         self.col_index = col_index
         self.orientation = 'vertical'
@@ -466,6 +499,8 @@ class CalendarHomeScreen(MDScreen):
 
     def build_ui(self, dt):
         """Khởi tạo toàn bộ khung giao diện của ứng dụng."""
+        # Khởi tạo SideBarMenu dùng chung cho màn hình này
+        self.side_menu = SideBarMenu()
         self.main_layout = MDBoxLayout(orientation='vertical')
         self.add_widget(self.main_layout)
 
@@ -646,11 +681,15 @@ class CalendarHomeScreen(MDScreen):
 
 
     def on_menu_or_back(self, *args):
+        # Nếu đang ở chế độ xem tuần, nút này đóng vai trò là nút "Back"
         if self.content_sm.current == "week_view":
             self.content_sm.transition.direction = 'right'
             self.content_sm.current = "month_view"
             self.btn_menu.icon = "menu"
             self.update_top_title()
+        # Nếu đang ở chế độ xem tháng (icon là menu), tiến hành mở SideBarMenu
+        else:
+            self.side_menu.open()
 
     def on_day_selected(self, instance):
         if instance.day_date:

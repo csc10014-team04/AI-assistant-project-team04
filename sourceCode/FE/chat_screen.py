@@ -27,6 +27,10 @@ from fallback import clip_slot_to_window, is_timeout, parse_request
 from notifier import ReminderScheduler
 from event_store import store
 
+# Import SideBarMenu để tích hợp tính năng menu trượt từ cạnh trái
+from side_bar_menu import SideBarMenu
+from chat_history_sidebar import ChatHistorySideBar
+
 reminder_scheduler = ReminderScheduler(reporter=api)  # one scheduler for the whole app (P2-9)
 
 # ==============================================================================
@@ -361,21 +365,42 @@ class ChatAssistantScreen(MDScreen):
         self.active_reschedule_proposal = None
         self.active_cards = []
         
+        # Thêm các biến quản lý trạng thái chat
+        self.chat_sessions = [] # Chứa danh sách các đoạn chat cũ: [{'title': '...', 'messages': [...]}]
+        self.current_session_title = "Cuộc trò chuyện mới"
+        self.current_session_messages = [] # Lưu các dict {'text': '...', 'is_user': True/False}
+        
         Clock.schedule_once(self.build_ui, 0)
 
     def build_ui(self, dt):
         self.main_layout = MDBoxLayout(orientation='vertical', md_bg_color=WHITE_COLOR)
         self.add_widget(self.main_layout)
+        # Khởi tạo đối tượng SideBarMenu và lưu vào thuộc tính của Screen để tái sử dụng
+        self.side_menu = SideBarMenu()
+        self.history_menu = ChatHistorySideBar() # Khởi tạo sidebar bên phải
 
         top_bar = MDBoxLayout(
             orientation='horizontal', size_hint_y=None, height=dp(56), 
-            md_bg_color=BLUE_COLOR, padding=[dp(10), dp(5), dp(15), dp(5)]
+            md_bg_color=BLUE_COLOR, padding=[dp(10), dp(5), dp(10), dp(5)]
         )
+        
+        # Nút menu chính (bên trái)
         btn_menu = MDIconButton(icon="menu", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": .5})
+        btn_menu.bind(on_release=lambda x: self.side_menu.open())
         spacer = Widget()
+        
+        # Nút tạo chat mới
+        btn_new_chat = MDIconButton(icon="plus-circle-outline", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": .5})
+        btn_new_chat.bind(on_release=self.start_new_chat)
+        
+        # Nút lịch sử
+        btn_history = MDIconButton(icon="history", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": .5})
+        btn_history.bind(on_release=lambda x: self.open_history())
                
         top_bar.add_widget(btn_menu)
         top_bar.add_widget(spacer)
+        top_bar.add_widget(btn_new_chat) # Thêm nút new_chat vào
+        top_bar.add_widget(btn_history) # Thêm nút lịch sử vào layout
         
         self.main_layout.add_widget(top_bar)
 
@@ -426,6 +451,19 @@ class ChatAssistantScreen(MDScreen):
         self.main_layout.add_widget(nav_bar)
 
         self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+    def open_history(self):
+        """Mở Sidebar lịch sử và nạp các đoạn chat đã hiển thị"""
+        history_texts = []
+        
+        # Lấy nội dung text từ các ChatBubble hiện có trên màn hình.
+        # Lưu ý: Kivy lưu children theo thứ tự ngược (widget mới nhất ở index 0).
+        for child in reversed(self.chat_history.children):
+            if hasattr(child, 'lbl'):
+                history_texts.append(child.lbl.text)
+                
+        # Gửi dữ liệu vào thanh sidebar và mở nó lên
+        self.history_menu.load_history(history_texts)
+        self.history_menu.open()
 
     # ==========================================================================
     # LOGIC KẾT NỐI API SERVER VÀ XỬ LÝ NHẬN DỮ LIỆU THỰC TẾ
@@ -454,7 +492,11 @@ class ChatAssistantScreen(MDScreen):
         user_text = self.txt_input.text.strip()
         if not user_text: return
         
-        # 1. Hiển thị câu hỏi của người dùng
+        # Đặt tiêu đề nếu là tin nhắn đầu tiên của user trong đoạn chat này
+        if not any(m['is_user'] for m in self.current_session_messages):
+            self.current_session_title = user_text
+            
+        self.current_session_messages.append({"text": user_text, "is_user": True})
         self.chat_history.add_widget(ChatBubble(text=user_text, is_user=True))
         self.txt_input.text = ""
         Clock.schedule_once(self.scroll_to_bottom, 0.1)
@@ -561,7 +603,51 @@ class ChatAssistantScreen(MDScreen):
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def append_ai_message(self, text):
+        self.current_session_messages.append({"text": text, "is_user": False})
         self.chat_history.add_widget(ChatBubble(text=text, is_user=False))
+    def save_current_session(self):
+        """Lưu đoạn chat hiện tại vào danh sách lịch sử nếu người dùng đã nhắn tin"""
+        if any(m['is_user'] for m in self.current_session_messages):
+            self.chat_sessions.append({
+                "title": self.current_session_title,
+                "messages": list(self.current_session_messages)
+            })
+    def start_new_chat(self, *args):
+        self.save_current_session()
+        
+        # Reset dữ liệu và UI
+        self.chat_history.clear_widgets()
+        self.current_session_title = "Cuộc trò chuyện mới"
+        self.current_session_messages = []
+        self.active_cards = []
+        if self.active_reschedule_proposal:
+            self.cancel_reschedule()
+            
+        self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+    def load_chat_session(self, index):
+        """Được gọi khi người dùng bấm vào 1 đoạn chat trong sidebar"""
+        self.save_current_session()
+        
+        # Lấy đoạn chat cũ ra khỏi danh sách lịch sử để tiếp tục chat
+        selected = self.chat_sessions.pop(index)
+        
+        self.chat_history.clear_widgets()
+        self.current_session_title = selected["title"]
+        self.current_session_messages = selected["messages"]
+        self.active_cards = []
+        if self.active_reschedule_proposal:
+            self.cancel_reschedule()
+            
+        # Vẽ lại bong bóng chat
+        for msg in self.current_session_messages:
+            self.chat_history.add_widget(ChatBubble(text=msg["text"], is_user=msg["is_user"]))
+            
+        Clock.schedule_once(self.scroll_to_bottom, 0.1)
+
+    def open_history(self):
+        # Gửi dữ liệu các phiên vào sidebar kèm hàm callback load lại
+        self.history_menu.load_history(self.chat_sessions, callback=self.load_chat_session)
+        self.history_menu.open()
 
 
 if __name__ == "__main__":
