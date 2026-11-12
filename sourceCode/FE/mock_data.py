@@ -131,7 +131,7 @@ mock_events = [
     # --- Cùng ngày 31/10/2026 (Thứ 7) ---
     {
         "id": 207,
-        "title": "Nộp Slide Thuyết trình AI",
+        "title": "Nộp Slide Thuyết trình AI, chuẩn bị proposal, file tài liệu, demo dự án, kiểm tra, rà soát, test thử trước khi hoàn thành sản phẩm cuối cùng và trình bày lên hội đồng để bảo vệ đồ án tốt nghiệp",
         "room": "",
         "kind": "DEADLINE",
         "start_time": "2026-10-31T07:00:00+07:00",

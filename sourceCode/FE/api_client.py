@@ -29,7 +29,7 @@ class APIClient:
         self.store = JsonStore("auth_session.json")
         # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
         saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
-        self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://127.0.0.1:8080").rstrip("/")
+        self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://26.211.52.63:8080").rstrip("/")
 
         # Phục hồi token từ bộ nhớ cục bộ nếu có
         self.access_token = None

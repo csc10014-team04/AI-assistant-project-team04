@@ -14,7 +14,7 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-
+from kivy.uix.widget import Widget
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -38,15 +38,22 @@ BLUE_COLOR  = [0, 51/255, 204/255, 1]
 # ==============================================================================
 # WIDGET DÙNG CHUNG (EventCard, NavTab)
 # ==============================================================================
+from kivy.uix.label import Label
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.label import MDLabel
+from kivy.metrics import dp
+from kivy.graphics import Color, RoundedRectangle, Line
+from datetime import datetime
+
 class EventCard(MDBoxLayout):
     def __init__(self, event, **kwargs):
         super().__init__(**kwargs)
-        self.orientation = 'vertical'
+        self.orientation = 'horizontal'  
         self.size_hint_y = None
-        self.padding = [dp(15), dp(10), dp(15), dp(10)]
-        self.spacing = dp(5)
-        self.bind(minimum_height=self.setter('height'))
-
+        # Căn lề padding: trái, trên, phải, dưới
+        self.padding = [dp(15), dp(10), dp(10), dp(10)]
+        self.spacing = dp(10)
+        
         bg_color = self.get_color(event.get("kind", "EVENT"))
 
         with self.canvas.before:
@@ -59,9 +66,17 @@ class EventCard(MDBoxLayout):
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
+        # Hộp chứa nội dung chữ (Tắt tự động giãn ngang size_hint_x=None)
+        self.content_box = MDBoxLayout(orientation='vertical', spacing=dp(2), size_hint_x=None)
+        self.content_box.bind(minimum_height=self.content_box.setter('height'))
+        
+        # Chiều cao thẻ = chiều cao nội dung chữ + padding trên/dưới
+        self.content_box.bind(height=lambda inst, val: setattr(self, 'height', val + dp(20)))
+
+        self.labels = []
+        
         start_dt = datetime.fromisoformat(event["start_time"])
         end_dt = datetime.fromisoformat(event["end_time"])
-        
         days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
         day_str = days_vn[start_dt.weekday()]
         date_str = start_dt.strftime("%d/%m/%Y")
@@ -69,26 +84,72 @@ class EventCard(MDBoxLayout):
         end_time_str = end_dt.strftime("%H:%M")
         title = event["title"]
 
-        is_important = " ⭐" if event.get("is_important", False) else ""
-
+        # ==========================================
+        # CỘT TRÁI: KHỐI VĂN BẢN 
+        # ==========================================
         if event["kind"] == "DEADLINE":
             lbl_deadline = MDLabel(
-                text=f"[b]Deadline:[/b] {title}{is_important} - {end_time_str} ({date_str})",
+                text=f"[b]Deadline:[/b] {title} - {end_time_str} ({date_str})",
                 markup=True, halign='left', valign='top', color=(1,1,1,1), size_hint_y=None
             )
-            lbl_deadline.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
-            lbl_deadline.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
-            self.add_widget(lbl_deadline)
+            self.labels.append(lbl_deadline)
         else:
             lbl_date = MDLabel(text=f"[b]{day_str} Ngày {date_str}:[/b]", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
-            lbl_title = MDLabel(text=f"Công việc: {title}{is_important}", halign='left', color=(1,1,1,1), size_hint_y=None)
+            lbl_title = MDLabel(text=f"Công việc: {title}", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
             lbl_time = MDLabel(text=f"Thời gian: {start_time_str} - {end_time_str}", halign='left', color=(1,1,1,1), size_hint_y=None)
+            self.labels.extend([lbl_date, lbl_title, lbl_time])
             
-            for lbl in [lbl_date, lbl_title, lbl_time]:
-                lbl.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
-                lbl.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
-                self.add_widget(lbl)
+        for lbl in self.labels:
+            self.content_box.add_widget(lbl)
 
+        self.add_widget(self.content_box)
+
+        # ==========================================
+        # CỘT PHẢI: VÁCH NGĂN & DẤU CHẤM THAN
+        # ==========================================
+        is_important = event.get("is_important", False)
+        self.has_icon = is_important
+        
+        if is_important:
+            self.divider = MDBoxLayout(size_hint_x=None, width=dp(1.2), md_bg_color=(0, 0, 0, 0.3))
+            self.icon_lbl = Label(
+                text="!", color=[1, 0, 0, 1], outline_color=[0, 0, 0, 1], outline_width=1,
+                bold=True, font_size=dp(26), size_hint_x=None, width=dp(20)
+            )
+            self.add_widget(self.divider)
+            self.add_widget(self.icon_lbl)
+            
+        # SPACER: Khoảng trống vô hình tự kéo giãn toàn bộ phần dư thừa đẩy về bên trái
+        self.add_widget(Widget(size_hint_x=1))
+        
+        # Bắt sự kiện mỗi khi kích thước màn hình/thẻ thay đổi
+        self.bind(width=self._update_layout)
+        Clock.schedule_once(lambda dt: self._update_layout())
+        
+    def _update_layout(self, *args):
+        # 1. Đo lường chiều dài tự nhiên (không xuống dòng) của đoạn text dài nhất
+        max_w = 0
+        for lbl in self.labels:
+            lbl.text_size = (None, None)
+            lbl.texture_update()
+            if lbl.texture_size[0] > max_w:
+                max_w = lbl.texture_size[0]
+        
+        # 2. Tính toán không gian an toàn (Chừa chỗ cho Padding, Vách ngăn, Icon)
+        reserved_w = dp(70) if self.has_icon else dp(40)
+        max_allowed = self.width - reserved_w
+        
+        # 3. Ép chiều rộng khối văn bản vừa khít chữ trên PC, hoặc tự hãm lại trên Mobile
+        final_w = max(dp(50), min(max_w, max_allowed))
+        self.content_box.width = final_w
+        
+        # 4. Cập nhật lại giới hạn chữ để Kivy biết điểm tự động xuống dòng
+        for lbl in self.labels:
+            lbl.text_size = (final_w, None)
+            lbl.texture_update()
+            lbl.height = lbl.texture_size[1]
+            
+    # [Giữ nguyên hàm update_canvas và get_color bên dưới]
     def get_color(self, kind):
         colors = {
             "CLASS": (0.2, 0.5, 0.9, 1),

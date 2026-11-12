@@ -225,8 +225,10 @@ class AuthScreen(MDScreen):
     # HÀM LOGIC API & CHUYỂN TRANG
     # -------------------------------------------------------------------------
     def update_main_container_width(self, *args):
-        form_width = min(dp(400), self.width - dp(40))
-        self.main_container.width = form_width
+        # Kiểm tra xem thuộc tính main_container đã được tạo hay chưa để tránh lỗi AttributeError
+        if hasattr(self, 'main_container'):
+            form_width = min(dp(400), self.width - dp(40))
+            self.main_container.width = form_width
 
     def update_sm_height(self, *args):
         if self.sm.current == "login_tab": self.sm.height = self.login_container.height
