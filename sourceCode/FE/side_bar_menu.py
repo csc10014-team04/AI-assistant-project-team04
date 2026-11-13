@@ -60,7 +60,7 @@ class UserAccountWidget(ButtonBehavior, MDBoxLayout):
         # Thông tin user
         self.info_box = MDBoxLayout(orientation='vertical')
         self.lbl_display = MDLabel(text=api.display_name or "Người dùng", bold=True, font_style="Body", role="medium")
-        self.lbl_username = MDLabel(text=f"@{api.user_id or 'username'}", theme_text_color="Hint", font_style="Label", role="small")
+        self.lbl_username = MDLabel(text=f"ID: {api.user_id or 'username'}", theme_text_color="Hint", font_style="Label", role="small")
         self.info_box.add_widget(self.lbl_display)
         self.info_box.add_widget(self.lbl_username)
         
@@ -282,7 +282,7 @@ class SideBarMenu(ModalView):
         self.main_container.x = -self.menu_width
         # Cập nhật lại thông tin user mỗi lần mở menu
         self.user_widget.lbl_display.text = api.display_name or "Người dùng"
-        self.user_widget.lbl_username.text = f"@{api.user_id or 'username'}"
+        self.user_widget.lbl_username.text = f"ID: {api.user_id or 'username'}"
         self.user_widget.logout_container.height = 0
         self.user_widget.logout_container.opacity = 0
         self.user_widget.logout_btn.disabled = True
