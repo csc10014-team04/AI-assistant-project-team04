@@ -77,21 +77,40 @@ class ChatHistorySideBar(ModalView):
             self.bg_rect = RoundedRectangle(radius=[dp(15), 0, 0, dp(15)])
         self.main_container.bind(pos=self.update_canvas, size=self.update_canvas)
         
-        # --- NÚT ĐÓNG & TIÊU ĐỀ ---
-        header = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), padding=dp(10))
-        btn_close = MDIconButton(icon="close", pos_hint={"center_y": 0.5})
+        # --- BLOCK MÀU XANH Ở TRÊN CÙNG (Nút trở về & Tiêu đề) ---
+        self.header = MDBoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(56),
+            padding=[dp(6), dp(4), dp(12), dp(4)],
+            spacing=dp(8),
+            md_bg_color=BLUE_COLOR,
+        )
+        with self.header.canvas.before:
+            Color(*BLUE_COLOR)
+            self.header_bg = RoundedRectangle(radius=[dp(15), 0, 0, 0])
+        self.header.bind(pos=self._update_header_canvas, size=self._update_header_canvas)
+
+        btn_close = MDIconButton(
+            icon="arrow-left",
+            theme_icon_color="Custom",
+            icon_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
         btn_close.bind(on_release=lambda x: self.dismiss())
         
-        header.add_widget(btn_close)
-        header.add_widget(MDLabel(
-            text="Lịch sử", 
-
-            bold=True, 
-            halign="center", 
-            size_hint_y=None, 
-            height=dp(50)
-        ))
-        self.main_container.add_widget(header)
+        lbl_title = MDLabel(
+            text="Lịch sử",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            theme_text_color="Custom",
+            text_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
+        self.header.add_widget(btn_close)
+        self.header.add_widget(lbl_title)
+        self.main_container.add_widget(self.header)
 
         # --- DANH SÁCH LỊCH SỬ ---
         self.scroll = ScrollView(size_hint=(1, 1))
@@ -107,6 +126,11 @@ class ChatHistorySideBar(ModalView):
     def update_canvas(self, *args):
         self.bg_rect.pos = self.main_container.pos
         self.bg_rect.size = self.main_container.size
+
+    def _update_header_canvas(self, *args):
+        if hasattr(self, 'header_bg') and hasattr(self, 'header'):
+            self.header_bg.pos = self.header.pos
+            self.header_bg.size = self.header.size
 
     def load_history(self, sessions, callback=None):
         self.history_list.clear_widgets()

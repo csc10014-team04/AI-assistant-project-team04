@@ -30,6 +30,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 
 from api_client import api
+from event_store import store
 
 WHITE_COLOR = [1, 1, 1, 1]
 BLUE_COLOR = [0, 51/255, 204/255, 1]
@@ -78,9 +79,10 @@ class UserAccountWidget(ButtonBehavior, MDBoxLayout):
 
     def do_logout(self, instance):
         api.clear_session()
+        store.use_demo()
         app = MDApp.get_running_app()
-        if app.root:
-            app.root.current = "auth" # Chuyển về màn hình đăng nhập
+        if app and app.root:
+            app.root.current = "auth_screen" # Chuyển về màn hình đăng nhập
 
 
 
@@ -213,8 +215,20 @@ class SchedulePreferencesDialog(ModalView):
             "max_continuous_minutes": self.tf_max_duration.text,
             "natural_language_preference": self.tf_habits.text
         }
-        # Gọi API cập nhật user_preferences
-        api._request("/api/v1/user/preferences", method="POST", payload=payload)
+        # Lưu vào local store dự phòng
+        try:
+            api.store.put("user_preferences", **payload)
+        except Exception:
+            pass
+        # Gọi API cập nhật user_preferences nếu server hỗ trợ
+        api._request(
+            "/api/v1/user/preferences",
+            method="POST",
+            payload=payload,
+            on_success=lambda req, res: print("Đã lưu tùy chọn thành công:", res),
+            on_failure=lambda req, res: print("Server chưa hỗ trợ lưu preferences online, đã lưu cục bộ."),
+            on_error=lambda req, err: print("Lỗi mạng khi lưu tùy chọn, đã lưu cục bộ."),
+        )
         print("Đã gửi yêu cầu lưu tùy chọn:", payload)
         self.dismiss()
 
@@ -247,31 +261,231 @@ class SideBarMenu(ModalView):
             self.bg_rect = RoundedRectangle(radius=[0, dp(15), dp(15), 0])
         self.main_container.bind(pos=self.update_canvas, size=self.update_canvas)
 
-        # 1. NÚT BẤM TRỞ VỀ (Header)
-        header = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), padding=dp(10))
-        btn_back = MDIconButton(icon="arrow-left", pos_hint={"center_y": 0.5})
-        btn_back.bind(on_release=lambda x: self.dismiss())
-        header.add_widget(btn_back)
-        
-        # 2. MENU CUỘN
-        self.scroll = ScrollView(size_hint=(1, 1))
-        self.menu_list = MDBoxLayout(orientation='vertical', adaptive_height=True, padding=dp(10), spacing=dp(10))
-        
-        btn_schedule_prefs = MDButton(
-            MDButtonText(text="Tùy chọn xếp lịch"), style="elevated", size_hint_x=1,
-            on_release=lambda x: SchedulePreferencesDialog().open()
+        # 1. BLOCK MÀU XANH Ở TRÊN CÙNG (Nút trở về & Tiêu đề "Menu")
+        self.header = MDBoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(56),
+            padding=[dp(6), dp(4), dp(12), dp(4)],
+            spacing=dp(8),
+            md_bg_color=BLUE_COLOR,
         )
-        self.menu_list.add_widget(btn_schedule_prefs)
+        with self.header.canvas.before:
+            Color(*BLUE_COLOR)
+            self.header_bg = RoundedRectangle(radius=[0, dp(15), 0, 0])
+        self.header.bind(pos=self._update_header_canvas, size=self._update_header_canvas)
+
+        btn_back = MDIconButton(
+            icon="arrow-left",
+            theme_icon_color="Custom",
+            icon_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
+        btn_back.bind(on_release=lambda x: self.dismiss())
+        
+        lbl_title = MDLabel(
+            text="Menu",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            theme_text_color="Custom",
+            text_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
+        self.header.add_widget(btn_back)
+        self.header.add_widget(lbl_title)
+        
+        # 2. MENU CUỘN - TÙY CHỌN XẾP LỊCH XỔ XUỐNG TRỰC TIẾP
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.menu_list = MDBoxLayout(orientation='vertical', adaptive_height=True, padding=dp(12), spacing=dp(10))
+        
+        # Header Tùy chọn xếp lịch
+        pref_title = MDLabel(
+            text="Tùy chọn xếp lịch",
+            bold=True,
+            font_style="Title",
+            role="small",
+            theme_text_color="Custom",
+            text_color=BLUE_COLOR,
+            size_hint_y=None,
+            height=dp(30)
+        )
+        self.menu_list.add_widget(pref_title)
+
+        # 1. Giờ đi ngủ & thức dậy
+        self.menu_list.add_widget(MDLabel(
+            text="Khung giờ ngủ:",
+            font_style="Body",
+            role="small",
+            theme_text_color="Hint",
+            size_hint_y=None,
+            height=dp(20)
+        ))
+        bedtime_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(42), spacing=dp(8))
+        self.btn_start_sleep = MDButton(
+            MDButtonText(text="Ngủ: 23:30"),
+            style="outlined",
+            size_hint_x=0.5,
+            on_release=lambda x: self.show_time_picker("start")
+        )
+        self.btn_end_sleep = MDButton(
+            MDButtonText(text="Dậy: 06:30"),
+            style="outlined",
+            size_hint_x=0.5,
+            on_release=lambda x: self.show_time_picker("end")
+        )
+        bedtime_box.add_widget(self.btn_start_sleep)
+        bedtime_box.add_widget(self.btn_end_sleep)
+        self.menu_list.add_widget(bedtime_box)
+
+        # 2. Thời gian nghỉ đệm
+        self.menu_list.add_widget(MDLabel(
+            text="Thời gian nghỉ giữa ca (phút):",
+            font_style="Body",
+            role="small",
+            theme_text_color="Hint",
+            size_hint_y=None,
+            height=dp(20)
+        ))
+        self.tf_break = MDTextField(
+            MDTextFieldHintText(text="Nghỉ giữa ca (30 - 60 phút)"),
+            text="30",
+            mode="outlined",
+            size_hint_y=None,
+            height=dp(48)
+        )
+        self.menu_list.add_widget(self.tf_break)
+
+        # 3. Thời lượng liên tục tối đa
+        self.menu_list.add_widget(MDLabel(
+            text="Thời lượng liên tục tối đa (phút):",
+            font_style="Body",
+            role="small",
+            theme_text_color="Hint",
+            size_hint_y=None,
+            height=dp(20)
+        ))
+        self.tf_max_duration = MDTextField(
+            MDTextFieldHintText(text="Làm việc liên tục tối đa (phút)"),
+            text="180",
+            mode="outlined",
+            size_hint_y=None,
+            height=dp(48)
+        )
+        self.menu_list.add_widget(self.tf_max_duration)
+
+        # 4. Thói quen xếp lịch
+        self.menu_list.add_widget(MDLabel(
+            text="Thói quen cá nhân:",
+            font_style="Body",
+            role="small",
+            theme_text_color="Hint",
+            size_hint_y=None,
+            height=dp(20)
+        ))
+        self.tf_habits = MDTextField(
+            MDTextFieldHintText(text="VD: Thích học sáng, không xếp lịch sau 21h..."),
+            multiline=True,
+            mode="outlined",
+            size_hint_y=None,
+            height=dp(70)
+        )
+        self.menu_list.add_widget(self.tf_habits)
+
+        # Trạng thái lưu
+        self.lbl_pref_status = MDLabel(
+            text="",
+            font_style="Label",
+            role="small",
+            theme_text_color="Custom",
+            text_color=[0, 0.6, 0, 1],
+            size_hint_y=None,
+            height=dp(20)
+        )
+        self.menu_list.add_widget(self.lbl_pref_status)
+
+        # Nút Lưu
+        btn_save = MDButton(
+            MDButtonText(text="LƯU TÙY CHỌN", text_color=WHITE_COLOR),
+            style="filled",
+            md_bg_color=BLUE_COLOR,
+            size_hint_x=1,
+            size_hint_y=None,
+            height=dp(42),
+            on_release=self.save_preferences
+        )
+        self.menu_list.add_widget(btn_save)
         self.scroll.add_widget(self.menu_list)
 
         # 3. THÔNG TIN TÀI KHOẢN (Cố định dưới cùng)
         self.user_widget = UserAccountWidget()
         
-        self.main_container.add_widget(header)
+        self.main_container.add_widget(self.header)
         self.main_container.add_widget(self.scroll)
         self.main_container.add_widget(self.user_widget)
 
         self.add_widget(self.main_container)
+
+    def _update_header_canvas(self, *args):
+        if hasattr(self, 'header_bg') and hasattr(self, 'header'):
+            self.header_bg.pos = self.header.pos
+            self.header_bg.size = self.header.size
+
+    def show_time_picker(self, mode):
+        picker = SimpleTimePicker(mode=mode, callback=self.on_time_save)
+        picker.open()
+
+    def on_time_save(self, time_obj, mode):
+        if mode == "start":
+            self.btn_start_sleep.children[0].text = f"Ngủ: {time_obj.strftime('%H:%M')}"
+        else:
+            self.btn_end_sleep.children[0].text = f"Dậy: {time_obj.strftime('%H:%M')}"
+
+    def save_preferences(self, instance):
+        start_txt = self.btn_start_sleep.children[0].text if self.btn_start_sleep.children else "Ngủ: 23:30"
+        end_txt = self.btn_end_sleep.children[0].text if self.btn_end_sleep.children else "Dậy: 06:30"
+        payload = {
+            "sleep_schedule": f"{start_txt} - {end_txt}",
+            "min_break_minutes": self.tf_break.text,
+            "max_continuous_minutes": self.tf_max_duration.text,
+            "natural_language_preference": self.tf_habits.text
+        }
+        try:
+            api.store.put("user_preferences", **payload)
+        except Exception:
+            pass
+
+        def on_ok(req, res):
+            self.lbl_pref_status.text = "Đã lưu tùy chọn thành công!"
+            Clock.schedule_once(lambda dt: setattr(self.lbl_pref_status, "text", ""), 3)
+
+        api._request(
+            "/api/v1/user/preferences",
+            method="POST",
+            payload=payload,
+            on_success=on_ok,
+            on_failure=lambda req, res: on_ok(None, None),
+            on_error=lambda req, err: on_ok(None, None),
+        )
+
+    def load_preferences(self):
+        try:
+            if api.store.exists("user_preferences"):
+                data = api.store.get("user_preferences")
+                sched = data.get("sleep_schedule", "")
+                if " - " in sched:
+                    parts = sched.split(" - ")
+                    if len(parts) == 2 and self.btn_start_sleep.children and self.btn_end_sleep.children:
+                        self.btn_start_sleep.children[0].text = parts[0]
+                        self.btn_end_sleep.children[0].text = parts[1]
+                if data.get("min_break_minutes"):
+                    self.tf_break.text = str(data["min_break_minutes"])
+                if data.get("max_continuous_minutes"):
+                    self.tf_max_duration.text = str(data["max_continuous_minutes"])
+                if data.get("natural_language_preference"):
+                    self.tf_habits.text = str(data["natural_language_preference"])
+        except Exception:
+            pass
 
     def update_canvas(self, *args):
         self.bg_rect.pos = self.main_container.pos
@@ -280,7 +494,8 @@ class SideBarMenu(ModalView):
     def open(self, *args, **kwargs):
         self._is_animating_close = False
         self.main_container.x = -self.menu_width
-        # Cập nhật lại thông tin user mỗi lần mở menu
+        # Cập nhật lại thông tin user & preferences mỗi lần mở menu
+        self.load_preferences()
         self.user_widget.lbl_display.text = api.display_name or "Người dùng"
         self.user_widget.lbl_username.text = f"ID: {api.user_id or 'username'}"
         self.user_widget.logout_container.height = 0

@@ -220,6 +220,23 @@ class APIClient:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def resolve_preview(self, import_batch_id, valid_rows, corrected_rows, skipped_line_numbers, on_success=None, on_failure=None, on_error=None):
+        """Send corrected rows and skipped lines to resolve preview into all_valid_rows."""
+        payload = {
+            "import_batch_id": import_batch_id,
+            "valid_rows": valid_rows,
+            "corrected_rows": corrected_rows,
+            "skipped_line_numbers": skipped_line_numbers,
+        }
+        self._request(
+            "/api/v1/ingestion/resolve-preview",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
     def check_conflicts(self, incoming_rows, on_success=None, on_failure=None, on_error=None, replace_previous_imports=False):
         """Check conflicts for parsed timetable rows."""
         payload = {
@@ -278,6 +295,30 @@ class APIClient:
         endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
+    def search_events_query(self, query_text, on_success, on_failure=None, on_error=None, top_k=50):
+        """Schedule Search: Hybrid SQL + Vector search over user's events."""
+        from urllib.parse import urlencode
+        params = urlencode({"q": query_text, "top_k": top_k})
+        self._request(
+            f"/api/v1/search/events?{params}",
+            method="GET",
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
+    def ask_academic_kb(self, query_text, on_success, on_failure=None, on_error=None, top_k=3):
+        """Academic Knowledge Base RAG: Ask questions about courses, lecturers, requirements."""
+        payload = {"query": query_text, "top_k": top_k}
+        self._request(
+            "/api/v1/search/academic/ask",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
 
     # new method, next to the other calls:
     def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
@@ -291,6 +332,25 @@ class APIClient:
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def patch_event(self, event_id, payload, on_success=None, on_failure=None, on_error=None):
+        """Update event details (start_time, end_time, is_important, title, room)."""
+        self._request(f"/api/v1/events/{event_id}", method="PATCH", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def delete_event(self, event_id, on_success=None, on_failure=None, on_error=None):
+        """Soft delete event."""
+        self._request(f"/api/v1/events/{event_id}", method="DELETE",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def audit_reminder(self, event_id, offset_minutes=30, scheduled_on_device_at=None, on_success=None, on_failure=None, on_error=None):
+        """Post reminder audit log to backend."""
+        payload = {
+            "offset_minutes": offset_minutes,
+            "scheduled_on_device_at": scheduled_on_device_at,
+        }
+        self._request(f"/api/v1/events/{event_id}/reminder-audit", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     # =========================================================================
     # 3b. REMINDER AUDIT (used by notifier.ReminderScheduler)
