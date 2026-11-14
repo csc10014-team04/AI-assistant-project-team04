@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from kivy.uix.modalview import ModalView
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
@@ -242,6 +242,86 @@ class Time30mPickerModal(ModalView):
 
 # Alias để gọi tên phù hợp với bước nhảy 15 phút
 TimePickerModal = Time30mPickerModal
+
+
+# ==============================================================================
+# 0b. BỘ CHỌN THỜI GIAN BÁO TRƯỚC (15m, 30m, 45m và từ 1h đến 24h)
+# ==============================================================================
+class OffsetPickerModal(ModalView):
+    """
+    Popup chọn thời gian báo trước sự kiện khi đến end_time:
+    - Scale (XX:00, XX:15, XX:30, XX:45)
+    - Chọn từ 15 phút, 30 phút, 45 phút, và từ 1 đến 24 giờ.
+    - Dạng lưới 4 cột (GridLayout cols=4) Button thuần siêu nhẹ (<35ms).
+    """
+    def __init__(self, current_offset="00:30", on_select=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.92, 0.8)
+        self.auto_dismiss = True
+        self.on_select = on_select
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
+            md_bg_color=[1, 1, 1, 1],
+            radius=[dp(12)]
+        )
+        layout.add_widget(MDLabel(
+            text="Chọn Thời Gian Báo Trước",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=4, spacing=dp(6), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
+
+        # Danh sách các mốc: 00:15, 00:30, 00:45 và từ 01:00 đến 24:00 (mỗi 15 phút)
+        slots = [("00:15", 15), ("00:30", 30), ("00:45", 45)]
+        for h in range(1, 24):
+            for m in (0, 15, 30, 45):
+                slots.append((f"{h:02d}:{m:02d}", h * 60 + m))
+        slots.append(("24:00", 24 * 60))
+
+        for time_str, mins in slots:
+            is_curr = (time_str == current_offset)
+            btn = Button(
+                text=time_str,
+                font_size=dp(13),
+                bold=is_curr,
+                background_normal='',
+                background_color=[0, 51/255, 204/255, 1] if is_curr else [0.93, 0.94, 0.97, 1],
+                color=[1, 1, 1, 1] if is_curr else [0.1, 0.1, 0.1, 1],
+                size_hint_y=None,
+                height=dp(36),
+                on_release=lambda _, ts=time_str, m=mins: self._choose(ts, m)
+            )
+            grid.add_widget(btn)
+
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
+            size_hint_y=None,
+            height=dp(38),
+            on_release=self.dismiss
+        )
+        layout.add_widget(btn_cancel)
+        self.add_widget(layout)
+
+    def _choose(self, time_str, minutes):
+        if self.on_select:
+            self.on_select(time_str, minutes)
+        self.dismiss()
 
 
 class EditEventTimeModal(ModalView):
@@ -1303,6 +1383,8 @@ class EventDetailModal(ModalView):
         self.is_hard = bool(self.event.get("is_hard", False) or self.event.get("kind") in ("CLASS", "EXAM"))
         self.is_important = bool(self.event.get("is_important", False))
         self.on_event_updated = on_event_updated
+        self.offset_minutes = 30  # Mặc định kích hoạt trước 30 phút
+        self.offset_str = "00:30"
 
         layout = MDBoxLayout(
             orientation='vertical',
@@ -1415,18 +1497,43 @@ class EventDetailModal(ModalView):
         )
         btn_box.add_widget(self.btn_edit_time)
 
-        # 2. Nút Bật/Tắt Đánh dấu Quan trọng (Nhắc nhở Local Notification)
-        imp_btn_text = "TẮT ĐÁNH DẤU QUAN TRỌNG" if self.is_important else "BẬT ĐÁNH DẤU QUAN TRỌNG (!)"
+        # 2. Hàng QUAN TRỌNG & Ô chọn "Báo trước:" khi đến end_time
+        imp_row = MDBoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(38))
         self.btn_toggle_important = MDButton(
-            MDButtonText(text=imp_btn_text, text_color=[1, 1, 1, 1], font_style="Label", role="small"),
+            MDButtonText(
+                text="QUAN TRỌNG (!)" if self.is_important else "QUAN TRỌNG",
+                text_color=[1, 1, 1, 1],
+                font_style="Label",
+                role="small"
+            ),
             style="filled",
-            md_bg_color=[0.9, 0.45, 0, 1] if not self.is_important else [0.5, 0.5, 0.5, 1],
-            size_hint_x=1,
-            size_hint_y=None,
-            height=dp(38),
+            md_bg_color=[0.9, 0.45, 0, 1] if self.is_important else [0.65, 0.65, 0.65, 1],
+            size_hint_x=0.48,
             on_release=self.toggle_important,
         )
-        btn_box.add_widget(self.btn_toggle_important)
+        imp_row.add_widget(self.btn_toggle_important)
+
+        offset_box = MDBoxLayout(orientation='horizontal', spacing=dp(4), size_hint_x=0.52)
+        lbl_offset = MDLabel(
+            text="Báo trước:",
+            font_style="Label",
+            role="medium",
+            bold=True,
+            adaptive_width=True,
+            pos_hint={"center_y": 0.5}
+        )
+        offset_box.add_widget(lbl_offset)
+
+        self.btn_offset = MDButton(
+            MDButtonText(text=self.offset_str, font_style="Label", role="small"),
+            style="outlined",
+            size_hint_x=1,
+            pos_hint={"center_y": 0.5},
+            on_release=self.open_offset_picker
+        )
+        offset_box.add_widget(self.btn_offset)
+        imp_row.add_widget(offset_box)
+        btn_box.add_widget(imp_row)
 
         # 3. Nút Xóa sự kiện
         self.btn_delete = MDButton(
@@ -1490,6 +1597,65 @@ class EventDetailModal(ModalView):
         if self.on_event_updated:
             self.on_event_updated(updated_event)
 
+    def open_offset_picker(self, instance):
+        """Mở popup chọn thời gian báo trước (scale 15m từ 1h đến 24h)."""
+        OffsetPickerModal(
+            current_offset=self.offset_str,
+            on_select=self._on_offset_chosen
+        ).open()
+
+    def _on_offset_chosen(self, time_str, minutes):
+        """Cập nhật mốc thời gian báo trước; nếu đang bật quan trọng thì tái lập lịch hẹn."""
+        self.offset_str = time_str
+        self.offset_minutes = minutes
+        if self.btn_offset.children:
+            self.btn_offset.children[0].text = time_str
+        if self.is_important:
+            self._arm_alarm()
+
+    def _arm_alarm(self):
+        """Tính toán thời gian thông báo = [end_time] - [báo trước] và lên lịch hẹn."""
+        try:
+            end_dt = datetime.fromisoformat(self.event["end_time"])
+        except Exception:
+            end_dt = datetime.now()
+        # Thời gian thông báo sẽ là: [end_time] - [báo trước]
+        fire_dt = end_dt - timedelta(minutes=self.offset_minutes)
+        fire_at_iso = fire_dt.isoformat()
+
+        title = self.event.get("title", "Sự kiện")
+        room = self.event.get("room", "")
+        try:
+            st = datetime.fromisoformat(self.event["start_time"])
+            start_str = st.strftime("%H:%M")
+        except Exception:
+            start_str = self.event.get("start_time", "")
+
+        reminder_scheduler.schedule(
+            self.event_id or 0,
+            fire_at=fire_at_iso,
+            title=title,
+            room=room,
+            start_time_str=start_str,
+            offset_minutes=self.offset_minutes
+        )
+
+        if self.event_id:
+            api.upsert_reminder(
+                self.event_id,
+                offset_minutes=self.offset_minutes,
+                on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", f"Đã bật báo thức trước {self.offset_str}!")),
+                on_failure=lambda req, res: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
+                on_error=lambda req, err: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
+            )
+            api.audit_reminder(
+                self.event_id,
+                offset_minutes=self.offset_minutes,
+                scheduled_on_device_at=datetime.now(VN_TZ).isoformat(),
+            )
+        else:
+            self.lbl_status.text = f"Đã bật báo thức cục bộ ({self.offset_str})."
+
     def toggle_important(self, instance):
         self.is_important = not self.is_important
         self.event["is_important"] = self.is_important
@@ -1497,32 +1663,16 @@ class EventDetailModal(ModalView):
         if self.is_important:
             self.lbl_imp_status.text = "Sự kiện Quan trọng: ĐÃ BẬT (!)"
             self.lbl_imp_status.text_color = [0.9, 0.4, 0, 1]
-            self.btn_toggle_important.children[0].text = "TẮT ĐÁNH DẤU QUAN TRỌNG"
-            self.btn_toggle_important.md_bg_color = [0.5, 0.5, 0.5, 1]
-
-            # Đặt lịch hẹn báo thức cục bộ trên thiết bị
-            fire_at = self.event.get("start_time")
-            title = self.event.get("title", "Sự kiện")
-            if fire_at:
-                reminder_scheduler.schedule(self.event_id or 0, fire_at=fire_at, title=title, offset_minutes=30)
-
-            # Gọi API báo về cho BE lưu vết Audit
-            if self.event_id:
-                api.audit_reminder(
-                    self.event_id,
-                    offset_minutes=30,
-                    scheduled_on_device_at=datetime.now(VN_TZ).isoformat(),
-                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã bật báo thức & lưu audit!")),
-                    on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã bật báo thức cục bộ."),
-                    on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã bật báo thức cục bộ."),
-                )
-            else:
-                self.lbl_status.text = "Đã bật báo thức cục bộ."
+            if self.btn_toggle_important.children:
+                self.btn_toggle_important.children[0].text = "QUAN TRỌNG (!)"
+            self.btn_toggle_important.md_bg_color = [0.9, 0.45, 0, 1]
+            self._arm_alarm()
         else:
             self.lbl_imp_status.text = "Sự kiện Quan trọng: TẮT"
             self.lbl_imp_status.text_color = [0.5, 0.5, 0.5, 1]
-            self.btn_toggle_important.children[0].text = "BẬT ĐÁNH DẤU QUAN TRỌNG (!)"
-            self.btn_toggle_important.md_bg_color = [0.9, 0.45, 0, 1]
+            if self.btn_toggle_important.children:
+                self.btn_toggle_important.children[0].text = "QUAN TRỌNG"
+            self.btn_toggle_important.md_bg_color = [0.65, 0.65, 0.65, 1]
 
             # Hủy báo thức cục bộ
             reminder_scheduler.cancel(self.event_id or 0)
@@ -1532,7 +1682,7 @@ class EventDetailModal(ModalView):
                 api.patch_event(
                     self.event_id,
                     payload={"is_important": False},
-                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt đánh dấu quan trọng.")),
+                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt quan trọng.")),
                     on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
                     on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
                 )

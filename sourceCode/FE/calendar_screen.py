@@ -351,10 +351,10 @@ class WeekTimeSlotRow(MDBoxLayout):
         time_str = f"{hour:02d}:00"
 
         self.lbl_time = MDLabel(
-            text=time_str, size_hint_x=None, width=dp(50),
+            text=time_str, size_hint_x=None, width=dp(38),
             halign="center", valign="top",
             theme_text_color="Custom", text_color=BLACK_COLOR,
-            font_style="Label", role="large", bold=True
+            font_style="Label", role="small", font_size=dp(10), bold=True
         )
         self.add_widget(self.lbl_time)
         
@@ -768,7 +768,7 @@ class CalendarHomeScreen(MDScreen):
         self.week_layout = MDBoxLayout(orientation='vertical')
         
         self.week_header_container = RelativeLayout(size_hint_y=None, height=dp(70))
-        self.week_days_box = MDBoxLayout(orientation='horizontal', padding=[dp(50), dp(5), 0, dp(5)])
+        self.week_days_box = MDBoxLayout(orientation='horizontal', padding=[dp(38), dp(5), 0, dp(5)])
         self.week_day_labels = []
         self.deadline_boxes = []
         
@@ -989,7 +989,8 @@ class CalendarHomeScreen(MDScreen):
         total_width = size[0]
         if total_width <= dp(60):
             return
-        col_width = (total_width - dp(50)) / 7.0 
+        time_col_w = dp(38)
+        col_width = (total_width - time_col_w) / 7.0 
         pixels_per_min = dp(2)
         
         for child in self.event_overlay.children:
@@ -997,7 +998,7 @@ class CalendarHomeScreen(MDScreen):
                 ev = child.event_data
                 child.size_hint = (None, None)
                 child.width = col_width - dp(4) # Bớt 4dp để tạo khoảng trống giữa các cột
-                child.x = dp(50) + (child.col_index * col_width) + dp(2)
+                child.x = time_col_w + (child.col_index * col_width) + dp(2)
                 child.height = ev["duration"] * pixels_per_min
                 
                 # Tính toạ độ Y từ dưới lên theo kiến trúc toạ độ của Kivy
