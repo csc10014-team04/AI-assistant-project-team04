@@ -1,9 +1,13 @@
 import os   # at the top of the file
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 from kivy.network.urlrequest import UrlRequest
 from kivy.storage.jsonstore import JsonStore
 
 from fallback import AI_TIMEOUT_SECONDS
+
+FE_DEBUG_LOG_PATH = Path(__file__).resolve().parent / "fe_http_debug.log"  # local diagnostic log on user/tester machine
 
 
 """
@@ -113,37 +117,77 @@ class APIClient:
             return json.dumps(redacted, ensure_ascii=False)
         return json.dumps(payload, ensure_ascii=False)
 
-    def _print_http_failure(self, method, url, payload, req, result):
-        """print diagnostic box to terminal when backend returns 4xx or 5xx."""
+    def _emit_diagnostic_block(self, block):
+        """print diagnostic block to console and append it to the local log file."""
+        print(block, flush=True)
+        try:
+            with open(FE_DEBUG_LOG_PATH, "a", encoding="utf-8") as log_file:
+                log_file.write(block + "\n")
+        except Exception:
+            pass
+
+    def _print_http_failure(
+        self,
+        method,
+        url,
+        payload=None,
+        req=None,
+        result=None,
+        status_code=None,
+        resp_headers=None,
+        raw_body=None,
+    ):
+        """print and persist diagnostic box when backend returns 4xx or 5xx."""
         if not self.debug_http:
             return
-        resp_headers = getattr(req, "resp_headers", None)
-        status_code = getattr(req, "resp_status", None)
+        if resp_headers is None and req is not None:
+            resp_headers = getattr(req, "resp_headers", None)
+        if status_code is None and req is not None:
+            status_code = getattr(req, "resp_status", None)
+        response_data = result if result is not None else raw_body
         req_id = self._header_ci(resp_headers, "X-Request-ID") or "N/A"
+        elapsed_ms = self._header_ci(resp_headers, "X-Process-Time-Ms") or "N/A"
         hdr_src = self._header_ci(resp_headers, "X-Error-Source")
-        source_label = self._infer_http_error_source(status_code, result, hdr_src)
-        print(
+        source_label = self._infer_http_error_source(status_code, response_data, hdr_src)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        block = (
             "\n" + "=" * 70 + "\n"
             f"[FE-BE HTTP FAILURE] {method} {url} -> HTTP {status_code}\n"
-            f"- Request ID   : {req_id}\n"
-            f"- Nguon loi    : {source_label}\n"
-            f"- Payload gui  : {self._safe_payload_preview(payload)}\n"
-            f"- Phan hoi BE  : {result}\n"
+            f"- Timestamp (UTC) : {timestamp}\n"
+            f"- Request         : {method} {url}\n"
+            f"- HTTP Status     : {status_code}\n"
+            f"- Request ID (BE) : {req_id}\n"
+            f"- Elapsed (BE ms) : {elapsed_ms}\n"
+            f"- Error Origin    : {source_label}\n"
+            f"- Sent Payload    : {self._safe_payload_preview(payload)}\n"
+            f"- BE Response Body: {response_data}\n"
+            f"- Local Log File  : {FE_DEBUG_LOG_PATH}\n"
+            f"- Debug Endpoint  : {self.base_url}/api/v1/debug/logs\n"
             + "=" * 70
         )
+        self._emit_diagnostic_block(block)
 
-    def _print_network_error(self, method, url, payload, error):
-        """print diagnostic box to terminal when client cannot reach backend or times out."""
+    def _print_network_error(self, method, url, payload=None, error=None, exc=None):
+        """print and persist diagnostic box when client cannot reach backend or times out."""
         if not self.debug_http:
             return
-        print(
+        err_obj = exc if exc is not None else error
+        exc_type = type(err_obj).__name__ if err_obj is not None else "UnknownError"
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        block = (
             "\n" + "=" * 70 + "\n"
             f"[FE-BE NETWORK ERROR] {method} {url}\n"
-            "- Nguon loi    : MANG / KET NOI (Request chua toi duoc Server BE hoac qua thoi gian cho)\n"
-            f"- Chi tiet loi : {error}\n"
-            f"- Payload gui  : {self._safe_payload_preview(payload)}\n"
+            f"- Timestamp (UTC) : {timestamp}\n"
+            f"- Request         : {method} {url}\n"
+            f"- Exception Type  : {exc_type}\n"
+            "- Error Origin    : NETWORK / CONNECTION (request did not reach BE server or timed out)\n"
+            f"- Error Details   : {err_obj}\n"
+            f"- Sent Payload    : {self._safe_payload_preview(payload)}\n"
+            f"- Local Log File  : {FE_DEBUG_LOG_PATH}\n"
+            f"- Debug Endpoint  : {self.base_url}/api/v1/debug/logs\n"
             + "=" * 70
         )
+        self._emit_diagnostic_block(block)
 
     def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None, timeout=None):
         """Hàm cốt lõi xử lý gửi HTTP Request"""
@@ -225,13 +269,14 @@ class APIClient:
         from kivy.clock import Clock
 
         def _worker():
+            url = f"{self.base_url}/api/v1/ingestion/parse-preview"
+            filename = os.path.basename(file_path)
+            payload_info = {"filename": filename}
             try:
-                url = f"{self.base_url}/api/v1/ingestion/parse-preview"
                 headers = {}
                 if self.access_token:
                     headers["Authorization"] = f"Bearer {self.access_token}"
 
-                filename = os.path.basename(file_path)
                 with open(file_path, "rb") as f:
                     file_bytes = f.read()
 
@@ -258,15 +303,27 @@ class APIClient:
                     if on_success:
                         Clock.schedule_once(lambda dt: on_success(None, data), 0)
                 else:
+                    self._print_http_failure(
+                        method="POST",
+                        url=url,
+                        payload=payload_info,
+                        result=data,
+                        status_code=resp.status_code,
+                        resp_headers=dict(resp.headers),
+                        raw_body=resp.text,
+                    )
                     if on_failure:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
-            except requests.exceptions.Timeout:
+            except requests.exceptions.Timeout as e:
+                self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, "Quá thời gian kết nối tới máy chủ (Timeout 30s)"), 0)
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
+                self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, "Không thể kết nối tới máy chủ (kiểm tra mạng hoặc VPN)"), 0)
             except Exception as e:
+                self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
 
@@ -282,8 +339,10 @@ class APIClient:
         from kivy.clock import Clock
 
         def _worker():
+            url = f"{self.base_url}/api/v1/ingestion/parse-preview"
+            raw_content = text_data or ""
+            payload_info = {"raw_content": raw_content[:300]}
             try:
-                url = f"{self.base_url}/api/v1/ingestion/parse-preview"
                 headers = {}
                 if self.access_token:
                     headers["Authorization"] = f"Bearer {self.access_token}"
@@ -291,7 +350,7 @@ class APIClient:
                 resp = requests.post(
                     url,
                     headers=headers,
-                    data={"raw_content": text_data or ""},
+                    data={"raw_content": raw_content},
                     timeout=30,
                 )
                 try:
@@ -303,9 +362,19 @@ class APIClient:
                     if on_success:
                         Clock.schedule_once(lambda dt: on_success(None, data), 0)
                 else:
+                    self._print_http_failure(
+                        method="POST",
+                        url=url,
+                        payload=payload_info,
+                        result=data,
+                        status_code=resp.status_code,
+                        resp_headers=dict(resp.headers),
+                        raw_body=resp.text,
+                    )
                     if on_failure:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
             except Exception as e:
+                self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
 
