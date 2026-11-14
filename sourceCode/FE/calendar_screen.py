@@ -340,26 +340,26 @@ class MonthYearSelectorModal(ModalView):
 
 
 class WeekTimeSlotRow(MDBoxLayout):
-    """Một hàng trong timeline Lịch Tuần (mỗi 30 phút)."""
-    def __init__(self, hour, minute, **kwargs):
+    """Một hàng trong timeline Lịch Tuần (mỗi 1 giờ XX:00)."""
+    def __init__(self, hour, minute=0, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'horizontal'
         self.size_hint_y = None
-        self.height = dp(60)
+        #Chiều cao
+        self.height = dp(120)  # 60 phút * dp(2)/phút = dp(120) cho mỗi khung giờ XX:00
         
-        is_hour = (minute == 0)
-        time_str = f"{hour:02d}:{minute:02d}"
+        time_str = f"{hour:02d}:00"
 
         self.lbl_time = MDLabel(
             text=time_str, size_hint_x=None, width=dp(50),
             halign="center", valign="top",
-            theme_text_color="Custom", text_color=BLACK_COLOR if is_hour else GRAY_TEXT,
-            font_style="Label", role="large" if is_hour else "medium", bold=is_hour
+            theme_text_color="Custom", text_color=BLACK_COLOR,
+            font_style="Label", role="large", bold=True
         )
         self.add_widget(self.lbl_time)
         
         self.days_area = MDGridLayout(cols=7)
-        line_width = 1.2 if is_hour else 0.5
+        line_width = 1.0
         for i in range(7):
             cell = MDBoxLayout()
             with cell.canvas.before:
@@ -387,8 +387,10 @@ class WeekTimeSlotRow(MDBoxLayout):
 class EventBlock(ButtonBehavior, FloatLayout):
     """
     Khối hiển thị sự kiện trên Timeline (Ví dụ: Lớp học, Tập Gym).
-    - Sử dụng FloatLayout để dấu chấm than (is_important) nổi độc lập (float) ở góc trên bên phải,
-      không chiếm diện tích hay đè vào nội dung chữ, và giữ nguyên đồ họa nền & viền rõ ràng.
+    - Sử dụng FloatLayout để dấu chấm than (is_important) nổi độc lập ở góc trên bên phải.
+    - Có vách ngăn nằm ngang chia đôi phần dấu chấm than (trên) và phần chữ thông tin (dưới),
+      giúp chữ hoàn toàn nằm bên dưới vách ngăn, không bị chèn hay đè lên dấu chấm than.
+    - Định dạng hiển thị sự kiện theo quy chuẩn: ({Địa điểm})\n{tên sự kiện} (ngoại trừ DEADLINE).
     """
     def __init__(self, event_data, col_index, **kwargs):
         super().__init__(**kwargs)
@@ -401,11 +403,11 @@ class EventBlock(ButtonBehavior, FloatLayout):
         
         self.kind = event_data.get("kind", "TASK")
         
-        # Thêm phòng/địa điểm nếu có: {tên sự kiện} - {địa điểm/phòng}
+        # Đổi cách hiển thị: "({Địa điểm})\n{tên sự kiện}" nếu có địa điểm/phòng
         raw_title = event_data.get("title", "Sự kiện")
         room = event_data.get("room")
         if room and str(room).strip() and str(room).lower() not in ("none", "null"):
-            self.title = f"{raw_title} - {str(room).strip()}"
+            self.title = f"({str(room).strip()})\n{raw_title}"
         else:
             self.title = raw_title
 
@@ -434,12 +436,16 @@ class EventBlock(ButtonBehavior, FloatLayout):
             # 4. Viền mỏng bao quanh
             Color(0, 0, 0, 0.5)
             self.border = Line(width=1.1)
+
+            # 5. Vách ngăn nằm ngang chia phần dấu chấm than (trên) và phần chữ thông tin (dưới)
+            Color(1, 1, 1, 0.55)
+            self.divider_line = Line(width=1.0)
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
         has_imp = event_data.get("is_important", False)
         
-        # Nhãn tiêu đề sự kiện: Tối ưu không gian hiển thị trên mobile, đảm bảo từng từ nguyên vẹn
+        # Nhãn tiêu đề sự kiện: Nằm bên dưới vách ngăn nằm ngang, căn lề trên cùng của vùng chữ
         self.lbl_title = MDLabel(
             text=self.title, 
             theme_text_color="Custom", 
@@ -450,16 +456,12 @@ class EventBlock(ButtonBehavior, FloatLayout):
             bold=True, 
             halign="left", 
             valign="top",
-            pos_hint={"x": 0, "y": 0},
-            size_hint=(1, 1),
+            size_hint=(None, None),
             padding=[dp(5), dp(2), dp(2), dp(2)]
         )
-        self.lbl_title.bind(size=lambda inst, val: setattr(
-            inst, 'text_size', (max(dp(20), val[0] - dp(6)), max(dp(10), val[1] - dp(4)))
-        ))
         self.add_widget(self.lbl_title)
 
-        # Dấu chấm than float góc trên bên phải nhỏ gọn, không lấn chiếm không gian của chữ
+        # Dấu chấm than float góc trên bên phải nhỏ gọn, nằm ở dải phía trên vách ngăn nằm ngang
         self.icon_important = Label(
             text="!",
             color=[1, 0, 0, 1],
@@ -468,7 +470,7 @@ class EventBlock(ButtonBehavior, FloatLayout):
             bold=True,
             font_size=dp(11),
             size_hint=(None, None),
-            size=(dp(12), dp(12)),
+            size=(dp(13), dp(13)),
             pos_hint={"right": 0.98, "top": 0.98},
             opacity=1 if has_imp else 0,
         )
@@ -485,6 +487,22 @@ class EventBlock(ButtonBehavior, FloatLayout):
         self.accent_line.size = [dp(4), self.height]
         
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
+
+        # Cập nhật toạ độ vách ngăn nằm ngang cách đỉnh dp(18)
+        top_bar_h = dp(18)
+        divider_y = self.y + self.height - top_bar_h
+        if self.height > top_bar_h + dp(6):
+            # Vẽ đường vách ngăn ngang bên dưới dấu chấm than
+            self.divider_line.points = [self.x + dp(4), divider_y, self.x + self.width - dp(2), divider_y]
+            # Vùng chữ nằm hoàn toàn bên dưới vách ngăn
+            self.lbl_title.pos = [self.x, self.y]
+            self.lbl_title.size = [self.width, max(dp(10), self.height - top_bar_h)]
+            self.lbl_title.text_size = (max(dp(10), self.width - dp(7)), max(dp(10), self.lbl_title.height - dp(4)))
+        else:
+            self.divider_line.points = [0, 0, 0, 0]
+            self.lbl_title.pos = [self.x, self.y]
+            self.lbl_title.size = [self.width, self.height]
+            self.lbl_title.text_size = (max(dp(10), self.width - dp(7)), max(dp(10), self.height - dp(4)))
 
     def on_release(self):
         from event_modals import EventDetailModal
@@ -665,6 +683,8 @@ class CalendarHomeScreen(MDScreen):
         self.display_month = self.today.month
         self.display_year = self.today.year
         self.current_week_start = self.today - timedelta(days=self.today.weekday())
+        # Đăng ký lắng nghe thay đổi từ store để tự động vẽ lại lịch ngay khi có cập nhật
+        store.on_change(self._redraw_events)
         
         Clock.schedule_once(self.build_ui, 0)
 
@@ -782,8 +802,7 @@ class CalendarHomeScreen(MDScreen):
         
         self.timeline_grid = MDBoxLayout(orientation='vertical', size_hint=(1, 1))
         for h in range(24):
-            for m in (0, 30):
-                self.timeline_grid.add_widget(WeekTimeSlotRow(hour=h, minute=m))
+            self.timeline_grid.add_widget(WeekTimeSlotRow(hour=h))
                 
         self.event_overlay = FloatLayout(size_hint=(1, 1))
         self._recalc_overlay_trigger = Clock.create_trigger(

@@ -68,7 +68,8 @@ class EventStore:
 
     def on_change(self, callback) -> None:
         """call `callback()` after every change of the event list (the screens re-draw there)."""
-        self._listeners.append(callback)
+        if callback not in self._listeners:
+            self._listeners.append(callback)
 
     # ---- loading ----------------------------------------------------------------------------
     def refresh(self, api, today: date | None = None, on_done=None) -> None:

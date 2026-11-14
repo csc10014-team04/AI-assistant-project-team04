@@ -136,7 +136,29 @@ class EventCard(ButtonBehavior, MDBoxLayout):
     def on_release(self):
         # b. Mở Modal_view chi tiết sự kiện ở trang Search giống như Calendar_home_screen
         from event_modals import EventDetailModal
-        EventDetailModal(event=self.event).open()
+        EventDetailModal(event=self.event, on_event_updated=self._on_event_updated).open()
+
+    def _on_event_updated(self, updated_event):
+        """Cập nhật lại nhãn thời gian trên thẻ sau khi người dùng sửa giờ thành công."""
+        self.event = updated_event
+        try:
+            st = datetime.fromisoformat(updated_event["start_time"])
+            et = datetime.fromisoformat(updated_event["end_time"])
+            days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+            day_str = days_vn[st.weekday()]
+            date_str = st.strftime("%d/%m/%Y")
+            s_str = st.strftime("%H:%M")
+            e_str = et.strftime("%H:%M")
+            if self.event.get("kind") == "DEADLINE":
+                if self.labels:
+                    self.labels[0].text = f"[b]Deadline:[/b] {self.event.get('title')} - {e_str} ({date_str})"
+            else:
+                if len(self.labels) >= 3:
+                    self.labels[0].text = f"[b]{day_str} Ngày {date_str}:[/b]"
+                    self.labels[2].text = f"Thời gian: {s_str} - {e_str}"
+            self._do_update_layout()
+        except Exception:
+            pass
         
     def _do_update_layout(self, *args):
         if self.width <= 0:
@@ -242,7 +264,14 @@ class SearchScreen(MDScreen):
             "TASK": True, "DEADLINE": True
         }
         self.filter_important_only = False
+        # Đăng ký lắng nghe thay đổi từ store để tự động làm mới kết quả tìm kiếm
+        store.on_change(self._on_store_changed)
         Clock.schedule_once(self.build_ui, 0)
+
+    def _on_store_changed(self):
+        """Tự động làm mới kết quả tìm kiếm khi store.events có thay đổi (sửa giờ/thêm/xóa)."""
+        if hasattr(self, "txt_search") and self.search_mode == "schedule":
+            self.perform_search()
 
     def build_ui(self, dt):
         self.main_layout = MDBoxLayout(orientation='vertical')
