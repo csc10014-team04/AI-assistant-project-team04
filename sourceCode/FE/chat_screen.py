@@ -130,8 +130,45 @@ class NavTab(ButtonBehavior, MDBoxLayout):
             sm.current = self.target_screen
 
 
+class SelectableChatLabel(TextInput):
+    """
+    Widget hiển thị nội dung tin nhắn dạng văn bản cho phép người dùng:
+    - Bôi đen, chọn vùng văn bản (select text region).
+    - Sao chép bằng phím tắt Ctrl+C trên Desktop hoặc công cụ chọn/sao chép vùng trên mobile.
+    - readonly=True: Ngăn chặn sửa đổi nội dung và không bật bàn phím ảo.
+    - cursor_color=[0, 0, 0, 0]: Ẩn con trỏ nhấp nháy, giữ giao diện sạch đẹp như nhãn văn bản thuần.
+    """
+    def __init__(self, text="", text_color=BLACK_COLOR, **kwargs):
+        super().__init__(**kwargs)
+        self.text = text
+        self.readonly = True
+        self.multiline = True
+        self.background_color = [0, 0, 0, 0]
+        self.background_normal = ""
+        self.background_active = ""
+        self.foreground_color = text_color
+        self.cursor_color = [0, 0, 0, 0]
+        # Màu đánh dấu khi bôi đen vùng văn bản
+        self.selection_color = [0.2, 0.5, 0.9, 0.4] if text_color == BLACK_COLOR else [1, 1, 1, 0.4]
+        self.padding = [0, 0, 0, 0]
+        self.font_size = dp(14)
+        self.size_hint_y = None
+        self.size_hint_x = 1
+        self.do_scroll_y = False
+        self.do_scroll_x = False
+        self.bind(minimum_height=self._on_min_height)
+        self.bind(width=self._on_width_change)
+        self.height = max(dp(20), self.minimum_height)
+
+    def _on_min_height(self, instance, val):
+        self.height = max(dp(20), val)
+
+    def _on_width_change(self, instance, val):
+        Clock.schedule_once(lambda dt: setattr(self, 'height', max(dp(20), self.minimum_height)), 0)
+
+
 class ChatBubble(MDBoxLayout):
-    """Bong bóng chat hiển thị tin nhắn (có viền đen 1.15px)"""
+    """Bong bóng chat hiển thị tin nhắn (có viền đen 1.15px, hỗ trợ chọn vùng văn bản & copy)"""
     def __init__(self, text, is_user=False, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
@@ -157,20 +194,47 @@ class ChatBubble(MDBoxLayout):
             self.border_line = Line(width=1.15)
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
-        self.lbl = MDLabel(
-            text=text, theme_text_color="Custom", text_color=txt_color,
-            font_style="Body", role="medium"
-        )
-        self.lbl.bind(texture_size=self.update_height)
+        self.lbl = SelectableChatLabel(text=text, text_color=txt_color)
+        self.lbl.bind(height=self.update_height)
         self.add_widget(self.lbl)
+        self.height = self.lbl.height + dp(20)
 
-    def update_height(self, instance, size):
-        self.height = size[1] + dp(20)
+    def update_height(self, instance, height_val):
+        self.height = height_val + dp(20)
 
     def update_canvas(self, *args):
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
         self.border_line.rounded_rectangle = [self.x, self.y, self.width, self.height, *self.radius]
+
+
+class ChatInputField(TextInput):
+    """
+    Ô nhập liệu tin nhắn chat:
+    - Bấm Enter: Kích hoạt nút gửi (thực hiện gửi tin nhắn).
+    - Bấm Shift + Enter hoặc bật CapsLock (hỗ trợ cho Android): Xuống hàng.
+    """
+    def __init__(self, on_send_callback=None, **kwargs):
+        super().__init__(**kwargs)
+        self.on_send_callback = on_send_callback
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        key, key_str = keycode
+        is_enter = (key in (13, 271) or key_str in ('enter', 'numpadenter'))
+
+        if is_enter:
+            mods = set(modifiers) if modifiers else set()
+            # Bấm Shift + Enter hoặc khi bật CapsLock -> xuống dòng
+            if 'shift' in mods or 'capslock' in mods:
+                self.insert_text('\n')
+                return True
+            else:
+                # Enter đơn lẻ -> gửi tin nhắn
+                if self.on_send_callback:
+                    self.on_send_callback()
+                return True
+
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 # ==============================================================================
 # MODAL DỰ PHÒNG & THẺ ĐỀ XUẤT (PROPOSAL CARD)
@@ -503,7 +567,8 @@ class ChatAssistantScreen(MDScreen):
             self.input_border = Line(width=1.15)
         self.input_area.bind(pos=self._update_input_shape, size=self._update_input_shape)
         
-        self.txt_input = TextInput(
+        self.txt_input = ChatInputField(
+            on_send_callback=self.send_message,
             multiline=True, hint_text="Nhập yêu cầu xếp lịch...", 
             background_color=[0,0,0,0], foreground_color=BLACK_COLOR,
             font_size=dp(15), padding=[dp(5), dp(10), dp(5), dp(10)]
@@ -579,6 +644,7 @@ class ChatAssistantScreen(MDScreen):
         self.chat_history.add_widget(ChatBubble(text=user_text, is_user=True))
         self.save_current_session()
         self.txt_input.text = ""
+        self.txt_input.focus = True
         Clock.schedule_once(self.scroll_to_bottom, 0.1)
 
         # 1. Trích xuất reschedule_id TRƯỚC KHI cancel_reschedule
