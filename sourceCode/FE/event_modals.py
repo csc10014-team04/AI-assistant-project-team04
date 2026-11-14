@@ -553,9 +553,9 @@ class ImportStep2Modal(ModalView):
                 spacing=dp(4),
                 radius=[dp(8)],
             )
-            title_text = f"✅ [{row.get('kind', 'CLASS')}] {row.get('course_code', '')} {row.get('title', '')}".strip()
-            time_text = f"🕒 {row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Phòng: {row.get('room') or 'Chưa rõ'}"
-            date_text = f"📅 Từ {row.get('first_date')} đến {row.get('last_date')}"
+            title_text = f"[{row.get('kind', 'CLASS')}] {row.get('course_code', '')} {row.get('title', '')}".strip()
+            time_text = f"{row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Phòng: {row.get('room') or 'Chưa rõ'}"
+            date_text = f"Từ {row.get('first_date')} đến {row.get('last_date')}"
             
             card.add_widget(MDLabel(text=title_text, bold=True, size_hint_y=None, height=dp(24)))
             card.add_widget(MDLabel(text=time_text, theme_text_color="Secondary", size_hint_y=None, height=dp(20)))
@@ -575,7 +575,7 @@ class ImportStep2Modal(ModalView):
             )
             card.add_widget(
                 MDLabel(
-                    text=f"⚠️ Dòng {row.get('line_number')}: {row.get('error_message')}",
+                    text=f"[Lỗi] Dòng {row.get('line_number')}: {row.get('error_message')}",
                     bold=True,
                     text_color=[0.8, 0.5, 0, 1],
                     size_hint_y=None,
@@ -603,7 +603,7 @@ class ImportStep2Modal(ModalView):
             )
             empty_card.add_widget(
                 MDLabel(
-                    text="⚠️ Không phát hiện được sự kiện nào trong file.\nVui lòng kiểm tra lại định dạng file hoặc hình ảnh.",
+                    text="Không phát hiện được sự kiện nào trong file.\nVui lòng kiểm tra lại định dạng file hoặc hình ảnh.",
                     theme_text_color="Error",
                     halign="center",
                     size_hint_y=None,
@@ -756,7 +756,7 @@ class ImportStep3Modal(ModalView):
             )
             card.add_widget(
                 MDLabel(
-                    text=f"🚨 {conf.get('overlap_description')}",
+                    text=f"[Xung đột] {conf.get('overlap_description')}",
                     bold=True,
                     text_color=[0.9, 0.1, 0.1, 1],
                     size_hint_y=None,
@@ -902,7 +902,7 @@ class EventDetailModal(ModalView):
         # Header: Tên sự kiện
         header_box = MDBoxLayout(orientation='vertical', size_hint_y=None, adaptive_height=True, spacing=dp(4))
         self.lbl_title = MDLabel(
-            text=f"📌 {self.event.get('title', 'Sự kiện')}",
+            text=f"{self.event.get('title', 'Sự kiện')}",
             bold=True,
             font_style="Title",
             role="medium",
@@ -934,7 +934,7 @@ class EventDetailModal(ModalView):
         room = self.event.get("room")
         room_display = room.strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else "Không có"
         self.lbl_room = MDLabel(
-            text=f"📍 Địa điểm / Phòng: {room_display}",
+            text=f"Địa điểm / Phòng: {room_display}",
             font_style="Body",
             role="medium",
             adaptive_height=True,
@@ -952,7 +952,7 @@ class EventDetailModal(ModalView):
 
         # Trạng thái quan trọng
         self.lbl_imp_status = MDLabel(
-            text="⭐ Sự kiện Quan trọng: " + ("ĐÃ BẬT (!)" if self.is_important else "TẮT"),
+            text="Sự kiện Quan trọng: " + ("ĐÃ BẬT (!)" if self.is_important else "TẮT"),
             theme_text_color="Custom",
             text_color=[0.9, 0.4, 0, 1] if self.is_important else [0.5, 0.5, 0.5, 1],
             bold=True,
@@ -1037,9 +1037,9 @@ class EventDetailModal(ModalView):
         try:
             st = datetime.fromisoformat(self.event["start_time"])
             et = datetime.fromisoformat(self.event["end_time"])
-            return f"🕒 {st.strftime('%H:%M')} - {et.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
+            return f"{st.strftime('%H:%M')} - {et.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
         except Exception:
-            return f"🕒 {self.event.get('start_time')} - {self.event.get('end_time')}"
+            return f"{self.event.get('start_time')} - {self.event.get('end_time')}"
 
     def open_edit_time_picker(self, instance):
         if self.is_hard:
@@ -1093,7 +1093,7 @@ class EventDetailModal(ModalView):
         self.event["is_important"] = self.is_important
 
         if self.is_important:
-            self.lbl_imp_status.text = "⭐ Sự kiện Quan trọng: ĐÃ BẬT (!)"
+            self.lbl_imp_status.text = "Sự kiện Quan trọng: ĐÃ BẬT (!)"
             self.lbl_imp_status.text_color = [0.9, 0.4, 0, 1]
             self.btn_toggle_important.children[0].text = "TẮT ĐÁNH DẤU QUAN TRỌNG"
             self.btn_toggle_important.md_bg_color = [0.5, 0.5, 0.5, 1]
@@ -1117,7 +1117,7 @@ class EventDetailModal(ModalView):
             else:
                 self.lbl_status.text = "Đã bật báo thức cục bộ."
         else:
-            self.lbl_imp_status.text = "⭐ Sự kiện Quan trọng: TẮT"
+            self.lbl_imp_status.text = "Sự kiện Quan trọng: TẮT"
             self.lbl_imp_status.text_color = [0.5, 0.5, 0.5, 1]
             self.btn_toggle_important.children[0].text = "BẬT ĐÁNH DẤU QUAN TRỌNG (!)"
             self.btn_toggle_important.md_bg_color = [0.9, 0.45, 0, 1]

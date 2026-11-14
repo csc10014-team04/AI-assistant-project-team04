@@ -620,23 +620,23 @@ class ChatAssistantScreen(MDScreen):
         self.append_ai_message("Trợ lý AI đang bận. Bạn hãy chọn khung giờ trống ở bảng dưới nhé!")
 
         # 2. Bong bóng chat thứ 2 ngay bên dưới hiển thị thông tin y hệt trên popup đó:
-        slots_lines = [f"• {self._format_slot_vn(s)}" for s in slots[:8]]
-        slots_text = "\n".join(slots_lines) if slots_lines else "• Không có khung giờ trống khả dụng."
+        slots_lines = [f"- {self._format_slot_vn(s)}" for s in slots[:8]]
+        slots_text = "\n".join(slots_lines) if slots_lines else "- Không có khung giờ trống khả dụng."
         info_bubble_text = (
-            f"📋 THÔNG TIN CÔNG VIỆC CẦN XẾP:\n"
-            f"• Tên hoạt động: {title}\n"
-            f"• Thời lượng: {duration} phút\n\n"
+            f"[THÔNG TIN CÔNG VIỆC CẦN XẾP]\n"
+            f"- Tên hoạt động: {title}\n"
+            f"- Thời lượng: {duration} phút\n\n"
             f"CÁC KHUNG GIỜ CÒN TRỐNG TRONG TUẦN:\n"
             f"{slots_text}"
         )
         self.append_ai_message(info_bubble_text)
 
         def on_scheduled(selected_slot):
-            self.append_ai_message(f"✅ Kết quả: Đã xác nhận chọn khung giờ {self._format_slot_vn(selected_slot)} cho '{title}'.")
+            self.append_ai_message(f"[Xác nhận] Đã chọn khung giờ {self._format_slot_vn(selected_slot)} cho '{title}'.")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
         def on_canceled():
-            self.append_ai_message("❌ Kết quả: Bạn đã hủy bỏ chọn khung giờ.")
+            self.append_ai_message("[Hủy bỏ] Bạn đã hủy bỏ chọn khung giờ.")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
         ManualFallbackModal(

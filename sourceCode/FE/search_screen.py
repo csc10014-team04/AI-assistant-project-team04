@@ -488,7 +488,7 @@ class SearchScreen(MDScreen):
             adaptive_height=True,
         )
         card.add_widget(MDLabel(
-            text=f"💡 {message}",
+            text=f"[Gợi ý] {message}",
             theme_text_color="Primary",
             font_style="Body",
             role="medium",
@@ -619,18 +619,18 @@ class SearchScreen(MDScreen):
                 md_bg_color=WHITE_COLOR, radius=[dp(12)], adaptive_height=True
             )
             hint_box.add_widget(MDLabel(
-                text="🎓 Hỏi đáp Cơ sở Tri thức Học vụ",
+                text="Hỏi đáp Cơ sở Tri thức Học vụ",
                 bold=True, font_style="Title", role="medium", adaptive_height=True
             ))
             hint_box.add_widget(MDLabel(
-                text="Bạn có thể hỏi về:\n• Điều kiện tốt nghiệp, số tín chỉ tích lũy\n• Giảng viên, bộ môn, khoa\n• Môn học tiên quyết, mô tả học phần\n• Quy chế học vụ, kiểm tra, thi cử",
+                text="Bạn có thể hỏi về:\n- Điều kiện tốt nghiệp, số tín chỉ tích lũy\n- Giảng viên, bộ môn, khoa\n- Môn học tiên quyết, mô tả học phần\n- Quy chế học vụ, kiểm tra, thi cử",
                 theme_text_color="Secondary", font_style="Body", role="medium", adaptive_height=True
             ))
             self.results_box.add_widget(hint_box)
             return
 
         self.results_box.add_widget(MDLabel(
-            text="⏳ Đang tra cứu cơ sở tri thức học vụ...",
+            text="Đang tra cứu cơ sở tri thức học vụ...",
             halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
             font_style="Body", role="medium", size_hint_y=None, height=dp(40)
         ))
@@ -667,7 +667,7 @@ class SearchScreen(MDScreen):
             md_bg_color=WHITE_COLOR, radius=[dp(12)], adaptive_height=True
         )
         ans_box.add_widget(MDLabel(
-            text="💬 Trả lời từ Trợ lý Học vụ:",
+            text="Trả lời từ Trợ lý Học vụ:",
             bold=True, theme_text_color="Primary", font_style="Title", role="small", adaptive_height=True
         ))
         ans_text = res.get("answer") or "Chưa có thông tin phù hợp cho câu hỏi này."
@@ -685,7 +685,7 @@ class SearchScreen(MDScreen):
                 md_bg_color=[0.96, 0.96, 0.98, 1], radius=[dp(10)], adaptive_height=True
             )
             cite_container.add_widget(MDLabel(
-                text="📚 Trích dẫn nguồn tham khảo:",
+                text="Trích dẫn nguồn tham khảo:",
                 bold=True, theme_text_color="Secondary", font_style="Label", role="large", adaptive_height=True
             ))
             for i, c in enumerate(citations, 1):
