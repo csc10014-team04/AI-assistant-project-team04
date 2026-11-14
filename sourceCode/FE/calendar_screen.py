@@ -384,26 +384,24 @@ class WeekTimeSlotRow(MDBoxLayout):
 # ==============================================================================
 # 3. WIDGET SỰ KIỆN & DEADLINE BANNER (QUY TẮC BE)
 # ==============================================================================
-class EventBlock(ButtonBehavior, MDBoxLayout):
+class EventBlock(ButtonBehavior, FloatLayout):
     """
     Khối hiển thị sự kiện trên Timeline (Ví dụ: Lớp học, Tập Gym).
-    Đã được nâng cấp giao diện để nổi bật (3D-like, Accent line).
+    - Sử dụng FloatLayout để dấu chấm than (is_important) nổi độc lập (float) ở góc trên bên phải,
+      không chiếm diện tích hay đè vào nội dung chữ, và giữ nguyên đồ họa nền & viền rõ ràng.
     """
     def __init__(self, event_data, col_index, **kwargs):
         super().__init__(**kwargs)
         
-        # SỬA LỖI Ở ĐÂY: Cố định size_hint ngay từ đầu để tránh bị FloatLayout kéo giãn toàn màn hình
         self.size_hint = (None, None)
         self.size = (0, 0)
         
         self.event_data = event_data
         self.col_index = col_index
-        self.orientation = 'vertical'
-        self.padding = [dp(6), dp(4), dp(2), dp(2)] # Lùi trái một chút cho đường dải màu
         
         self.kind = event_data.get("kind", "TASK")
         
-        # a. Thêm phòng/địa điểm: Nếu phòng/địa điểm khác NULL: có dạng {tên sự kiện} - {địa điểm/phòng}
+        # Thêm phòng/địa điểm nếu có: {tên sự kiện} - {địa điểm/phòng}
         raw_title = event_data.get("title", "Sự kiện")
         room = event_data.get("room")
         if room and str(room).strip() and str(room).lower() not in ("none", "null"):
@@ -418,11 +416,10 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
         elif self.kind == "EVENT": base_color = EV_EVENT
         else: base_color = EV_TASK
 
-        # Làm nhạt màu nền và giữ màu đậm cho viền trái (Accent)
         bg_color = [base_color[0], base_color[1], base_color[2], 0.85]
         
         with self.canvas.before:
-            # 1. Đổ bóng giả (Shadow mờ nhẹ dịch xuống góc phải)
+            # 1. Đổ bóng giả
             Color(0, 0, 0, 0.2)
             self.shadow = RoundedRectangle(radius=[dp(4)])
             
@@ -434,73 +431,160 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
             Color(*base_color[:3], 1.0)
             self.accent_line = RoundedRectangle(radius=[dp(4), 0, 0, dp(4)])
             
-            # 4. Viền mỏng bao quanh để tách biệt với nền sáng
+            # 4. Viền mỏng bao quanh
             Color(0, 0, 0, 0.5)
             self.border = Line(width=1.1)
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
+        has_imp = event_data.get("is_important", False)
+        
+        # Nhãn tiêu đề sự kiện: Tối ưu không gian hiển thị trên mobile, đảm bảo từng từ nguyên vẹn
         self.lbl_title = MDLabel(
             text=self.title, 
             theme_text_color="Custom", 
             text_color=WHITE_COLOR,
             font_style="Label",
             role="small",
+            font_size=dp(10),
             bold=True, 
             halign="left", 
-            valign="top"
+            valign="top",
+            pos_hint={"x": 0, "y": 0},
+            size_hint=(1, 1),
+            padding=[dp(5), dp(2), dp(2), dp(2)]
         )
+        self.lbl_title.bind(size=lambda inst, val: setattr(
+            inst, 'text_size', (max(dp(20), val[0] - dp(6)), max(dp(10), val[1] - dp(4)))
+        ))
         self.add_widget(self.lbl_title)
 
-        # c. Dấu chấm than ở góc trên bên phải nếu is_important == True
+        # Dấu chấm than float góc trên bên phải nhỏ gọn, không lấn chiếm không gian của chữ
         self.icon_important = Label(
             text="!",
             color=[1, 0, 0, 1],
             outline_color=[0, 0, 0, 1],
             outline_width=1,
             bold=True,
-            font_size=dp(15),
+            font_size=dp(11),
             size_hint=(None, None),
-            size=(dp(16), dp(16)),
-            opacity=1 if event_data.get("is_important", False) else 0,
+            size=(dp(12), dp(12)),
+            pos_hint={"right": 0.98, "top": 0.98},
+            opacity=1 if has_imp else 0,
         )
         self.add_widget(self.icon_important)
 
     def update_canvas(self, *args):
-        # Đổ bóng dịch lệch một chút
         self.shadow.pos = [self.x + dp(2), self.y - dp(2)]
         self.shadow.size = self.size
         
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
         
-        # Dải màu nhấn rộng 4dp
         self.accent_line.pos = self.pos
         self.accent_line.size = [dp(4), self.height]
         
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
-        self.icon_important.pos = (self.right - dp(18), self.top - dp(18))
 
     def on_release(self):
-        # b. Mở EventDetailModal khi bấm vào sự kiện
         from event_modals import EventDetailModal
         EventDetailModal(event=self.event_data).open()
+
+
+class DeadlineListModal(ModalView):
+    """
+    Popup nhỏ hiển thị danh sách các Deadline trong cùng một ngày khi người dùng bấm vào banner 'DLS:{số lượng}'.
+    Chỉ hiển thị tên Deadline. Khi bấm vào tên của Deadline nào thì mới hiện modal chi tiết của Deadline đó.
+    """
+    def __init__(self, deadlines, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.85, None)
+        self.auto_dismiss = True
+        self.background_color = [0, 0, 0, 0.5]
+
+        num_items = len(deadlines)
+        self.height = min(dp(90 + num_items * 48), dp(400))
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
+            md_bg_color=WHITE_COLOR,
+            radius=[dp(12)]
+        )
+
+        # Header tiêu đề
+        layout.add_widget(MDLabel(
+            text="Danh Sách Deadline",
+            font_style="Title",
+            role="medium",
+            bold=True,
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        # Danh sách cuộn chứa tên các Deadline
+        scroll = ScrollView(size_hint=(1, 1))
+        list_box = MDBoxLayout(orientation='vertical', spacing=dp(6), adaptive_height=True)
+
+        for dl in deadlines:
+            title = dl.get("title", "Hạn chót") if isinstance(dl, dict) else str(dl)
+            is_imp = dl.get("is_important", False) if isinstance(dl, dict) else False
+
+            btn = MDButton(
+                style="outlined",
+                size_hint_x=1,
+                size_hint_y=None,
+                height=dp(42),
+                on_release=lambda _, ev=dl: self._open_detail(ev)
+            )
+            # Thêm [!] nếu là deadline quan trọng
+            btn_text = f"[!] {title}" if is_imp else title
+            btn.add_widget(MDButtonText(
+                text=btn_text,
+                font_style="Body",
+                role="medium",
+                bold=is_imp
+            ))
+            list_box.add_widget(btn)
+
+        scroll.add_widget(list_box)
+        layout.add_widget(scroll)
+
+        # Nút Đóng
+        layout.add_widget(MDButton(
+            MDButtonText(text="ĐÓNG"),
+            style="text",
+            size_hint_x=1,
+            size_hint_y=None,
+            height=dp(36),
+            on_release=self.dismiss
+        ))
+
+        self.add_widget(layout)
+
+    def _open_detail(self, event_data):
+        self.dismiss()
+        from event_modals import EventDetailModal
+        EventDetailModal(event=event_data).open()
 
 
 class DeadlineBanner(ButtonBehavior, MDBoxLayout):
     """
     Banner nhỏ hiển thị Deadline, neo phía trên cùng của mỗi cột ngày.
-    - Bỏ dấu icon của banner (vì kivy và kivyMD không hiển thị được)
-    - Nếu 1 deadline: hiển thị tên sự kiện, rút gọn 1-2 chữ đầu nếu dài
-    - Nếu >1 deadline: Mẫu: "DLS:{số lượng sự kiện}"
-    - Bấm vào mở modal_view cho sự kiện
+    - Hiển thị dấu chấm than nhỏ màu đỏ viền đen ở đầu bên trái nếu có sự kiện is_important.
+    - Nếu 1 deadline: hiển thị tên sự kiện, rút gọn 1-2 chữ đầu nếu dài.
+    - Nếu >1 deadline: Mẫu: "DLS:{số lượng sự kiện}".
+    - Bấm vào: Nếu 1 deadline -> mở trực tiếp EventDetailModal; nếu >1 deadline -> xổ popup DeadlineListModal.
     """
     def __init__(self, deadlines, **kwargs):
         super().__init__(**kwargs)
         self.deadlines = deadlines if isinstance(deadlines, list) else [deadlines]
+        self.orientation = 'horizontal'
         self.size_hint_y = None
         self.height = dp(22)
-        self.padding = [dp(2), 0, dp(2), 0]
+        self.padding = [dp(4), 0, dp(4), 0]
+        self.spacing = dp(2)
         
         with self.canvas.before:
             Color(*EV_DEADLINE)
@@ -511,6 +595,24 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
         count = len(self.deadlines)
+        has_important = any(ev.get("is_important", False) for ev in self.deadlines if isinstance(ev, dict))
+
+        # Dấu chấm than nhỏ màu đỏ viền đen ở đầu bên trái banner nếu có sự kiện is_important
+        if has_important:
+            self.icon_important = Label(
+                text="!",
+                color=[1, 0, 0, 1],
+                outline_color=[0, 0, 0, 1],
+                outline_width=1,
+                bold=True,
+                font_size=dp(13),
+                size_hint=(None, 1),
+                width=dp(10),
+                halign="center",
+                valign="middle"
+            )
+            self.add_widget(self.icon_important)
+
         if count == 1:
             ev = self.deadlines[0]
             raw_title = ev.get("title", "Hạn chót") if isinstance(ev, dict) else str(ev)
@@ -524,15 +626,17 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
         else:
             display_text = f"DLS:{count}"
 
-        self.add_widget(MDLabel(
+        self.lbl_title = MDLabel(
             text=display_text, 
             theme_text_color="Custom", 
             text_color=WHITE_COLOR,
             font_style="Label",
             role="small",
             bold=True, 
-            halign="center"
-        ))
+            halign="center",
+            valign="middle"
+        )
+        self.add_widget(self.lbl_title)
 
     def update_canvas(self, *args):
         self.bg_rect.pos = self.pos
@@ -540,11 +644,14 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
 
     def on_release(self):
-        from event_modals import EventDetailModal
         if not self.deadlines:
             return
-        # Mở popup chi tiết deadline
-        EventDetailModal(event=self.deadlines[0]).open()
+        if len(self.deadlines) > 1:
+            # Xổ ra danh sách hiển thị tên các deadline trong ngày
+            DeadlineListModal(deadlines=self.deadlines).open()
+        else:
+            from event_modals import EventDetailModal
+            EventDetailModal(event=self.deadlines[0]).open()
 
 
 # ==============================================================================

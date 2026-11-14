@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, date, time
 from kivy.uix.modalview import ModalView
+from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -199,10 +200,7 @@ class AddEventModal(ModalView):
         content.add_widget(self.tf_start)
         content.add_widget(self.tf_end)
         content.add_widget(imp_row)
-
-        scroll.add_widget(content)
-        layout.add_widget(scroll)
-
+        
         self.lbl_status = MDLabel(
             text="",
             theme_text_color="Error",
@@ -210,7 +208,14 @@ class AddEventModal(ModalView):
             size_hint_y=None,
         )
         self.lbl_status.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
-        layout.add_widget(self.lbl_status)
+        content.add_widget(self.lbl_status)
+
+        scroll.add_widget(content)
+        layout.add_widget(scroll)
+
+        # Mở rộng scrollview vừa đúng cách 10dp theo trục Y ngay trên nút lưu
+        spacer_above_btn = Widget(size_hint_y=None, height=dp(10))
+        layout.add_widget(spacer_above_btn)
 
         btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(45))
         btn_save = MDButton(
@@ -977,20 +982,27 @@ class EventDetailModal(ModalView):
         # LIST 3 NÚT CHỨC NĂNG
         btn_box = MDBoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None, adaptive_height=True)
 
-        # 1. Nút Sửa giờ (chỉ bật khi is_hard == False)
-        edit_text = "SỬA GIỜ (30 PHÚT)" if not self.is_hard else "SỬA GIỜ (LỊCH CỐ ĐỊNH - KHÓA)"
+        # 1. Nút Sửa giờ (với DEADLINE luôn cho phép sửa, với sự kiện khác chỉ bật khi is_hard == False)
+        is_deadline = (self.event.get("kind") == "DEADLINE")
+        if is_deadline:
+            edit_text = "SỬA HẠN CHÓT (30 PHÚT)"
+            btn_disabled = False
+        else:
+            edit_text = "SỬA GIỜ (30 PHÚT)" if not self.is_hard else "SỬA GIỜ (LỊCH CỐ ĐỊNH - KHÓA)"
+            btn_disabled = self.is_hard
+
         self.btn_edit_time = MDButton(
             MDButtonText(
                 text=edit_text,
-                text_color=[1, 1, 1, 1] if not self.is_hard else [0.5, 0.5, 0.5, 1],
+                text_color=[1, 1, 1, 1] if not btn_disabled else [0.5, 0.5, 0.5, 1],
                 font_style="Label", role="small"
             ),
             style="filled",
-            md_bg_color=[0, 51/255, 204/255, 1] if not self.is_hard else [0.88, 0.88, 0.88, 1],
+            md_bg_color=[0, 51/255, 204/255, 1] if not btn_disabled else [0.88, 0.88, 0.88, 1],
             size_hint_x=1,
             size_hint_y=None,
             height=dp(38),
-            disabled=self.is_hard,
+            disabled=btn_disabled,
             on_release=self.open_edit_time_picker,
         )
         btn_box.add_widget(self.btn_edit_time)
@@ -1036,18 +1048,61 @@ class EventDetailModal(ModalView):
     def _format_time_str(self):
         try:
             st = datetime.fromisoformat(self.event["start_time"])
+            if self.event.get("kind") == "DEADLINE":
+                # Thời gian hiển thị trong modal_view của DEADLINE chỉ có 1 thời điểm
+                return f"Hạn chót: {st.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
             et = datetime.fromisoformat(self.event["end_time"])
             return f"{st.strftime('%H:%M')} - {et.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
         except Exception:
+            if self.event.get("kind") == "DEADLINE":
+                return f"Hạn chót: {self.event.get('start_time')}"
             return f"{self.event.get('start_time')} - {self.event.get('end_time')}"
 
     def open_edit_time_picker(self, instance):
-        if self.is_hard:
+        if self.is_hard and self.event.get("kind") != "DEADLINE":
             return
+
+        # Với DEADLINE: Chỉ chọn 1 khung giờ hạn chót (thay vì hai khung giờ start, end)
+        if self.event.get("kind") == "DEADLINE":
+            Time30mPickerModal(
+                title="Chọn Hạn Chót Mới",
+                on_select=self._on_deadline_time_chosen
+            ).open()
+            return
+
         Time30mPickerModal(
             title="Chọn Giờ bắt đầu mới",
             on_select=self._on_start_time_chosen
         ).open()
+
+    def _on_deadline_time_chosen(self, deadline_t_str):
+        try:
+            st_orig = datetime.fromisoformat(self.event["start_time"])
+            date_str = st_orig.strftime("%Y-%m-%d")
+        except Exception:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+        new_deadline_iso = f"{date_str}T{deadline_t_str}:00+07:00"
+
+        self.lbl_status.text = "Đang cập nhật hạn chót..."
+        self.lbl_status.theme_text_color = "Hint"
+
+        # DEADLINE có thời lượng bằng 0 (start_time == end_time)
+        self.event["start_time"] = new_deadline_iso
+        self.event["end_time"] = new_deadline_iso
+        self.lbl_time.text = self._format_time_str()
+
+        # Gọi API PATCH /api/v1/events/{id}
+        if self.event_id:
+            api.patch_event(
+                self.event_id,
+                payload={"start_time": new_deadline_iso, "end_time": new_deadline_iso},
+                on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã lưu hạn chót mới!")),
+                on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã cập nhật hạn chót cục bộ"),
+                on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã cập nhật hạn chót cục bộ"),
+            )
+        else:
+            self.lbl_status.text = "Đã cập nhật hạn chót cục bộ!"
 
     def _on_start_time_chosen(self, start_t_str):
         self._new_start_time = start_t_str
