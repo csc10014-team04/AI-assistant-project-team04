@@ -19,9 +19,23 @@ except ImportError:
     _PDFPLUMBER_AVAILABLE = False
 
 try:
+    import os
     from PIL import Image
     import pytesseract
     _OCR_AVAILABLE = True
+
+    # Check common Tesseract installation paths on Windows and Linux
+    _tess_candidates = [
+        os.getenv("TESSERACT_CMD"),
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+    ]
+    for _path in _tess_candidates:
+        if _path and Path(_path).exists():
+            pytesseract.pytesseract.tesseract_cmd = str(_path)
+            break
 except ImportError:
     _OCR_AVAILABLE = False
 
@@ -616,10 +630,16 @@ def _extract_text_from_image(file_bytes: bytes) -> str:
             "Tesseract OCR engine is not installed on this server. "
             "Contact the system administrator to install Tesseract."
         ) from exc
-    except Exception as exc:
-        raise ValueError(
-            f"OCR failed on image: {type(exc).__name__}: {exc}"
-        ) from exc
+    except Exception:
+        try:
+            extracted = pytesseract.image_to_string(image, lang="eng")
+        except Exception:
+            try:
+                extracted = pytesseract.image_to_string(image)
+            except Exception as exc:
+                raise ValueError(
+                    f"OCR failed on image: {type(exc).__name__}: {exc}"
+                ) from exc
 
     return extracted
 

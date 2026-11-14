@@ -90,6 +90,9 @@ class ReminderScheduler:
             self.reporter.report_reminder_delivered(event_id)
 
 
+reminder_scheduler = ReminderScheduler()
+
+
 def android_alarm(event_id: int, fire_epoch_ms: int, title: str) -> bool:
     """
     Android only: register an exact alarm with AlarmManager so it survives the app being closed. Needs a

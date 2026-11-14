@@ -217,15 +217,159 @@ class APIClient:
     # =========================================================================
     # 2. INGESTION
     # =========================================================================
-    def parse_preview(self, text_data, on_success, on_failure, on_error):
-        payload = {"text": text_data}
-        self._request("/api/v1/ingestion/parse-preview", method="POST", payload=payload,
-                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+    def upload_timetable_file(self, file_path, on_success=None, on_failure=None, on_error=None):
+        """Upload a timetable file (.csv, .txt, .md, .png, .jpg, .jpeg, .pdf) asynchronously via multipart/form-data."""
+        import os
+        import threading
+        import requests
+        from kivy.clock import Clock
 
-    def commit_events(self, events, on_success, on_failure, on_error):
-        payload = {"events": events}
-        self._request("/api/v1/ingestion/commit", method="POST", payload=payload,
-                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+        def _worker():
+            try:
+                url = f"{self.base_url}/api/v1/ingestion/parse-preview"
+                headers = {}
+                if self.access_token:
+                    headers["Authorization"] = f"Bearer {self.access_token}"
+
+                filename = os.path.basename(file_path)
+                with open(file_path, "rb") as f:
+                    file_bytes = f.read()
+
+                ext = os.path.splitext(filename)[1].lower()
+                mime_map = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".csv": "text/csv",
+                    ".txt": "text/plain",
+                    ".md": "text/markdown",
+                    ".pdf": "application/pdf",
+                }
+                mime_type = mime_map.get(ext, "application/octet-stream")
+
+                files = {"file": (filename, file_bytes, mime_type)}
+                resp = requests.post(url, headers=headers, files=files, timeout=(10, 30))
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"detail": resp.text}
+
+                if 200 <= resp.status_code < 300:
+                    if on_success:
+                        Clock.schedule_once(lambda dt: on_success(None, data), 0)
+                else:
+                    if on_failure:
+                        Clock.schedule_once(lambda dt: on_failure(None, data), 0)
+            except requests.exceptions.Timeout:
+                if on_error:
+                    Clock.schedule_once(lambda dt: on_error(None, "Quá thời gian kết nối tới máy chủ (Timeout 30s)"), 0)
+            except requests.exceptions.ConnectionError:
+                if on_error:
+                    Clock.schedule_once(lambda dt: on_error(None, "Không thể kết nối tới máy chủ (kiểm tra mạng hoặc VPN)"), 0)
+            except Exception as e:
+                if on_error:
+                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def parse_preview(self, text_data=None, file_path=None, on_success=None, on_failure=None, on_error=None):
+        """Preview parsed timetable rows. Accepts either file_path or raw text_data."""
+        if file_path:
+            return self.upload_timetable_file(file_path, on_success, on_failure, on_error)
+
+        import threading
+        import requests
+        from kivy.clock import Clock
+
+        def _worker():
+            try:
+                url = f"{self.base_url}/api/v1/ingestion/parse-preview"
+                headers = {}
+                if self.access_token:
+                    headers["Authorization"] = f"Bearer {self.access_token}"
+
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    data={"raw_content": text_data or ""},
+                    timeout=30,
+                )
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"detail": resp.text}
+
+                if 200 <= resp.status_code < 300:
+                    if on_success:
+                        Clock.schedule_once(lambda dt: on_success(None, data), 0)
+                else:
+                    if on_failure:
+                        Clock.schedule_once(lambda dt: on_failure(None, data), 0)
+            except Exception as e:
+                if on_error:
+                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def resolve_preview(self, import_batch_id, valid_rows, corrected_rows, skipped_line_numbers, on_success=None, on_failure=None, on_error=None):
+        """Send corrected rows and skipped lines to resolve preview into all_valid_rows."""
+        payload = {
+            "import_batch_id": import_batch_id,
+            "valid_rows": valid_rows,
+            "corrected_rows": corrected_rows,
+            "skipped_line_numbers": skipped_line_numbers,
+        }
+        self._request(
+            "/api/v1/ingestion/resolve-preview",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
+    def check_conflicts(self, incoming_rows, on_success=None, on_failure=None, on_error=None, replace_previous_imports=False):
+        """Check conflicts for parsed timetable rows."""
+        payload = {
+            "incoming_rows": incoming_rows,
+            "replace_previous_imports": replace_previous_imports,
+        }
+        self._request(
+            "/api/v1/ingestion/check-conflicts",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
+    def commit_import(self, import_batch_id, resolved_rows, on_success=None, on_failure=None, on_error=None, replace_previous_imports=False):
+        """Commit resolved timetable rows into MySQL."""
+        payload = {
+            "import_batch_id": import_batch_id,
+            "resolved_rows": resolved_rows,
+            "replace_previous_imports": replace_previous_imports,
+        }
+        self._request(
+            "/api/v1/ingestion/commit",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
+    def commit_events(self, events=None, on_success=None, on_failure=None, on_error=None, import_batch_id=None):
+        """Backward-compatibility wrapper."""
+        batch_id = import_batch_id or ""
+        resolved = events or []
+        self.commit_import(
+            import_batch_id=batch_id,
+            resolved_rows=resolved,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
 
     # =========================================================================
     # 3. SEARCH & PROPOSALS
@@ -242,6 +386,30 @@ class APIClient:
         endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
+    def search_events_query(self, query_text, on_success, on_failure=None, on_error=None, top_k=50):
+        """Schedule Search: Hybrid SQL + Vector search over user's events."""
+        from urllib.parse import urlencode
+        params = urlencode({"q": query_text, "top_k": top_k})
+        self._request(
+            f"/api/v1/search/events?{params}",
+            method="GET",
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
+    def ask_academic_kb(self, query_text, on_success, on_failure=None, on_error=None, top_k=3):
+        """Academic Knowledge Base RAG: Ask questions about courses, lecturers, requirements."""
+        payload = {"query": query_text, "top_k": top_k}
+        self._request(
+            "/api/v1/search/academic/ask",
+            method="POST",
+            payload=payload,
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
+
 
     # new method, next to the other calls:
     def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
@@ -255,6 +423,25 @@ class APIClient:
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def patch_event(self, event_id, payload, on_success=None, on_failure=None, on_error=None):
+        """Update event details (start_time, end_time, is_important, title, room)."""
+        self._request(f"/api/v1/events/{event_id}", method="PATCH", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def delete_event(self, event_id, on_success=None, on_failure=None, on_error=None):
+        """Soft delete event."""
+        self._request(f"/api/v1/events/{event_id}", method="DELETE",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def audit_reminder(self, event_id, offset_minutes=30, scheduled_on_device_at=None, on_success=None, on_failure=None, on_error=None):
+        """Post reminder audit log to backend."""
+        payload = {
+            "offset_minutes": offset_minutes,
+            "scheduled_on_device_at": scheduled_on_device_at,
+        }
+        self._request(f"/api/v1/events/{event_id}/reminder-audit", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     # =========================================================================
     # 3b. REMINDER AUDIT (used by notifier.ReminderScheduler)

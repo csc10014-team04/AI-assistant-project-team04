@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, get_db
-from routers import assistant, auth, ingestion, oauth, proposals, reminders, search, tasks
+from routers import assistant, auth, events, ingestion, oauth, proposals, reminders, search, tasks
 from services.ai_logging import LOG_PATH as AI_ERROR_LOG_PATH
 from services.telemetry import collector
 
@@ -202,6 +202,8 @@ app.include_router(tasks.router)
 app.include_router(reminders.router)
 app.include_router(ingestion.router)
 app.include_router(search.router)
+app.include_router(events.router)
+app.include_router(events.user_router)
 
 
 @app.get("/health", tags=["system"])
