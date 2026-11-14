@@ -503,6 +503,12 @@ class APIClient:
         self._request(f"/api/v1/events/{event_id}", method="DELETE",
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
 
+    def upsert_reminder(self, event_id, offset_minutes, on_success=None, on_failure=None, on_error=None):
+        """Tạo hoặc cập nhật thời gian báo trước nhắc hẹn lên Backend (PUT /api/v1/reminders/{event_id})."""
+        payload = {"offset_minutes": int(offset_minutes)}
+        self._request(f"/api/v1/reminders/{event_id}", method="PUT", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
     def audit_reminder(self, event_id, offset_minutes=30, scheduled_on_device_at=None, on_success=None, on_failure=None, on_error=None):
         """Post reminder audit log to backend."""
         payload = {
