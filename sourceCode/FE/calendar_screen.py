@@ -112,11 +112,22 @@ class HoverClickLabel(MDLabel):
         self.font_size = dp(18)
         
         self.register_event_type('on_release')
-        Window.bind(mouse_pos=self.on_mouse_pos)
+        self._is_bound = False
 
-    def on_mouse_pos(self, window, pos):
-        if not self.get_root_window(): return
-        self.text_color = LIGHT_GRAY if self.collide_point(*pos) else WHITE_COLOR
+    def on_parent(self, widget, parent):
+        if parent and not self._is_bound:
+            Window.bind(mouse_pos=self._on_mouse_pos)
+            self._is_bound = True
+        elif not parent and self._is_bound:
+            Window.unbind(mouse_pos=self._on_mouse_pos)
+            self._is_bound = False
+
+    def _on_mouse_pos(self, window, pos):
+        if not self.get_root_window():
+            return
+        target = LIGHT_GRAY if self.collide_point(*pos) else WHITE_COLOR
+        if self.text_color != target:
+            self.text_color = target
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -348,24 +359,26 @@ class WeekTimeSlotRow(MDBoxLayout):
         self.add_widget(self.lbl_time)
         
         self.days_area = MDGridLayout(cols=7)
+        line_width = 1.2 if is_hour else 0.5
         for i in range(7):
             cell = MDBoxLayout()
             with cell.canvas.before:
                 Color(*LIGHT_GRAY)
-                line_width = 1.2 if is_hour else 0.5
                 cell.bottom_line = Line(points=[0, 0, 0, 0], width=line_width)
                 cell.vertical_line = Line(points=[0, 0, 0, 0], width=1)
                 
-            def update_lines(instance, val, c=cell):
-                x, y = instance.pos
-                w, h = instance.size
-                c.bottom_line.points = [x, y, x + w, y]
-                c.vertical_line.points = [x, y, x, y + h]
-                
-            cell.bind(pos=update_lines, size=update_lines)
+            trigger = Clock.create_trigger(lambda dt, c=cell: self._update_cell_lines(c), 0)
+            cell.bind(pos=trigger, size=trigger)
             self.days_area.add_widget(cell)
             
         self.add_widget(self.days_area)
+
+    @staticmethod
+    def _update_cell_lines(c):
+        x, y = c.pos
+        w, h = c.size
+        c.bottom_line.points = [x, y, x + w, y]
+        c.vertical_line.points = [x, y, x, y + h]
 
 
 # ==============================================================================
@@ -389,7 +402,15 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
         self.padding = [dp(6), dp(4), dp(2), dp(2)] # Lùi trái một chút cho đường dải màu
         
         self.kind = event_data.get("kind", "TASK")
-        self.title = event_data.get("title", "Sự kiện")
+        
+        # a. Thêm phòng/địa điểm: Nếu phòng/địa điểm khác NULL: có dạng {tên sự kiện} - {địa điểm/phòng}
+        raw_title = event_data.get("title", "Sự kiện")
+        room = event_data.get("room")
+        if room and str(room).strip() and str(room).lower() not in ("none", "null"):
+            self.title = f"{raw_title} - {str(room).strip()}"
+        else:
+            self.title = raw_title
+
         self.is_hard = (self.kind in ["CLASS", "EXAM"])
         
         if self.kind == "CLASS": base_color = EV_CLASS
@@ -419,7 +440,7 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
-        self.add_widget(MDLabel(
+        self.lbl_title = MDLabel(
             text=self.title, 
             theme_text_color="Custom", 
             text_color=WHITE_COLOR,
@@ -428,7 +449,22 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
             bold=True, 
             halign="left", 
             valign="top"
-        ))
+        )
+        self.add_widget(self.lbl_title)
+
+        # c. Dấu chấm than ở góc trên bên phải nếu is_important == True
+        self.icon_important = Label(
+            text="!",
+            color=[1, 0, 0, 1],
+            outline_color=[0, 0, 0, 1],
+            outline_width=1,
+            bold=True,
+            font_size=dp(15),
+            size_hint=(None, None),
+            size=(dp(16), dp(16)),
+            opacity=1 if event_data.get("is_important", False) else 0,
+        )
+        self.add_widget(self.icon_important)
 
     def update_canvas(self, *args):
         # Đổ bóng dịch lệch một chút
@@ -443,18 +479,25 @@ class EventBlock(ButtonBehavior, MDBoxLayout):
         self.accent_line.size = [dp(4), self.height]
         
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
+        self.icon_important.pos = (self.right - dp(18), self.top - dp(18))
 
     def on_release(self):
-        # [CẦN BACKEND XỬ LÝ]: Khi bấm vào, có thể gọi API lấy chi tiết sự kiện
-        print(f"Bấm sự kiện: {self.title} | Loại: {self.kind}")
+        # b. Mở EventDetailModal khi bấm vào sự kiện
+        from event_modals import EventDetailModal
+        EventDetailModal(event=self.event_data).open()
 
 
 class DeadlineBanner(ButtonBehavior, MDBoxLayout):
     """
     Banner nhỏ hiển thị Deadline, neo phía trên cùng của mỗi cột ngày.
+    - Bỏ dấu icon của banner (vì kivy và kivyMD không hiển thị được)
+    - Nếu 1 deadline: hiển thị tên sự kiện, rút gọn 1-2 chữ đầu nếu dài
+    - Nếu >1 deadline: Mẫu: "DLS:{số lượng sự kiện}"
+    - Bấm vào mở modal_view cho sự kiện
     """
-    def __init__(self, title, **kwargs):
+    def __init__(self, deadlines, **kwargs):
         super().__init__(**kwargs)
+        self.deadlines = deadlines if isinstance(deadlines, list) else [deadlines]
         self.size_hint_y = None
         self.height = dp(22)
         self.padding = [dp(2), 0, dp(2), 0]
@@ -462,13 +505,27 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
         with self.canvas.before:
             Color(*EV_DEADLINE)
             self.bg_rect = RoundedRectangle(radius=[dp(4)])
-            Color(0,0,0, 0.3)
+            Color(0, 0, 0, 0.3)
             self.border = Line(width=1)
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
-        
+
+        count = len(self.deadlines)
+        if count == 1:
+            ev = self.deadlines[0]
+            raw_title = ev.get("title", "Hạn chót") if isinstance(ev, dict) else str(ev)
+            words = raw_title.strip().split()
+            if len(words) > 2:
+                display_text = f"{words[0]} {words[1]}..."
+            elif len(raw_title) > 12:
+                display_text = f"{raw_title[:10]}..."
+            else:
+                display_text = raw_title
+        else:
+            display_text = f"DLS:{count}"
+
         self.add_widget(MDLabel(
-            text=f"⏰ {title}", 
+            text=display_text, 
             theme_text_color="Custom", 
             text_color=WHITE_COLOR,
             font_style="Label",
@@ -481,6 +538,13 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
+
+    def on_release(self):
+        from event_modals import EventDetailModal
+        if not self.deadlines:
+            return
+        # Mở popup chi tiết deadline
+        EventDetailModal(event=self.deadlines[0]).open()
 
 
 # ==============================================================================
@@ -615,7 +679,10 @@ class CalendarHomeScreen(MDScreen):
                 self.timeline_grid.add_widget(WeekTimeSlotRow(hour=h, minute=m))
                 
         self.event_overlay = FloatLayout(size_hint=(1, 1))
-        self.event_overlay.bind(size=self.recalculate_event_positions)
+        self._recalc_overlay_trigger = Clock.create_trigger(
+            lambda dt: self.recalculate_event_positions(self.event_overlay, self.event_overlay.size), 0
+        )
+        self.event_overlay.bind(size=self._recalc_overlay_trigger)
         
         self.timeline_container.add_widget(self.timeline_grid)
         self.timeline_container.add_widget(self.event_overlay)
@@ -748,6 +815,8 @@ class CalendarHomeScreen(MDScreen):
         for dl_box in self.deadline_boxes:
             dl_box.clear_widgets()
             
+        deadlines_by_col = {c: [] for c in range(7)}
+
         # --- LỌC & XỬ LÝ CHUYỂN ĐỔI DỮ LIỆU ---
         for raw_ev in store.events:
             start_dt = datetime.fromisoformat(raw_ev["start_time"])
@@ -772,11 +841,16 @@ class CalendarHomeScreen(MDScreen):
             processed_ev["start_m"] = start_m
             processed_ev["duration"] = duration
 
-            # Vẽ lên Timeline hoặc gắn vào Banner Deadline
+            # Gom deadline theo cột ngày hoặc vẽ lên Timeline
             if processed_ev["kind"] == "DEADLINE":
-                self.deadline_boxes[col_index].add_widget(DeadlineBanner(title=processed_ev["title"]))
+                deadlines_by_col[col_index].append(processed_ev)
             else:
                 self.event_overlay.add_widget(EventBlock(event_data=processed_ev, col_index=col_index))
+
+        # Hiển thị DeadlineBanner theo quy tắc 1 deadline vs nhiều deadlines
+        for col, dls in deadlines_by_col.items():
+            if dls and col < len(self.deadline_boxes):
+                self.deadline_boxes[col].add_widget(DeadlineBanner(deadlines=dls))
                 
         # Gọi UI tính toán lại toạ độ Y và chiều cao sau khi render
         Clock.schedule_once(lambda dt: self.recalculate_event_positions(self.event_overlay, self.event_overlay.size), 0)
@@ -787,6 +861,8 @@ class CalendarHomeScreen(MDScreen):
     def recalculate_event_positions(self, instance, size):
         """Tính toán toạ độ (x, y) và size cho các widget EventBlock trong lưới Timeline."""
         total_width = size[0]
+        if total_width <= dp(60):
+            return
         col_width = (total_width - dp(50)) / 7.0 
         pixels_per_min = dp(2)
         

@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from database import get_db
-from routers import assistant, auth, ingestion, oauth, proposals, reminders, search, tasks
+from routers import assistant, auth, events, ingestion, oauth, proposals, reminders, search, tasks
 from services.telemetry import collector
 
 @asynccontextmanager
@@ -45,6 +45,8 @@ app.include_router(tasks.router)
 app.include_router(reminders.router)
 app.include_router(ingestion.router)
 app.include_router(search.router)
+app.include_router(events.router)
+app.include_router(events.user_router)
 
 
 @app.get("/health", tags=["system"])

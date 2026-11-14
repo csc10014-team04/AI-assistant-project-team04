@@ -1,1 +1,1 @@
-{"auth": {"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzIiwiaWF0IjoxNzk0NDgzNTk0LCJleHAiOjE3OTQ1Njk5OTR9.aM8iHBdIbgxYP17Xco5B3YxZJkCI5X7c70pBiROhkpw", "user_id": 3, "display_name": "Min"}}
+{"user_preferences": {"sleep_schedule": "Ng\u1ee7: 23:30 - D\u1eady: 06:30", "min_break_minutes": "60", "max_continuous_minutes": "200", "natural_language_preference": "dsad"}}
