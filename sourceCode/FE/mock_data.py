@@ -29,7 +29,7 @@ mock_events = [
     },
     {
         "id": 110, "title": "Đăng ký tín chỉ", "room": "Online", "kind": "DEADLINE",
-        "start_time": "2026-11-05T12:00:00+07:00", "end_time": "2026-11-05T12:00:00+07:00",
+        "start_time": "2026-10-29T12:00:00+07:00", "end_time": "2026-10-29T12:00:00+07:00",
         "is_hard": False, "is_important": True
     },
     {

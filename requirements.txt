@@ -1,0 +1,80 @@
+# ==============================================================================
+# University Life Assistant - Unified Requirements
+# Target Runtime: Python 3.12.10
+# Install: python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
+# ==============================================================================
+
+# ==============================================================================
+# 1. BACKEND DEPENDENCIES (sourceCode/BE)
+# ==============================================================================
+
+# --- web / API ---
+fastapi>=0.115,<0.116
+uvicorn>=0.30
+python-multipart>=0.0.9      # file uploads (ingestion, assistant/index-file)
+pydantic>=2.7,<3
+
+# --- database ---
+SQLAlchemy>=2.0,<2.2
+PyMySQL>=1.1
+cryptography>=42             # PyMySQL caching_sha2 auth + Fernet encryption of the RAG index
+
+# --- auth ---
+bcrypt>=4.1
+PyJWT>=2.8
+
+# --- AI / RAG ---
+httpx>=0.27,<0.28            # calls to vLLM
+psutil>=5.9                  # RAM telemetry (optional; sampler skips it if missing)
+
+# --- timetable file extraction (optional; parser degrades without them) ---
+pdfplumber>=0.11             # PDF text/tables
+pillow>=10                   # image loading and timetable OCR processing
+pytesseract>=0.3.10          # OCR wrapper; also needs the Tesseract program + "vie" language data installed on the OS
+
+# --- tests ---
+pytest>=8
+
+# --- optional (off by default) ---
+# sentence-transformers>=3.0   # only with ENABLE_NEURAL_SEARCH_FALLBACK=1 (search_engine.py); downloads a model
+
+
+# ==============================================================================
+# 2. FRONTEND DEPENDENCIES (sourceCode/FE)
+# ==============================================================================
+
+# --- Kivy & KivyMD UI Framework ---
+Kivy==2.3.1                  # Core Kivy framework
+kivymd==2.0.0                # Material Design 3 components
+materialyoucolor==3.0.4      # Dynamic color extraction for Material You themes
+materialshapes==0.3          # Shape definitions for MD3 widgets
+
+# --- Kivy Windows Graphics & Backend Providers ---
+kivy_deps.sdl2==0.8.0        # Windowing, input and audio backend
+kivy_deps.glew==0.3.2        # OpenGL extension wrangler
+kivy-deps.angle==0.4.0       # DirectX to OpenGL translation layer for Windows
+Kivy-Garden==0.1.5           # Garden flower ecosystem
+pycairo==1.29.2              # 2D vector graphics support
+
+# --- Async & Concurrency for Kivy ---
+asyncgui==0.6.3              # Asynchronous GUI control primitives
+asynckivy==0.6.4             # Async/await support inside Kivy event loop
+
+# --- HTTP Networking & API Client ---
+requests>=2.31.0             # REST API client calls to FastAPI BE
+urllib3>=2.0.0
+idna>=3.7
+certifi>=2024.0.0
+charset-normalizer>=3.3.0
+
+# --- Native Device & OS Features ---
+plyer>=2.1.0                 # Local alarms/notifications on Windows and Android
+
+# --- Windows Platform Support ---
+pywin32>=306                 # Windows native API bindings
+pypiwin32>=223
+
+# --- UI Helpers & Text Utilities ---
+filetype>=1.2.0              # File MIME detection for timetable uploads
+docutils>=0.20               # Document parser used by Kivy markup
+Pygments>=2.17.0             # Syntax highlighter

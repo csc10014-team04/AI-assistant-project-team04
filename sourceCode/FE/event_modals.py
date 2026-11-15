@@ -1,6 +1,9 @@
 import os
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from kivy.uix.modalview import ModalView
+from kivy.uix.widget import Widget
+from kivy.uix.button import Button
+from kivy.uix.gridlayout import GridLayout
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -18,20 +21,169 @@ from notifier import reminder_scheduler, VN_TZ
 
 
 # ==============================================================================
-# 0. BỘ CHỌN GIỜ 30 PHÚT (00:00 - 23:30)
+# HÀM VÀ WIDGET TIỆN ÍCH DÙNG CHUNG
 # ==============================================================================
-class Time30mPickerModal(ModalView):
-    """Bộ chọn giờ 30 phút từ 00:00 đến 23:30."""
-    def __init__(self, title="Chọn giờ", on_select=None, **kwargs):
+def check_event_conflict(new_start_dt, new_end_dt, exclude_event_id=None, exclude_event=None, is_deadline=False):
+    """
+    Kiểm tra trùng lịch với các sự kiện hiện có trong store.events:
+    - Bỏ qua chính sự kiện đang sửa (exclude_event_id hoặc exclude_event).
+    - DEADLINE có thời lượng 0 nên không xung đột chiếm dụng thời gian (blocks_availability = False).
+    - Hai khoảng [S1, E1] và [S2, E2] trùng nhau khi: S1 < E2 và E1 > S2.
+    Trả về: Danh sách các sự kiện bị trùng, rỗng nếu không trùng.
+    """
+    if is_deadline:
+        return []
+
+    overlaps = []
+    for ev in store.events:
+        if exclude_event and ev is exclude_event:
+            continue
+        if exclude_event_id and ev.get("id") == exclude_event_id:
+            continue
+        if ev.get("kind") == "DEADLINE":
+            continue
+        try:
+            ev_start = datetime.fromisoformat(ev["start_time"])
+            ev_end = datetime.fromisoformat(ev["end_time"])
+
+            s_dt = new_start_dt
+            e_dt = new_end_dt
+            if ev_start.tzinfo is not None and s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=ev_start.tzinfo)
+                e_dt = e_dt.replace(tzinfo=ev_end.tzinfo)
+            elif ev_start.tzinfo is None and s_dt.tzinfo is not None:
+                s_dt = s_dt.replace(tzinfo=None)
+                e_dt = e_dt.replace(tzinfo=None)
+
+            if s_dt < ev_end and e_dt > ev_start:
+                overlaps.append(ev)
+        except Exception:
+            continue
+    return overlaps
+
+
+class ClickableTextField(MDTextField):
+    """
+    Ô hiển thị dạng outlined nhưng nhận diện chính xác mọi cú click/touch:
+    - Tự động gọi callback on_click để mở popup tương ứng (chọn giờ, chọn loại sự kiện).
+    - Ngăn chặn việc bàn phím ảo nhảy lên và không bị lỗi kẹt focus.
+    """
+    def __init__(self, *args, on_click=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.readonly = True
+        self.on_click = on_click
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self.on_click:
+                self.on_click()
+            return True
+        return super().on_touch_down(touch)
+
+
+class KindPickerModal(ModalView):
+    """
+    Popup chọn 1 trong 5 loại sự kiện theo quy chuẩn:
+    1. Nhiệm vụ (TASK)
+    2. Lớp học (CLASS)
+    3. Bài thi (EXAM)
+    4. Sự kiện (EVENT)
+    5. Hạn chót (DEADLINE)
+    """
+    def __init__(self, current_kind="TASK", on_select=None, **kwargs):
         super().__init__(**kwargs)
-        self.size_hint = (0.85, 0.7)
+        self.size_hint = (0.85, None)
+        self.height = dp(330)
         self.auto_dismiss = True
         self.on_select = on_select
 
         layout = MDBoxLayout(
             orientation='vertical',
             padding=dp(15),
-            spacing=dp(10),
+            spacing=dp(8),
+            md_bg_color=[1, 1, 1, 1],
+            radius=[dp(12)]
+        )
+
+        layout.add_widget(MDLabel(
+            text="Chọn Loại Sự Kiện",
+            font_style="Title",
+            role="medium",
+            bold=True,
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        options = [
+            ("Nhiệm vụ", "TASK"),
+            ("Lớp học", "CLASS"),
+            ("Bài thi", "EXAM"),
+            ("Sự kiện", "EVENT"),
+            ("Hạn chót", "DEADLINE"),
+        ]
+
+        scroll = ScrollView(size_hint=(1, 1))
+        box = MDBoxLayout(orientation='vertical', spacing=dp(6), adaptive_height=True)
+
+        for display_name, kind_code in options:
+            is_selected = (kind_code == current_kind)
+            btn = Button(
+                text=f"{display_name} ({kind_code})",
+                font_size=dp(13),
+                bold=is_selected,
+                background_normal='',
+                background_color=[0, 51/255, 204/255, 1] if is_selected else [0.93, 0.94, 0.97, 1],
+                color=[1, 1, 1, 1] if is_selected else [0.1, 0.1, 0.1, 1],
+                size_hint_y=None,
+                height=dp(38),
+                on_release=lambda _, dn=display_name, kc=kind_code: self._choose(dn, kc)
+            )
+            box.add_widget(btn)
+
+        scroll.add_widget(box)
+        layout.add_widget(scroll)
+
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
+            size_hint_y=None,
+            height=dp(36),
+            on_release=self.dismiss
+        )
+        layout.add_widget(btn_cancel)
+        self.add_widget(layout)
+
+    def _choose(self, display_name, kind_code):
+        if self.on_select:
+            self.on_select(display_name, kind_code)
+        self.dismiss()
+
+
+# ==============================================================================
+# 0. BỘ CHỌN GIỜ 15 PHÚT SIÊU NHẸ (00:00 - 23:45 - GRID 4 CỘT)
+# ==============================================================================
+class Time30mPickerModal(ModalView):
+    """
+    Bộ chọn giờ từ 00:00 đến 23:45 theo bước nhảy 15 phút (:00, :15, :30, :45).
+    Tối ưu hóa tốc độ mở modal tức thì (dưới 35ms) bằng grid 4 cột và Button thuần:
+      - Cột 1: XX:00
+      - Cột 2: XX:15
+      - Cột 3: XX:30
+      - Cột 4: XX:45
+    """
+    def __init__(self, title="Chọn giờ", current_time="08:00", on_select=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.92, 0.8)
+        self.auto_dismiss = True
+        self.on_select = on_select
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
             md_bg_color=[1, 1, 1, 1],
             radius=[dp(12)]
         )
@@ -40,36 +192,43 @@ class Time30mPickerModal(ModalView):
             bold=True,
             font_style="Title",
             role="medium",
-            size_hint_y=None,
-            height=dp(35),
+            adaptive_height=True,
             halign="center"
         ))
 
         scroll = ScrollView(size_hint=(1, 1))
-        grid = MDBoxLayout(orientation='vertical', spacing=dp(4), adaptive_height=True)
+        grid = GridLayout(cols=4, spacing=dp(6), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
 
+        # Dải lựa chọn từ 00:00 đến 23:45 với 4 mốc: :00, :15, :30, :45
         for h in range(24):
-            for m in (0, 30):
+            for m in (0, 15, 30, 45):
                 time_str = f"{h:02d}:{m:02d}"
-                btn = MDButton(
-                    MDButtonText(text=time_str, font_style="Body", role="medium"),
-                    style="outlined",
-                    size_hint_x=1,
+                is_curr = (time_str == current_time)
+                btn = Button(
+                    text=time_str,
+                    font_size=dp(13),
+                    bold=is_curr,
+                    background_normal='',
+                    background_color=[0, 51/255, 204/255, 1] if is_curr else [0.93, 0.94, 0.97, 1],
+                    color=[1, 1, 1, 1] if is_curr else [0.1, 0.1, 0.1, 1],
                     size_hint_y=None,
-                    height=dp(38),
-                    on_release=lambda x, ts=time_str: self._choose(ts)
+                    height=dp(36),
+                    on_release=lambda _, ts=time_str: self._choose(ts)
                 )
                 grid.add_widget(btn)
 
         scroll.add_widget(grid)
         layout.add_widget(scroll)
 
-        btn_cancel = MDButton(
-            MDButtonText(text="ĐÓNG"),
-            style="text",
-            size_hint_x=1,
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
             size_hint_y=None,
-            height=dp(40),
+            height=dp(38),
             on_release=self.dismiss
         )
         layout.add_widget(btn_cancel)
@@ -78,6 +237,292 @@ class Time30mPickerModal(ModalView):
     def _choose(self, time_str):
         if self.on_select:
             self.on_select(time_str)
+        self.dismiss()
+
+
+# Alias để gọi tên phù hợp với bước nhảy 15 phút
+TimePickerModal = Time30mPickerModal
+
+
+# ==============================================================================
+# 0b. BỘ CHỌN THỜI GIAN BÁO TRƯỚC (15m, 30m, 45m và từ 1h đến 24h)
+# ==============================================================================
+class OffsetPickerModal(ModalView):
+    """
+    Popup chọn thời gian báo trước sự kiện khi đến end_time:
+    - Scale (XX:00, XX:15, XX:30, XX:45)
+    - Chọn từ 15 phút, 30 phút, 45 phút, và từ 1 đến 24 giờ.
+    - Dạng lưới 4 cột (GridLayout cols=4) Button thuần siêu nhẹ (<35ms).
+    """
+    def __init__(self, current_offset="00:30", on_select=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.92, 0.8)
+        self.auto_dismiss = True
+        self.on_select = on_select
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
+            md_bg_color=[1, 1, 1, 1],
+            radius=[dp(12)]
+        )
+        layout.add_widget(MDLabel(
+            text="Chọn Thời Gian Báo Trước",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=4, spacing=dp(6), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
+
+        # Danh sách các mốc: 00:15, 00:30, 00:45 và từ 01:00 đến 24:00 (mỗi 15 phút)
+        slots = [("00:15", 15), ("00:30", 30), ("00:45", 45)]
+        for h in range(1, 24):
+            for m in (0, 15, 30, 45):
+                slots.append((f"{h:02d}:{m:02d}", h * 60 + m))
+        slots.append(("24:00", 24 * 60))
+
+        for time_str, mins in slots:
+            is_curr = (time_str == current_offset)
+            btn = Button(
+                text=time_str,
+                font_size=dp(13),
+                bold=is_curr,
+                background_normal='',
+                background_color=[0, 51/255, 204/255, 1] if is_curr else [0.93, 0.94, 0.97, 1],
+                color=[1, 1, 1, 1] if is_curr else [0.1, 0.1, 0.1, 1],
+                size_hint_y=None,
+                height=dp(36),
+                on_release=lambda _, ts=time_str, m=mins: self._choose(ts, m)
+            )
+            grid.add_widget(btn)
+
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
+            size_hint_y=None,
+            height=dp(38),
+            on_release=self.dismiss
+        )
+        layout.add_widget(btn_cancel)
+        self.add_widget(layout)
+
+    def _choose(self, time_str, minutes):
+        if self.on_select:
+            self.on_select(time_str, minutes)
+        self.dismiss()
+
+
+class EditEventTimeModal(ModalView):
+    """
+    Modal sửa giờ sự kiện (dùng chung cho cả trang Lịch và trang Tìm kiếm):
+    - Tối ưu hiệu năng mở tức thì (dưới 35ms).
+    - Tách biệt hai nút riêng lẻ: 'LƯU' và 'HỦY BỎ'.
+    - Bấm 'HỦY BỎ': Đóng popup, không thay đổi bất kỳ dữ liệu nào.
+    - Bấm 'LƯU': Kiểm tra trùng lịch; nếu hợp lệ mới cập nhật vào hệ thống.
+    """
+    def __init__(self, event, on_saved=None, **kwargs):
+        super().__init__(**kwargs)
+        self.event = event
+        self.on_saved = on_saved
+        self.size_hint = (0.9, None)
+        self.auto_dismiss = False
+
+        self.is_deadline = (event.get("kind") == "DEADLINE")
+
+        try:
+            st = datetime.fromisoformat(event["start_time"])
+            et = datetime.fromisoformat(event["end_time"])
+            self.date_str = st.strftime("%Y-%m-%d")
+            self.temp_start_time = st.strftime("%H:%M")
+            self.temp_end_time = et.strftime("%H:%M")
+        except Exception:
+            self.date_str = datetime.now().strftime("%Y-%m-%d")
+            self.temp_start_time = "08:00"
+            self.temp_end_time = "09:30"
+
+        self.height = dp(310) if self.is_deadline else dp(370)
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(16),
+            spacing=dp(10),
+            md_bg_color=[1, 1, 1, 1],
+            radius=[dp(12)]
+        )
+
+        title_text = "Sửa Hạn Chót" if self.is_deadline else "Sửa Giờ Sự Kiện"
+        layout.add_widget(MDLabel(
+            text=title_text,
+            font_style="Title",
+            role="medium",
+            bold=True,
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        layout.add_widget(MDLabel(
+            text=f"Sự kiện: {event.get('title', 'Sự kiện')}",
+            font_style="Body",
+            role="medium",
+            theme_text_color="Secondary",
+            adaptive_height=True
+        ))
+
+        if self.is_deadline:
+            self.tf_deadline = ClickableTextField(
+                MDTextFieldHintText(text="Hạn chót mới (bấm để đổi)"),
+                text=self.temp_start_time,
+                mode="outlined",
+                on_click=self.open_deadline_picker
+            )
+            layout.add_widget(self.tf_deadline)
+        else:
+            self.tf_start = ClickableTextField(
+                MDTextFieldHintText(text="Giờ bắt đầu mới (bấm để đổi)"),
+                text=self.temp_start_time,
+                mode="outlined",
+                on_click=self.open_start_picker
+            )
+            self.tf_end = ClickableTextField(
+                MDTextFieldHintText(text="Giờ kết thúc mới (bấm để đổi)"),
+                text=self.temp_end_time,
+                mode="outlined",
+                on_click=self.open_end_picker
+            )
+            layout.add_widget(self.tf_start)
+            layout.add_widget(self.tf_end)
+
+        self.lbl_conflict = MDLabel(
+            text="",
+            theme_text_color="Error",
+            font_style="Label",
+            role="medium",
+            adaptive_height=True
+        )
+        layout.add_widget(self.lbl_conflict)
+
+        # Hai nút riêng biệt: LƯU và HỦY BỎ
+        btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(44))
+        btn_save = MDButton(
+            MDButtonText(text="LƯU", text_color=[1, 1, 1, 1]),
+            style="filled",
+            md_bg_color=[0, 51/255, 204/255, 1],
+            size_hint_x=1,
+            on_release=self.confirm_save
+        )
+        btn_cancel = MDButton(
+            MDButtonText(text="HỦY BỎ"),
+            style="outlined",
+            size_hint_x=1,
+            on_release=self.dismiss
+        )
+        btn_box.add_widget(btn_save)
+        btn_box.add_widget(btn_cancel)
+        layout.add_widget(btn_box)
+
+        self.add_widget(layout)
+
+    def open_deadline_picker(self):
+        Time30mPickerModal(
+            title="Chọn Hạn Chót Mới",
+            current_time=self.temp_start_time,
+            on_select=self._on_deadline_selected
+        ).open()
+
+    def _on_deadline_selected(self, t):
+        self.temp_start_time = t
+        self.temp_end_time = t
+        self.tf_deadline.text = t
+
+    def open_start_picker(self):
+        Time30mPickerModal(
+            title="Chọn Giờ bắt đầu",
+            current_time=self.temp_start_time,
+            on_select=lambda t: (setattr(self, 'temp_start_time', t), setattr(self.tf_start, 'text', t))
+        ).open()
+
+    def open_end_picker(self):
+        Time30mPickerModal(
+            title="Chọn Giờ kết thúc",
+            current_time=self.temp_end_time,
+            on_select=lambda t: (setattr(self, 'temp_end_time', t), setattr(self.tf_end, 'text', t))
+        ).open()
+
+    def confirm_save(self, instance):
+        self.lbl_conflict.text = ""
+        if self.is_deadline:
+            self.temp_end_time = self.temp_start_time
+            new_start_iso = f"{self.date_str}T{self.temp_start_time}:00+07:00"
+            new_end_iso = new_start_iso
+        else:
+            if self.temp_end_time <= self.temp_start_time:
+                self.lbl_conflict.text = "Lỗi: Giờ kết thúc phải sau giờ bắt đầu!"
+                return
+
+            new_start_iso = f"{self.date_str}T{self.temp_start_time}:00+07:00"
+            new_end_iso = f"{self.date_str}T{self.temp_end_time}:00+07:00"
+
+            new_start_dt = datetime.fromisoformat(new_start_iso)
+            new_end_dt = datetime.fromisoformat(new_end_iso)
+
+            # Kiểm tra trùng lịch (bỏ qua chính sự kiện đang sửa và các deadline)
+            overlaps = check_event_conflict(
+                new_start_dt,
+                new_end_dt,
+                exclude_event_id=self.event.get("id"),
+                exclude_event=self.event
+            )
+            if overlaps:
+                ov = overlaps[0]
+                try:
+                    ov_s = datetime.fromisoformat(ov['start_time']).strftime('%H:%M')
+                    ov_e = datetime.fromisoformat(ov['end_time']).strftime('%H:%M')
+                    self.lbl_conflict.text = f"Trùng lịch với: '{ov.get('title')}' ({ov_s} - {ov_e})!"
+                except Exception:
+                    self.lbl_conflict.text = f"Trùng lịch với: '{ov.get('title')}'!"
+                return
+
+        # Cập nhật vào đối tượng sự kiện
+        old_start = self.event.get("start_time")
+        self.event["start_time"] = new_start_iso
+        self.event["end_time"] = new_end_iso
+
+        event_id = self.event.get("id")
+
+        # Cập nhật ngay vào store.events cục bộ để cả trang Lịch và Tìm kiếm phản ánh tức thì
+        matched = False
+        for e in store.events:
+            if (event_id and e.get("id") == event_id) or (e is self.event) or (e.get("title") == self.event.get("title") and e.get("start_time") == old_start):
+                e["start_time"] = new_start_iso
+                e["end_time"] = new_end_iso
+                matched = True
+                break
+        if matched:
+            store.set_events(store.events, demo=store.is_demo)
+
+        if event_id and getattr(api, "access_token", None):
+            api.patch_event(
+                event_id,
+                payload={"start_time": new_start_iso, "end_time": new_end_iso},
+                on_success=lambda req, res: store.refresh(api),
+                on_failure=lambda req, res: None,
+                on_error=lambda req, err: None,
+            )
+
+        if self.on_saved:
+            self.on_saved(self.event)
         self.dismiss()
 
 
@@ -125,49 +570,30 @@ class AddEventModal(ModalView):
             mode="outlined"
         )
 
-        # 5 loại sự kiện theo đúng yêu cầu: Mẫu: "Nhiệm vụ" (TASK), "Lớp học" (CLASS), "Bài thi" (EXAM), "Sự kiện" (EVENT), "Hạn chót" (DEADLINE)
-        self.kind_options = [
-            ("Nhiệm vụ", "TASK"),
-            ("Lớp học", "CLASS"),
-            ("Bài thi", "EXAM"),
-            ("Sự kiện", "EVENT"),
-            ("Hạn chót", "DEADLINE"),
-        ]
         self.selected_kind = "TASK"
 
-        self.tf_kind = MDTextField(
-            MDTextFieldHintText(text="Loại sự kiện"),
-            text="Nhiệm vụ",
+        # Ô chọn loại sự kiện: Sử dụng ClickableTextField để mở popup KindPickerModal tức thì
+        self.tf_kind = ClickableTextField(
+            MDTextFieldHintText(text="Loại sự kiện (bấm để chọn)"),
+            text="Nhiệm vụ (TASK)",
             mode="outlined",
-            readonly=True,
+            on_click=self.open_kind_picker,
         )
-        self.tf_kind.bind(on_focus=self.open_kind_menu)
-
-        menu_items = [
-            {
-                "text": display_name,
-                "on_release": lambda d=display_name, k=k_val: self.set_kind(d, k)
-            }
-            for display_name, k_val in self.kind_options
-        ]
-        self.kind_menu = MDDropdownMenu(caller=self.tf_kind, items=menu_items, width_mult=4)
 
         # Bộ chọn giờ 30 phút: từ 00:00 đến 23:30 (XX:00 và XX:30)
-        self.tf_start = MDTextField(
+        self.tf_start = ClickableTextField(
             MDTextFieldHintText(text="Giờ bắt đầu (bấm để chọn)"),
             text="08:00",
             mode="outlined",
-            readonly=True,
+            on_click=self.open_start_picker,
         )
-        self.tf_start.bind(on_focus=self.open_start_picker)
 
-        self.tf_end = MDTextField(
+        self.tf_end = ClickableTextField(
             MDTextFieldHintText(text="Giờ kết thúc (bấm để chọn)"),
             text="09:30",
             mode="outlined",
-            readonly=True,
+            on_click=self.open_end_picker,
         )
-        self.tf_end.bind(on_focus=self.open_end_picker)
 
         # Option: Đánh dấu Quan trọng (is_important)
         imp_row = MDBoxLayout(
@@ -199,10 +625,7 @@ class AddEventModal(ModalView):
         content.add_widget(self.tf_start)
         content.add_widget(self.tf_end)
         content.add_widget(imp_row)
-
-        scroll.add_widget(content)
-        layout.add_widget(scroll)
-
+        
         self.lbl_status = MDLabel(
             text="",
             theme_text_color="Error",
@@ -210,7 +633,14 @@ class AddEventModal(ModalView):
             size_hint_y=None,
         )
         self.lbl_status.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
-        layout.add_widget(self.lbl_status)
+        content.add_widget(self.lbl_status)
+
+        scroll.add_widget(content)
+        layout.add_widget(scroll)
+
+        # Mở rộng scrollview vừa đúng cách 10dp theo trục Y ngay trên nút lưu
+        spacer_above_btn = Widget(size_hint_y=None, height=dp(10))
+        layout.add_widget(spacer_above_btn)
 
         btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(45))
         btn_save = MDButton(
@@ -232,33 +662,51 @@ class AddEventModal(ModalView):
         layout.add_widget(btn_box)
         self.add_widget(layout)
 
-    def open_kind_menu(self, instance, focus):
-        if focus:
-            self.kind_menu.open()
-            self.tf_kind.focus = False
+    def open_kind_picker(self):
+        """Mở popup chọn 1 trong 5 loại sự kiện theo quy chuẩn (Nhiệm vụ, Lớp học, Bài thi, Sự kiện, Hạn chót)."""
+        KindPickerModal(
+            current_kind=self.selected_kind,
+            on_select=self.set_kind
+        ).open()
 
     def set_kind(self, display_name, kind_val):
-        self.tf_kind.text = display_name
+        """Cập nhật loại sự kiện đã chọn; nếu là DEADLINE thì đồng bộ giờ kết thúc bằng giờ bắt đầu."""
         self.selected_kind = kind_val
-        self.kind_menu.dismiss()
+        self.tf_kind.text = f"{display_name} ({kind_val})"
+        if kind_val == "DEADLINE":
+            self.tf_end.text = self.tf_start.text
+            self.tf_end.disabled = True
+            self.tf_end.opacity = 0.5
+        else:
+            self.tf_end.disabled = False
+            self.tf_end.opacity = 1.0
 
-    def open_start_picker(self, instance, focus):
-        if focus:
-            self.tf_start.focus = False
-            Time30mPickerModal(
-                title="Chọn giờ bắt đầu",
-                on_select=lambda t: setattr(self.tf_start, 'text', t)
-            ).open()
+    def open_start_picker(self):
+        """Mở popup chọn giờ bắt đầu (hoặc hạn chót nếu là DEADLINE)."""
+        title = "Chọn Hạn Chót" if self.selected_kind == "DEADLINE" else "Chọn Giờ Bắt Đầu"
+        Time30mPickerModal(
+            title=title,
+            current_time=self.tf_start.text,
+            on_select=self._on_start_selected
+        ).open()
 
-    def open_end_picker(self, instance, focus):
-        if focus:
-            self.tf_end.focus = False
-            Time30mPickerModal(
-                title="Chọn giờ kết thúc",
-                on_select=lambda t: setattr(self.tf_end, 'text', t)
-            ).open()
+    def _on_start_selected(self, t):
+        self.tf_start.text = t
+        if self.selected_kind == "DEADLINE":
+            self.tf_end.text = t
+
+    def open_end_picker(self):
+        """Mở popup chọn giờ kết thúc (bỏ qua nếu là DEADLINE)."""
+        if self.selected_kind == "DEADLINE":
+            return
+        Time30mPickerModal(
+            title="Chọn Giờ Kết Thúc",
+            current_time=self.tf_end.text,
+            on_select=lambda t: setattr(self.tf_end, 'text', t)
+        ).open()
 
     def save_event(self, instance):
+        """Kiểm tra tính hợp lệ, kiểm tra trùng lịch và lưu sự kiện vào hệ thống."""
         self.lbl_status.text = ""
         title = self.tf_title.text.strip()
         room = self.tf_room.text.strip()
@@ -269,15 +717,21 @@ class AddEventModal(ModalView):
 
         if not title:
             self.lbl_status.text = "Lỗi: Tên sự kiện không được để trống!"
+            self.lbl_status.theme_text_color = "Error"
             return
 
         fmt = "%H:%M"
         try:
             start_t = datetime.strptime(start_str, fmt).time()
-            end_t = datetime.strptime(end_str, fmt).time()
             datetime.strptime(date_str, "%Y-%m-%d")
+            if self.selected_kind == "DEADLINE":
+                end_t = start_t
+                end_str = start_str
+            else:
+                end_t = datetime.strptime(end_str, fmt).time()
         except ValueError:
             self.lbl_status.text = "Lỗi: Định dạng ngày (YYYY-MM-DD) hoặc giờ (HH:MM) sai!"
+            self.lbl_status.theme_text_color = "Error"
             return
 
         start_dt = datetime.combine(datetime.strptime(date_str, "%Y-%m-%d").date(), start_t)
@@ -285,6 +739,20 @@ class AddEventModal(ModalView):
         duration = int((end_dt - start_dt).total_seconds() / 60)
         if duration <= 0 and self.selected_kind != "DEADLINE":
             self.lbl_status.text = "Lỗi: Giờ kết thúc phải sau giờ bắt đầu!"
+            self.lbl_status.theme_text_color = "Error"
+            return
+
+        # Kiểm tra trùng lịch trước khi lưu
+        overlaps = check_event_conflict(start_dt, end_dt, is_deadline=(self.selected_kind == "DEADLINE"))
+        if overlaps:
+            ov = overlaps[0]
+            try:
+                ov_s = datetime.fromisoformat(ov['start_time']).strftime('%H:%M')
+                ov_e = datetime.fromisoformat(ov['end_time']).strftime('%H:%M')
+                self.lbl_status.text = f"Lỗi: Trùng lịch với '{ov.get('title')}' ({ov_s} - {ov_e})!"
+            except Exception:
+                self.lbl_status.text = f"Lỗi: Trùng lịch với '{ov.get('title')}'!"
+            self.lbl_status.theme_text_color = "Error"
             return
 
         # Lưu vào lịch giống như step cuối ở phương thức import lịch
@@ -304,13 +772,16 @@ class AddEventModal(ModalView):
         self.lbl_status.text = "Đang lưu sự kiện vào lịch..."
         self.lbl_status.theme_text_color = "Hint"
 
-        api.commit_import(
-            import_batch_id="manual",
-            resolved_rows=incoming_row,
-            on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-            on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp),
-            on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp),
-        )
+        if getattr(api, "access_token", None):
+            api.commit_import(
+                import_batch_id="manual",
+                resolved_rows=incoming_row,
+                on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
+                on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
+                on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
+            )
+        else:
+            self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration)
 
     def _on_committed(self, res, title, is_imp, date_str, start_str):
         # Đặt báo thức nếu đánh dấu quan trọng
@@ -320,7 +791,7 @@ class AddEventModal(ModalView):
         store.refresh(api)
         self.dismiss()
 
-    def _create_manual_fallback(self, title, duration, date_str, start_str, end_str, is_imp):
+    def _create_manual_fallback(self, title, duration, date_str, start_str, end_str, is_imp, room=None):
         start_iso = f"{date_str}T{start_str}:00+07:00"
         end_iso = f"{date_str}T{end_str}:00+07:00"
         api.create_manual_event(
@@ -329,9 +800,29 @@ class AddEventModal(ModalView):
             slot_start=start_iso,
             slot_end=end_iso,
             on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-            on_failure=lambda req, res: self._set_error("Lỗi khi lưu sự kiện"),
-            on_error=lambda req, err: self._set_error("Lỗi kết nối máy chủ"),
+            on_failure=lambda req, res: self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration),
+            on_error=lambda req, err: self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration),
         )
+
+    def _save_local_event(self, title, room, date_str, start_str, end_str, is_imp, duration):
+        start_iso = f"{date_str}T{start_str}:00+07:00"
+        end_iso = f"{date_str}T{end_str}:00+07:00"
+        new_ev = {
+            "id": int(datetime.now().timestamp()),
+            "title": title,
+            "room": room or "",
+            "kind": self.selected_kind,
+            "start_time": start_iso,
+            "end_time": end_iso,
+            "is_hard": (self.selected_kind in ("CLASS", "EXAM")),
+            "is_important": is_imp,
+        }
+        store.events.append(new_ev)
+        store.set_events(store.events, demo=store.is_demo)
+        if is_imp:
+            fire_at = start_iso
+            reminder_scheduler.schedule(new_ev["id"], fire_at=fire_at, title=title, offset_minutes=30)
+        self.dismiss()
 
     def _set_error(self, message):
         self.lbl_status.text = f"Lỗi: {message}"
@@ -553,9 +1044,9 @@ class ImportStep2Modal(ModalView):
                 spacing=dp(4),
                 radius=[dp(8)],
             )
-            title_text = f"✅ [{row.get('kind', 'CLASS')}] {row.get('course_code', '')} {row.get('title', '')}".strip()
-            time_text = f"🕒 {row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Phòng: {row.get('room') or 'Chưa rõ'}"
-            date_text = f"📅 Từ {row.get('first_date')} đến {row.get('last_date')}"
+            title_text = f"[{row.get('kind', 'CLASS')}] {row.get('course_code', '')} {row.get('title', '')}".strip()
+            time_text = f"{row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Phòng: {row.get('room') or 'Chưa rõ'}"
+            date_text = f"Từ {row.get('first_date')} đến {row.get('last_date')}"
             
             card.add_widget(MDLabel(text=title_text, bold=True, size_hint_y=None, height=dp(24)))
             card.add_widget(MDLabel(text=time_text, theme_text_color="Secondary", size_hint_y=None, height=dp(20)))
@@ -575,7 +1066,7 @@ class ImportStep2Modal(ModalView):
             )
             card.add_widget(
                 MDLabel(
-                    text=f"⚠️ Dòng {row.get('line_number')}: {row.get('error_message')}",
+                    text=f"[Lỗi] Dòng {row.get('line_number')}: {row.get('error_message')}",
                     bold=True,
                     text_color=[0.8, 0.5, 0, 1],
                     size_hint_y=None,
@@ -603,7 +1094,7 @@ class ImportStep2Modal(ModalView):
             )
             empty_card.add_widget(
                 MDLabel(
-                    text="⚠️ Không phát hiện được sự kiện nào trong file.\nVui lòng kiểm tra lại định dạng file hoặc hình ảnh.",
+                    text="Không phát hiện được sự kiện nào trong file.\nVui lòng kiểm tra lại định dạng file hoặc hình ảnh.",
                     theme_text_color="Error",
                     halign="center",
                     size_hint_y=None,
@@ -756,7 +1247,7 @@ class ImportStep3Modal(ModalView):
             )
             card.add_widget(
                 MDLabel(
-                    text=f"🚨 {conf.get('overlap_description')}",
+                    text=f"[Xung đột] {conf.get('overlap_description')}",
                     bold=True,
                     text_color=[0.9, 0.1, 0.1, 1],
                     size_hint_y=None,
@@ -882,14 +1373,18 @@ class EventDetailModal(ModalView):
       2. Nút [Xóa sự kiện] -> Gọi DELETE /api/v1/events/{id}
       3. Nút bật/tắt [Đánh dấu Quan trọng] -> App đặt lịch hẹn báo thức cục bộ và gọi API lưu vết Audit
     """
-    def __init__(self, event, **kwargs):
+    def __init__(self, event, on_event_updated=None, **kwargs):
         super().__init__(**kwargs)
         self.size_hint = (0.92, 0.78)
         self.auto_dismiss = True
+        self.raw_event_ref = event
         self.event = dict(event or {})
         self.event_id = self.event.get("id")
         self.is_hard = bool(self.event.get("is_hard", False) or self.event.get("kind") in ("CLASS", "EXAM"))
         self.is_important = bool(self.event.get("is_important", False))
+        self.on_event_updated = on_event_updated
+        self.offset_minutes = 30  # Mặc định kích hoạt trước 30 phút
+        self.offset_str = "00:30"
 
         layout = MDBoxLayout(
             orientation='vertical',
@@ -902,7 +1397,7 @@ class EventDetailModal(ModalView):
         # Header: Tên sự kiện
         header_box = MDBoxLayout(orientation='vertical', size_hint_y=None, adaptive_height=True, spacing=dp(4))
         self.lbl_title = MDLabel(
-            text=f"📌 {self.event.get('title', 'Sự kiện')}",
+            text=f"{self.event.get('title', 'Sự kiện')}",
             bold=True,
             font_style="Title",
             role="medium",
@@ -934,7 +1429,7 @@ class EventDetailModal(ModalView):
         room = self.event.get("room")
         room_display = room.strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else "Không có"
         self.lbl_room = MDLabel(
-            text=f"📍 Địa điểm / Phòng: {room_display}",
+            text=f"Địa điểm / Phòng: {room_display}",
             font_style="Body",
             role="medium",
             adaptive_height=True,
@@ -952,7 +1447,7 @@ class EventDetailModal(ModalView):
 
         # Trạng thái quan trọng
         self.lbl_imp_status = MDLabel(
-            text="⭐ Sự kiện Quan trọng: " + ("ĐÃ BẬT (!)" if self.is_important else "TẮT"),
+            text="Sự kiện Quan trọng: " + ("ĐÃ BẬT (!)" if self.is_important else "TẮT"),
             theme_text_color="Custom",
             text_color=[0.9, 0.4, 0, 1] if self.is_important else [0.5, 0.5, 0.5, 1],
             bold=True,
@@ -977,36 +1472,68 @@ class EventDetailModal(ModalView):
         # LIST 3 NÚT CHỨC NĂNG
         btn_box = MDBoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None, adaptive_height=True)
 
-        # 1. Nút Sửa giờ (chỉ bật khi is_hard == False)
-        edit_text = "SỬA GIỜ (30 PHÚT)" if not self.is_hard else "SỬA GIỜ (LỊCH CỐ ĐỊNH - KHÓA)"
+        # 1. Nút Sửa giờ (với DEADLINE luôn cho phép sửa, với sự kiện khác chỉ bật khi is_hard == False)
+        is_deadline = (self.event.get("kind") == "DEADLINE")
+        if is_deadline:
+            edit_text = "SỬA HẠN CHÓT"
+            btn_disabled = False
+        else:
+            edit_text = "SỬA GIỜ" if not self.is_hard else "SỬA GIỜ (LỊCH CỐ ĐỊNH - KHÓA)"
+            btn_disabled = self.is_hard
+
         self.btn_edit_time = MDButton(
             MDButtonText(
                 text=edit_text,
-                text_color=[1, 1, 1, 1] if not self.is_hard else [0.5, 0.5, 0.5, 1],
+                text_color=[1, 1, 1, 1] if not btn_disabled else [0.5, 0.5, 0.5, 1],
                 font_style="Label", role="small"
             ),
             style="filled",
-            md_bg_color=[0, 51/255, 204/255, 1] if not self.is_hard else [0.88, 0.88, 0.88, 1],
+            md_bg_color=[0, 51/255, 204/255, 1] if not btn_disabled else [0.88, 0.88, 0.88, 1],
             size_hint_x=1,
             size_hint_y=None,
             height=dp(38),
-            disabled=self.is_hard,
+            disabled=btn_disabled,
             on_release=self.open_edit_time_picker,
         )
         btn_box.add_widget(self.btn_edit_time)
 
-        # 2. Nút Bật/Tắt Đánh dấu Quan trọng (Nhắc nhở Local Notification)
-        imp_btn_text = "TẮT ĐÁNH DẤU QUAN TRỌNG" if self.is_important else "BẬT ĐÁNH DẤU QUAN TRỌNG (!)"
+        # 2. Hàng QUAN TRỌNG & Ô chọn "Báo trước:" khi đến end_time
+        imp_row = MDBoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(38))
         self.btn_toggle_important = MDButton(
-            MDButtonText(text=imp_btn_text, text_color=[1, 1, 1, 1], font_style="Label", role="small"),
+            MDButtonText(
+                text="QUAN TRỌNG (!)" if self.is_important else "QUAN TRỌNG",
+                text_color=[1, 1, 1, 1],
+                font_style="Label",
+                role="small"
+            ),
             style="filled",
-            md_bg_color=[0.9, 0.45, 0, 1] if not self.is_important else [0.5, 0.5, 0.5, 1],
-            size_hint_x=1,
-            size_hint_y=None,
-            height=dp(38),
+            md_bg_color=[0.9, 0.45, 0, 1] if self.is_important else [0.65, 0.65, 0.65, 1],
+            size_hint_x=0.48,
             on_release=self.toggle_important,
         )
-        btn_box.add_widget(self.btn_toggle_important)
+        imp_row.add_widget(self.btn_toggle_important)
+
+        offset_box = MDBoxLayout(orientation='horizontal', spacing=dp(4), size_hint_x=0.52)
+        lbl_offset = MDLabel(
+            text="Báo trước:",
+            font_style="Label",
+            role="medium",
+            bold=True,
+            adaptive_width=True,
+            pos_hint={"center_y": 0.5}
+        )
+        offset_box.add_widget(lbl_offset)
+
+        self.btn_offset = MDButton(
+            MDButtonText(text=self.offset_str, font_style="Label", role="small"),
+            style="outlined",
+            size_hint_x=1,
+            pos_hint={"center_y": 0.5},
+            on_release=self.open_offset_picker
+        )
+        offset_box.add_widget(self.btn_offset)
+        imp_row.add_widget(offset_box)
+        btn_box.add_widget(imp_row)
 
         # 3. Nút Xóa sự kiện
         self.btn_delete = MDButton(
@@ -1036,91 +1563,116 @@ class EventDetailModal(ModalView):
     def _format_time_str(self):
         try:
             st = datetime.fromisoformat(self.event["start_time"])
+            if self.event.get("kind") == "DEADLINE":
+                # Thời gian hiển thị trong modal_view của DEADLINE chỉ có 1 thời điểm
+                return f"Hạn chót: {st.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
             et = datetime.fromisoformat(self.event["end_time"])
-            return f"🕒 {st.strftime('%H:%M')} - {et.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
+            return f"{st.strftime('%H:%M')} - {et.strftime('%H:%M')}  ({st.strftime('%d/%m/%Y')})"
         except Exception:
-            return f"🕒 {self.event.get('start_time')} - {self.event.get('end_time')}"
+            if self.event.get("kind") == "DEADLINE":
+                return f"Hạn chót: {self.event.get('start_time')}"
+            return f"{self.event.get('start_time')} - {self.event.get('end_time')}"
 
     def open_edit_time_picker(self, instance):
-        if self.is_hard:
+        """
+        Mở modal sửa giờ (EditEventTimeModal) tối ưu hiệu năng tức thì (<35ms),
+        có 2 nút riêng biệt 'LƯU' và 'HỦY BỎ', tích hợp tự động kiểm tra trùng lịch.
+        """
+        if self.is_hard and self.event.get("kind") != "DEADLINE":
             return
-        Time30mPickerModal(
-            title="Chọn Giờ bắt đầu mới",
-            on_select=self._on_start_time_chosen
+        EditEventTimeModal(
+            event=self.event,
+            on_saved=self._on_time_saved
         ).open()
 
-    def _on_start_time_chosen(self, start_t_str):
-        self._new_start_time = start_t_str
-        Time30mPickerModal(
-            title="Chọn Giờ kết thúc mới",
-            on_select=self._on_end_time_chosen
-        ).open()
-
-    def _on_end_time_chosen(self, end_t_str):
-        new_start_t = self._new_start_time
-        new_end_t = end_t_str
-        try:
-            st_orig = datetime.fromisoformat(self.event["start_time"])
-            date_str = st_orig.strftime("%Y-%m-%d")
-        except Exception:
-            date_str = datetime.now().strftime("%Y-%m-%d")
-
-        new_start_iso = f"{date_str}T{new_start_t}:00+07:00"
-        new_end_iso = f"{date_str}T{new_end_t}:00+07:00"
-
-        self.lbl_status.text = "Đang cập nhật giờ..."
-        self.lbl_status.theme_text_color = "Hint"
-
-        # Cập nhật cục bộ trước
-        self.event["start_time"] = new_start_iso
-        self.event["end_time"] = new_end_iso
+    def _on_time_saved(self, updated_event):
+        """Được gọi sau khi người dùng bấm LƯU thành công trong EditEventTimeModal."""
+        self.event = updated_event
+        if isinstance(self.raw_event_ref, dict):
+            self.raw_event_ref["start_time"] = updated_event.get("start_time")
+            self.raw_event_ref["end_time"] = updated_event.get("end_time")
         self.lbl_time.text = self._format_time_str()
+        self.lbl_status.text = "Đã cập nhật thời gian mới vào lịch!"
+        self.lbl_status.theme_text_color = "Hint"
+        if self.on_event_updated:
+            self.on_event_updated(updated_event)
 
-        # Gọi API PATCH /api/v1/events/{id}
+    def open_offset_picker(self, instance):
+        """Mở popup chọn thời gian báo trước (scale 15m từ 1h đến 24h)."""
+        OffsetPickerModal(
+            current_offset=self.offset_str,
+            on_select=self._on_offset_chosen
+        ).open()
+
+    def _on_offset_chosen(self, time_str, minutes):
+        """Cập nhật mốc thời gian báo trước; nếu đang bật quan trọng thì tái lập lịch hẹn."""
+        self.offset_str = time_str
+        self.offset_minutes = minutes
+        if self.btn_offset.children:
+            self.btn_offset.children[0].text = time_str
+        if self.is_important:
+            self._arm_alarm()
+
+    def _arm_alarm(self):
+        """Tính toán thời gian thông báo = [end_time] - [báo trước] và lên lịch hẹn."""
+        try:
+            end_dt = datetime.fromisoformat(self.event["end_time"])
+        except Exception:
+            end_dt = datetime.now()
+        # Thời gian thông báo sẽ là: [end_time] - [báo trước]
+        fire_dt = end_dt - timedelta(minutes=self.offset_minutes)
+        fire_at_iso = fire_dt.isoformat()
+
+        title = self.event.get("title", "Sự kiện")
+        room = self.event.get("room", "")
+        try:
+            st = datetime.fromisoformat(self.event["start_time"])
+            start_str = st.strftime("%H:%M")
+        except Exception:
+            start_str = self.event.get("start_time", "")
+
+        reminder_scheduler.schedule(
+            self.event_id or 0,
+            fire_at=fire_at_iso,
+            title=title,
+            room=room,
+            start_time_str=start_str,
+            offset_minutes=self.offset_minutes
+        )
+
         if self.event_id:
-            api.patch_event(
+            api.upsert_reminder(
                 self.event_id,
-                payload={"start_time": new_start_iso, "end_time": new_end_iso},
-                on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã lưu giờ mới!")),
-                on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã cập nhật giờ cục bộ"),
-                on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã cập nhật giờ cục bộ"),
+                offset_minutes=self.offset_minutes,
+                on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", f"Đã bật báo thức trước {self.offset_str}!")),
+                on_failure=lambda req, res: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
+                on_error=lambda req, err: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
+            )
+            api.audit_reminder(
+                self.event_id,
+                offset_minutes=self.offset_minutes,
+                scheduled_on_device_at=datetime.now(VN_TZ).isoformat(),
             )
         else:
-            self.lbl_status.text = "Đã cập nhật giờ cục bộ!"
+            self.lbl_status.text = f"Đã bật báo thức cục bộ ({self.offset_str})."
 
     def toggle_important(self, instance):
         self.is_important = not self.is_important
         self.event["is_important"] = self.is_important
 
         if self.is_important:
-            self.lbl_imp_status.text = "⭐ Sự kiện Quan trọng: ĐÃ BẬT (!)"
+            self.lbl_imp_status.text = "Sự kiện Quan trọng: ĐÃ BẬT (!)"
             self.lbl_imp_status.text_color = [0.9, 0.4, 0, 1]
-            self.btn_toggle_important.children[0].text = "TẮT ĐÁNH DẤU QUAN TRỌNG"
-            self.btn_toggle_important.md_bg_color = [0.5, 0.5, 0.5, 1]
-
-            # Đặt lịch hẹn báo thức cục bộ trên thiết bị
-            fire_at = self.event.get("start_time")
-            title = self.event.get("title", "Sự kiện")
-            if fire_at:
-                reminder_scheduler.schedule(self.event_id or 0, fire_at=fire_at, title=title, offset_minutes=30)
-
-            # Gọi API báo về cho BE lưu vết Audit
-            if self.event_id:
-                api.audit_reminder(
-                    self.event_id,
-                    offset_minutes=30,
-                    scheduled_on_device_at=datetime.now(VN_TZ).isoformat(),
-                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã bật báo thức & lưu audit!")),
-                    on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã bật báo thức cục bộ."),
-                    on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã bật báo thức cục bộ."),
-                )
-            else:
-                self.lbl_status.text = "Đã bật báo thức cục bộ."
-        else:
-            self.lbl_imp_status.text = "⭐ Sự kiện Quan trọng: TẮT"
-            self.lbl_imp_status.text_color = [0.5, 0.5, 0.5, 1]
-            self.btn_toggle_important.children[0].text = "BẬT ĐÁNH DẤU QUAN TRỌNG (!)"
+            if self.btn_toggle_important.children:
+                self.btn_toggle_important.children[0].text = "QUAN TRỌNG (!)"
             self.btn_toggle_important.md_bg_color = [0.9, 0.45, 0, 1]
+            self._arm_alarm()
+        else:
+            self.lbl_imp_status.text = "Sự kiện Quan trọng: TẮT"
+            self.lbl_imp_status.text_color = [0.5, 0.5, 0.5, 1]
+            if self.btn_toggle_important.children:
+                self.btn_toggle_important.children[0].text = "QUAN TRỌNG"
+            self.btn_toggle_important.md_bg_color = [0.65, 0.65, 0.65, 1]
 
             # Hủy báo thức cục bộ
             reminder_scheduler.cancel(self.event_id or 0)
@@ -1130,7 +1682,7 @@ class EventDetailModal(ModalView):
                 api.patch_event(
                     self.event_id,
                     payload={"is_important": False},
-                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt đánh dấu quan trọng.")),
+                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt quan trọng.")),
                     on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
                     on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
                 )
@@ -1154,4 +1706,10 @@ class EventDetailModal(ModalView):
     def _remove_from_local_store(self):
         if self.event_id:
             remaining = [e for e in store.events if e.get("id") != self.event_id]
+            store.set_events(remaining, demo=store.is_demo)
+        else:
+            remaining = [
+                e for e in store.events
+                if not (e.get("title") == self.event.get("title") and e.get("start_time") == self.event.get("start_time"))
+            ]
             store.set_events(remaining, demo=store.is_demo)

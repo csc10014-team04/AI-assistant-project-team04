@@ -299,6 +299,40 @@ class SideBarMenu(ModalView):
         self.scroll = ScrollView(size_hint=(1, 1))
         self.menu_list = MDBoxLayout(orientation='vertical', adaptive_height=True, padding=dp(12), spacing=dp(10))
         
+        # Ô chức năng: Thời gian báo lại (chỉ cho phép nhập số, gồm 2 ô: Giờ và Phút)
+        snooze_title = MDLabel(
+            text="Thời gian báo lại",
+            bold=True,
+            font_style="Title",
+            role="small",
+            theme_text_color="Custom",
+            text_color=BLUE_COLOR,
+            size_hint_y=None,
+            height=dp(28)
+        )
+        self.menu_list.add_widget(snooze_title)
+
+        snooze_row = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(48), spacing=dp(8))
+        self.tf_snooze_h = MDTextField(
+            MDTextFieldHintText(text="Giờ"),
+            text="0",
+            mode="outlined",
+            size_hint_x=0.5,
+            input_filter="int"
+        )
+        self.tf_snooze_m = MDTextField(
+            MDTextFieldHintText(text="Phút"),
+            text="5",
+            mode="outlined",
+            size_hint_x=0.5,
+            input_filter="int"
+        )
+        self.tf_snooze_h.bind(text=self._on_snooze_changed)
+        self.tf_snooze_m.bind(text=self._on_snooze_changed)
+        snooze_row.add_widget(self.tf_snooze_h)
+        snooze_row.add_widget(self.tf_snooze_m)
+        self.menu_list.add_widget(snooze_row)
+
         # Header Tùy chọn xếp lịch
         pref_title = MDLabel(
             text="Tùy chọn xếp lịch",
@@ -430,6 +464,19 @@ class SideBarMenu(ModalView):
         if hasattr(self, 'header_bg') and hasattr(self, 'header'):
             self.header_bg.pos = self.header.pos
             self.header_bg.size = self.header.size
+
+    def _on_snooze_changed(self, instance, value):
+        from notifier import set_snooze_interval
+        try:
+            h = int(self.tf_snooze_h.text.strip() or 0)
+        except ValueError:
+            h = 0
+        try:
+            m = int(self.tf_snooze_m.text.strip() or 0)
+        except ValueError:
+            m = 5
+        total_mins = max(1, h * 60 + m)
+        set_snooze_interval(total_mins)
 
     def show_time_picker(self, mode):
         picker = SimpleTimePicker(mode=mode, callback=self.on_time_save)
