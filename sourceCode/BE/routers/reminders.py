@@ -1,12 +1,14 @@
 # [pic: lam] p2-13 reminder sync & audit trail endpoints (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
+import logging
 import os
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,8 @@ from services.security import get_current_user
 router = APIRouter(prefix="/api/v1/reminders", tags=["reminders"])
 
 AUDIT_LOG_PATH = Path(os.getenv("REMINDER_AUDIT_LOG_PATH", str(Path(__file__).resolve().parent.parent / "logs" / "reminder_audit.jsonl")))
+_audit_lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 
 class ReminderUpsert(BaseModel):
@@ -25,6 +29,14 @@ class ReminderUpsert(BaseModel):
 
 class DeviceReport(BaseModel):
     at: datetime | None = None  # device-side timestamp (aware); defaults to server now
+
+    @field_validator("at")
+    @classmethod
+    def require_aware_timestamp(cls, value: datetime | None) -> datetime | None:
+        """Input: optional device time. Output: aware datetime. Edge Cases: reject missing timezone offsets."""
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("at must include a timezone offset")
+        return value
 
 
 class ReminderOut(BaseModel):
@@ -41,11 +53,12 @@ def _audit(action: str, reminder: Reminder, owner_id: int) -> None:
     record = {"ts": datetime.now(UTC_TZ).isoformat(), "action": action, "reminder_id": reminder.id,
               "event_id": reminder.event_id, "owner_id": owner_id, "offset_minutes": reminder.offset_minutes}
     try:
-        AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with AUDIT_LOG_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record) + "\n")
+        with _audit_lock:
+            AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with AUDIT_LOG_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
     except OSError:
-        pass
+        _logger.warning("Could not append the reminder audit log at %s", AUDIT_LOG_PATH, exc_info=True)
 
 
 def _get_event(db: Session, owner_id: int, event_id: int) -> Event:
