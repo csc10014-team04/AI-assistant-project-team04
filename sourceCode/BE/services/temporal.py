@@ -33,7 +33,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
                 clarifying question plus a safe default (next 7 days). Missing hint => default window, assumed.
     output: ResolvedWindow.
     """
-    if reference_now.tzinfo is None:
+    if reference_now.tzinfo is None or reference_now.utcoffset() is None:
         raise ValueError("reference_now must be timezone-aware")
     today = reference_now.astimezone(VN_TZ).date()
     default = ResolvedWindow(today, today + timedelta(days=6), assumed=True,
@@ -70,16 +70,21 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         return ResolvedWindow(today + timedelta(days=2), today + timedelta(days=2))
 
     next_week = "tuần sau" in h or "next week" in h
+    is_weekend = "cuối tuần" in h or "weekend" in h
+    next_weekend = "next weekend" in h
     wd = re.search(r"thứ\s*(hai|ba|tư|năm|sáu|bảy|[2-7])", h)
     sunday = "chủ nhật" in h and not wd
 
-    if next_week and not wd and not sunday:
+    if next_week and not wd and not sunday and not is_weekend:
         mon = _week_monday(today) + timedelta(days=7)
         return ResolvedWindow(mon, mon + timedelta(days=6))
     if "tuần này" in h or "this week" in h:
         return ResolvedWindow(today, _week_monday(today) + timedelta(days=6))
-    if "cuối tuần" in h:
+    if is_weekend:
         sat = _week_monday(today) + timedelta(days=5)
+        if next_week or next_weekend:
+            sat += timedelta(days=7)
+            return ResolvedWindow(sat, sat + timedelta(days=1))
         return ResolvedWindow(max(sat, today), sat + timedelta(days=1))
     if "tháng sau" in h:
         first = (today.replace(day=1) + timedelta(days=32)).replace(day=1)

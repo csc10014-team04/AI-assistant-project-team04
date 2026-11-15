@@ -19,6 +19,7 @@ from models import (
     TaskStatus,
     TimeSlot,
     UserPreference,
+    ensure_aware,
 )
 from services.nlu import NluResult
 from services.search_engine import find_user_free_slots
@@ -193,6 +194,7 @@ def create_proposal(
                 The AI never writes to `events` - only a proposal is created.
     output: the new Proposal, or None when no free block exists in the window.
     """
+    ensure_aware(now, "now")
     now_vn = now.astimezone(VN_TZ)
     if parent is not None:  # inherit the task context from the proposal being rescheduled
         task = parent.task
@@ -208,17 +210,22 @@ def create_proposal(
         excluded, fallback_start = [], None
     excluded = excluded + list(extra_excluded or [])
 
+    if duration <= 0:
+        raise ProposalError(422, "duration_minutes must be positive")
+
     window_start, window_end = _search_window(nlu, now_vn, fallback_start)
-    gaps = find_user_free_slots(db, owner_id, window_start, window_end, duration)
+    # One calendar scan supplies gaps for both continuous placement and task splitting.
+    gap_floor = min(duration, MIN_BLOCK_MIN)
+    gaps = find_user_free_slots(db, owner_id, window_start, window_end, gap_floor)
     pref = db.scalar(select(UserPreference).where(UserPreference.user_id == owner_id))
     cap = pref.max_block_minutes if pref else 180  # longest continuous work block the user accepts
+    usable_gaps = _subtract(gaps, excluded)
     pieces: list[TimeSlot] | None = None
     if duration <= cap:  # a whole block is preferred whenever the task is short enough
-        chosen = _pick_slot(gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, excluded, nlu.requested_start)
+        chosen = _pick_slot(usable_gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, [], nlu.requested_start)
         pieces = [chosen] if chosen else None
     if pieces is None:  # too long for one block, or no gap long enough: split it (P2-4)
-        small = find_user_free_slots(db, owner_id, window_start, window_end, MIN_BLOCK_MIN)
-        pieces = split_task(_subtract(small, excluded), duration, cap)
+        pieces = split_task(usable_gaps, duration, cap)
     if not pieces:
         return None
     chosen = pieces[0]
@@ -327,8 +334,14 @@ def create_manual_event(
     already CONFIRMED and its event is stored with source MANUAL. The task is placed at the start of the gap.
     """
     for label, value in (("slot_start", slot_start), ("slot_end", slot_end)):
-        if value.tzinfo is None:
+        if value.tzinfo is None or value.utcoffset() is None:
             raise ProposalError(422, f"{label} must be timezone-aware")
+    clean_title = title.strip()[:255]
+    if not clean_title:
+        raise ProposalError(422, "title must not be blank")
+    if duration_minutes <= 0:
+        raise ProposalError(422, "duration_minutes must be positive")
+
     start = slot_start.astimezone(VN_TZ).replace(second=0, microsecond=0)
     gap_end = slot_end.astimezone(VN_TZ)
     if start.minute % 15 != 0:
@@ -337,7 +350,7 @@ def create_manual_event(
     if end > gap_end:
         raise ProposalError(422, "the chosen slot is shorter than the task duration")
     task = Task(
-        owner_id=owner_id, title=title.strip()[:255], duration_minutes=duration_minutes,
+        owner_id=owner_id, title=clean_title, duration_minutes=duration_minutes,
         priority=3, priority_source=PrioritySource.DEFAULT, status=TaskStatus.SCHEDULED,
     )
     db.add(task)
@@ -359,8 +372,14 @@ PRIORITY_LABEL = {1: "cao", 2: "trung bình", 3: "thấp"}
 
 
 def sort_queue(tasks: list[Task]) -> list[Task]:
-    """scheduling order: priority weight first (1 = most important), then oldest task, then id."""
-    return sorted(tasks, key=lambda t: (t.priority, t.created_at or datetime.min, t.id))
+    """Input: task rows. Output: stable priority order. Edge Cases: missing or naive creation timestamps."""
+    def sort_key(task: Task) -> tuple[int, bool, datetime, int]:
+        """Input: one task. Output: comparable queue key. Edge Cases: database-naive timestamps."""
+        created = from_db_to_vn(task.created_at) if task.created_at is not None else None
+        fallback = datetime.max.replace(tzinfo=VN_TZ)
+        return (task.priority, created is None, created or fallback, task.id or 0)
+
+    return sorted(tasks, key=sort_key)
 
 
 @dataclass

@@ -1,3 +1,5 @@
+# requires python 3.12 or 3.13 on windows (Kivy==2.3.1 prebuilt wheels: cp312/cp313)
+# install: py -3.12 -m pip install -r requirements.txt
 asyncgui==0.6.3
 asynckivy==0.6.4
 certifi==2026.10.19

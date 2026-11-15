@@ -1,5 +1,7 @@
 # [pic: lam] p2-10 fifo inference request broker (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
+import logging
+import math
 import threading
 import time
 import uuid
@@ -14,6 +16,7 @@ from models import InferenceQueueLog, QueueStatus
 T = TypeVar("T")
 
 QUEUE_MAX_WAIT_SECONDS = 1.0  # + 3.0s llm timeout keeps worst-case end-to-end latency at 4s
+_logger = logging.getLogger(__name__)
 
 
 class QueueWaitTimeout(Exception):
@@ -45,9 +48,13 @@ class InferenceBroker:
         core logic: enqueue ticket -> wait until it is at the head and the model is idle -> run fn -> release.
         output: fn's return value; raises QueueWaitTimeout (status TIMEOUT) or re-raises fn's error (FAILED).
         """
+        if not math.isfinite(max_wait) or max_wait < 0:
+            raise ValueError("max_wait must be a finite, non-negative number of seconds")
+
         ticket = uuid.uuid4().hex
         enq = datetime.now(UTC_TZ)
         deadline = time.monotonic() + max_wait
+        timed_out_at: datetime | None = None
         with self._cond:
             self._waiting.append(ticket)
             while not (self._running is None and self._waiting[0] == ticket):
@@ -55,11 +62,18 @@ class InferenceBroker:
                 if remaining <= 0:
                     self._waiting.remove(ticket)
                     self._cond.notify_all()
-                    self._record(ticket, user_id, enq, None, datetime.now(UTC_TZ), QueueStatus.TIMEOUT)
-                    raise QueueWaitTimeout(f"waited more than {max_wait}s for the model")
+                    timed_out_at = datetime.now(UTC_TZ)
+                    break
                 self._cond.wait(timeout=remaining)
-            self._waiting.popleft()
-            self._running = ticket
+            if timed_out_at is None:
+                self._waiting.popleft()
+                self._running = ticket
+
+        if timed_out_at is not None:
+            # Database recording happens outside the queue lock so a slow recorder cannot block other tickets.
+            self._record(ticket, user_id, enq, None, timed_out_at, QueueStatus.TIMEOUT)
+            raise QueueWaitTimeout(f"waited more than {max_wait}s for the model")
+
         started = datetime.now(UTC_TZ)
         status = QueueStatus.COMPLETED
         try:
@@ -82,7 +96,7 @@ class InferenceBroker:
             self.recorder({"request_id": ticket, "user_id": user_id, "enqueued_at": enq,
                            "started_at": start, "completed_at": end, "status": status})
         except Exception:
-            pass  # telemetry must never break inference
+            _logger.warning("Inference queue telemetry recorder failed", exc_info=True)
 
 
 def db_recorder(entry: dict) -> None:
