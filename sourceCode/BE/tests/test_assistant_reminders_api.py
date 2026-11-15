@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, to_db_utc
-from models import AiErrorLog, Event, EventKind, EventSource, Proposal, ProposalStatus, Task
+from models import AiErrorLog, Event, EventKind, EventSource, Proposal, ProposalStatus, Reminder, Task
 from routers import reminders as reminders_router
 from services import ai_logging, nlu
 
@@ -104,3 +104,167 @@ def test_reminder_idor_blocked(client, db_session):
     assert client.put(f"/api/v1/reminders/{ev.id}", headers=b["h"], json={"offset_minutes": 5}).status_code == 404
     assert client.post(f"/api/v1/reminders/{ev.id}/delivered", headers=b["h"], json={}).status_code == 404
     assert client.get("/api/v1/reminders/audit", headers=b["h"]).json() == []
+
+
+def test_events_create_patch_delete_and_audit(client, db_session):
+    u = _register(client, "evt_user_1")
+    other = _register(client, "evt_user_2")
+
+    # unauthorized create is rejected
+    unauth = client.post(
+        "/api/v1/events",
+        json={
+            "title": "No Auth",
+            "kind": "TASK",
+            "start_time": "2026-10-20T08:00:00+07:00",
+            "end_time": "2026-10-20T09:30:00+07:00",
+        },
+    )
+    assert unauth.status_code == 401
+
+    # create TASK with room and is_important=True -> auto creates Reminder
+    res_task = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "  Ôn tập CTDL  ",
+            "kind": "TASK",
+            "start_time": "2026-10-20T08:00:00+07:00",
+            "end_time": "2026-10-20T09:30:00+07:00",
+            "room": "  B03  ",
+            "is_important": True,
+        },
+    )
+    assert res_task.status_code == 201, res_task.text
+    task_body = res_task.json()
+    assert task_body["title"] == "Ôn tập CTDL"
+    assert task_body["room"] == "B03"
+    assert task_body["kind"] == "TASK"
+    assert task_body["is_hard"] is False
+    assert task_body["is_important"] is True
+    assert db_session.query(Reminder).filter_by(event_id=task_body["id"], owner_id=u["id"]).count() == 1
+
+    # create CLASS -> is_hard=True even without weekday
+    res_cls = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "Toán rời rạc",
+            "kind": "CLASS",
+            "start_time": "2026-10-21T07:30:00+07:00",
+            "end_time": "2026-10-21T09:30:00+07:00",
+            "is_important": False,
+        },
+    )
+    assert res_cls.status_code == 201, res_cls.text
+    cls_body = res_cls.json()
+    assert cls_body["is_hard"] is True
+
+    # create DEADLINE with non-equal end_time -> normalized to zero duration
+    res_dl = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "Nộp đồ án",
+            "kind": "DEADLINE",
+            "start_time": "2026-10-22T23:30:00+07:00",
+            "end_time": "2026-10-22T23:59:00+07:00",
+            "is_important": True,
+        },
+    )
+    assert res_dl.status_code == 201, res_dl.text
+    dl_body = res_dl.json()
+    assert dl_body["start_time"] == dl_body["end_time"]
+
+    # non-deadline with end_time <= start_time is rejected
+    bad_time = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "Bad",
+            "kind": "EVENT",
+            "start_time": "2026-10-20T10:00:00+07:00",
+            "end_time": "2026-10-20T10:00:00+07:00",
+        },
+    )
+    assert bad_time.status_code == 422
+
+    # patch soft event time & toggle is_important
+    patch_ok = client.patch(
+        f"/api/v1/events/{task_body['id']}",
+        headers=u["h"],
+        json={
+            "start_time": "2026-10-20T14:00:00+07:00",
+            "end_time": "2026-10-20T16:00:00+07:00",
+            "is_important": False,
+        },
+    )
+    assert patch_ok.status_code == 200, patch_ok.text
+    assert patch_ok.json()["is_important"] is False
+    assert db_session.query(Reminder).filter_by(event_id=task_body["id"]).count() == 0
+
+    # toggle is_important back to True creates Reminder
+    patch_imp = client.patch(
+        f"/api/v1/events/{task_body['id']}",
+        headers=u["h"],
+        json={"is_important": True},
+    )
+    assert patch_imp.status_code == 200
+    assert db_session.query(Reminder).filter_by(event_id=task_body["id"]).count() == 1
+
+    # hard event blocks time edit
+    patch_hard = client.patch(
+        f"/api/v1/events/{cls_body['id']}",
+        headers=u["h"],
+        json={"start_time": "2026-10-21T08:00:00+07:00"},
+    )
+    assert patch_hard.status_code == 400
+
+    # reminder-audit writes jsonl log and returns fire_at
+    audit_res = client.post(
+        f"/api/v1/events/{cls_body['id']}/reminder-audit",
+        headers=u["h"],
+        json={"offset_minutes": 30},
+    )
+    assert audit_res.status_code == 200, audit_res.text
+    audit_body = audit_res.json()
+    assert audit_body["fire_at"] == "2026-10-21T07:00:00+07:00"
+    assert reminders_router.AUDIT_LOG_PATH.exists()
+    assert any(json_line for json_line in reminders_router.AUDIT_LOG_PATH.read_text(encoding="utf-8").splitlines())
+
+    # idor check and soft-delete
+    assert client.patch(f"/api/v1/events/{task_body['id']}", headers=other["h"], json={"title": "Hacked"}).status_code == 404
+    assert client.delete(f"/api/v1/events/{task_body['id']}", headers=other["h"]).status_code == 404
+
+    del_res = client.delete(f"/api/v1/events/{task_body['id']}", headers=u["h"])
+    assert del_res.status_code == 204
+    assert client.patch(f"/api/v1/events/{task_body['id']}", headers=u["h"], json={"title": "Gone"}).status_code == 404
+
+
+def test_user_preferences_get_and_post(client):
+    u = _register(client, "pref_user_1")
+    res_get = client.get("/api/v1/user/preferences", headers=u["h"])
+    assert res_get.status_code == 200, res_get.text
+    defaults = res_get.json()
+    assert defaults["sleep_start"] == "23:30" and defaults["sleep_end"] == "06:30"
+
+    res_post = client.post(
+        "/api/v1/user/preferences",
+        headers=u["h"],
+        json={
+            "sleep_schedule": "Ngủ: 22:30 - Dậy: 06:00",
+            "min_break_minutes": "45",
+            "max_continuous_minutes": "150",
+        },
+    )
+    assert res_post.status_code == 200, res_post.text
+    updated = res_post.json()
+    assert updated["sleep_start"] == "22:30"
+    assert updated["sleep_end"] == "06:00"
+    assert updated["min_break_minutes"] == 45
+    assert updated["max_block_minutes"] == 150
+
+    res_get_2 = client.get("/api/v1/user/preferences", headers=u["h"])
+    assert res_get_2.status_code == 200
+    assert res_get_2.json()["sleep_start"] == "22:30"
+    assert res_get_2.json()["sleep_end"] == "06:00"
