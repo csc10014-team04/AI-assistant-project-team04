@@ -302,6 +302,9 @@ class DayNode(MDCard):
         pass
 
 
+MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 class MonthItemButton(ButtonBehavior, MDBoxLayout):
     """
     Nút chọn Tháng trong Modal:
@@ -327,7 +330,7 @@ class MonthItemButton(ButtonBehavior, MDBoxLayout):
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
         self.lbl = MDLabel(
-            text=f"Tháng {month_num}",
+            text=MONTH_NAMES_EN[month_num - 1],
             halign="center",
             valign="center",
             theme_text_color="Custom",
@@ -389,7 +392,7 @@ class MonthYearSelectorModal(ModalView):
         btn_prev.bind(on_release=lambda x: self.change_year(-1))
         
         self.lbl_year = MDLabel(
-            text=f"Năm {self.current_modal_year}",
+            text=f"{self.current_modal_year}",
             halign="center",
             bold=True,
             font_style="Title",
@@ -505,7 +508,7 @@ class EventBlock(ButtonBehavior, FloatLayout):
         self.kind = event_data.get("kind", "TASK")
         
         # Đổi cách hiển thị: "({Địa điểm})\n{tên sự kiện}" nếu có địa điểm/phòng
-        raw_title = event_data.get("title", "Sự kiện")
+        raw_title = event_data.get("title", "Event")
         room = event_data.get("room")
         if room and str(room).strip() and str(room).lower() not in ("none", "null"):
             self.title = f"({str(room).strip()})\n{raw_title}"
@@ -638,7 +641,7 @@ class DeadlineListModal(ModalView):
 
         # Header tiêu đề
         layout.add_widget(MDLabel(
-            text="Danh Sách Deadline",
+            text="Deadlines List",
             font_style="Title",
             role="medium",
             bold=True,
@@ -651,7 +654,7 @@ class DeadlineListModal(ModalView):
         list_box = MDBoxLayout(orientation='vertical', spacing=dp(6), adaptive_height=True)
 
         for dl in deadlines:
-            title = dl.get("title", "Hạn chót") if isinstance(dl, dict) else str(dl)
+            title = dl.get("title", "Deadline") if isinstance(dl, dict) else str(dl)
             is_imp = dl.get("is_important", False) if isinstance(dl, dict) else False
 
             btn = MDButton(
@@ -676,7 +679,7 @@ class DeadlineListModal(ModalView):
 
         # Nút Đóng
         layout.add_widget(MDButton(
-            MDButtonText(text="ĐÓNG"),
+            MDButtonText(text="CLOSE"),
             style="text",
             size_hint_x=1,
             size_hint_y=None,
@@ -738,7 +741,7 @@ class DeadlineBanner(ButtonBehavior, MDBoxLayout):
 
         if count == 1:
             ev = self.deadlines[0]
-            raw_title = ev.get("title", "Hạn chót") if isinstance(ev, dict) else str(ev)
+            raw_title = ev.get("title", "Deadline") if isinstance(ev, dict) else str(ev)
             words = raw_title.strip().split()
             if len(words) > 2:
                 display_text = f"{words[0]} {words[1]}..."
@@ -870,8 +873,8 @@ class CalendarHomeScreen(MDScreen):
         self.main_layout.add_widget(self.top_menu)
 
         menu_items = [
-            {"text": "Thêm sự kiện", "on_release": lambda x="Thêm sự kiện": self.add_menu_callback(x)},
-            {"text": "Import lịch", "on_release": lambda x="Import lịch": self.add_menu_callback(x)}
+            {"text": "Add Event", "on_release": lambda x="Add Event": self.add_menu_callback(x)},
+            {"text": "Import Schedule", "on_release": lambda x="Import Schedule": self.add_menu_callback(x)}
         ]
         self.add_menu = MDDropdownMenu(caller=self.btn_add_box, items=menu_items, width_mult=4)
 
@@ -883,7 +886,7 @@ class CalendarHomeScreen(MDScreen):
         self.month_layout = MDBoxLayout(orientation='vertical', padding=[dp(10), dp(15), dp(10), dp(10)], spacing=dp(5))
         
         days_header = MDGridLayout(cols=7, size_hint_y=None, height=dp(30))
-        for wd in ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]:
+        for wd in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
             days_header.add_widget(MDLabel(text=wd, halign="center", bold=True, theme_text_color="Custom", text_color=GRAY_TEXT))
         self.month_layout.add_widget(days_header)
         
@@ -962,9 +965,9 @@ class CalendarHomeScreen(MDScreen):
             padding=[dp(10), dp(5), dp(10), dp(5)], spacing=dp(10)
         )
         # Tab Lịch đang active nên is_active=True
-        nav_bar.add_widget(NavTab(text="Lịch chính", target_screen="calendar_home", is_active=True))
-        nav_bar.add_widget(NavTab(text="Tìm kiếm", target_screen="search_home", is_active=False))
-        nav_bar.add_widget(NavTab(text="Trợ lý AI", target_screen="chat_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="Calendar", target_screen="calendar_home", is_active=True))
+        nav_bar.add_widget(NavTab(text="Search", target_screen="search_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="AI Assistant", target_screen="chat_home", is_active=False))
         
         self.main_layout.add_widget(nav_bar) # Đảm bảo main_layout của bạn là khung chứa chính
         self.render_month_view()
@@ -986,14 +989,14 @@ class CalendarHomeScreen(MDScreen):
         
     def add_menu_callback(self, action):
         self.add_menu.dismiss()
-        if action == "Thêm sự kiện":
+        if action in ("Thêm sự kiện", "Add Event"):
             AddEventModal().open()
-        elif action == "Import lịch":
+        elif action in ("Import lịch", "Import Schedule"):
             ImportStep1Modal().open()
 
     def update_top_title(self):
         if self.content_sm.current == "month_view":
-            self.lbl_month_year.text = f"Tháng {self.display_month}, Năm {self.display_year}"
+            self.lbl_month_year.text = f"{MONTH_NAMES_EN[self.display_month - 1]} {self.display_year}"
         else:
             if hasattr(self, 'current_week_start'):
                 end_date = self.current_week_start + timedelta(days=6)
@@ -1067,10 +1070,11 @@ class CalendarHomeScreen(MDScreen):
                 node.set_events([]) # Xóa vạch nếu ô Lịch bị ẩn đi
 
     def render_week_view(self):
+        weekdays_en = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         for i in range(7):
             current_day = self.current_week_start + timedelta(days=i)
             lbl = self.week_day_labels[i]
-            wd_str = "CN" if current_day.isoweekday() == 7 else f"T{current_day.isoweekday() + 1}"
+            wd_str = weekdays_en[current_day.weekday()]
             
             lbl.text = f"{wd_str}\n{current_day.day}"
             lbl.text_color = BLUE_COLOR if current_day == self.today else BLACK_COLOR

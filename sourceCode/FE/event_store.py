@@ -29,7 +29,7 @@ def normalize(raw: dict) -> dict | None:
         return None
     return {
         "id": raw.get("id"),
-        "title": raw.get("title") or "(không tên)",
+        "title": raw.get("title") or "(untitled)",
         "room": raw.get("room") or "",
         "kind": raw.get("kind") or "EVENT",
         "start_time": raw["start_time"],

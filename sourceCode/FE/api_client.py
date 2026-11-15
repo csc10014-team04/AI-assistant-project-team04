@@ -180,10 +180,10 @@ class APIClient:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
             except requests.exceptions.Timeout:
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, "Quá thời gian kết nối tới máy chủ (Timeout 30s)"), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, "Connection timed out (Timeout 30s)"), 0)
             except requests.exceptions.ConnectionError:
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, "Không thể kết nối tới máy chủ (kiểm tra mạng hoặc VPN)"), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, "Cannot connect to server (check network or VPN)"), 0)
             except Exception as e:
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)

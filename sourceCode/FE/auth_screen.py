@@ -147,18 +147,18 @@ class AuthScreen(MDScreen):
         self.login_container.bind(minimum_height=self.login_container.setter('height'))
         self.sm.bind(width=self.login_container.setter('width'))
         
-        login_username = CustomTextField(hint="Tên đăng nhập")
-        login_password = CustomTextField(hint="Mật khẩu", is_password=True)
-        btn_login = CustomButton(text="ĐĂNG NHẬP", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        login_username = CustomTextField(hint="Username")
+        login_password = CustomTextField(hint="Password", is_password=True)
+        btn_login = CustomButton(text="LOG IN", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_login.bind(on_release=lambda x: self.do_login(login_username.text, login_password.text))
         
-        btn_google = CustomButton(text="Tài khoản Google", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        btn_google = CustomButton(text="Google Account", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_google.bind(on_release=lambda x: self.simulate_oauth_login("Google"))
         
-        btn_github = CustomButton(text="Tài khoản Github", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        btn_github = CustomButton(text="GitHub Account", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_github.bind(on_release=lambda x: self.simulate_oauth_login("Github"))
         
-        btn_switch = CustomButton(text="CHUYỂN QUA TẠO TÀI KHOẢN", txt_color=BLACK_COLOR, is_outlined=True)
+        btn_switch = CustomButton(text="SWITCH TO REGISTER", txt_color=BLACK_COLOR, is_outlined=True)
         btn_switch.bind(on_release=lambda x: self.switch_tab("register_tab", "left"))
         
         widgets = [login_username, login_password, btn_login, btn_google, btn_github, btn_switch]
@@ -175,20 +175,20 @@ class AuthScreen(MDScreen):
         self.register_container.bind(minimum_height=self.register_container.setter('height'))
         self.sm.bind(width=self.register_container.setter('width'))
         
-        reg_username = CustomTextField(hint="Tên đăng nhập")
-        reg_displayname = CustomTextField(hint="Họ tên hiển thị")
-        reg_password = CustomTextField(hint="Mật khẩu", is_password=True)
+        reg_username = CustomTextField(hint="Username")
+        reg_displayname = CustomTextField(hint="Display Name")
+        reg_password = CustomTextField(hint="Password", is_password=True)
         
-        btn_register = CustomButton(text="TẠO TÀI KHOẢN", bg_color=GRAY_COLOR, txt_color=BLACK_COLOR)
+        btn_register = CustomButton(text="CREATE ACCOUNT", bg_color=GRAY_COLOR, txt_color=BLACK_COLOR)
         btn_register.bind(on_release=lambda x: self.do_register(reg_username.text, reg_displayname.text, reg_password.text))
         
-        btn_google = CustomButton(text="Tài khoản Google", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        btn_google = CustomButton(text="Google Account", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_google.bind(on_release=lambda x: self.simulate_oauth_login("Google"))
         
-        btn_github = CustomButton(text="Tài khoản Github", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        btn_github = CustomButton(text="GitHub Account", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_github.bind(on_release=lambda x: self.simulate_oauth_login("Github"))
         
-        btn_switch = CustomButton(text="CHUYỂN QUA ĐĂNG NHẬP", txt_color=BLACK_COLOR, is_outlined=True)
+        btn_switch = CustomButton(text="SWITCH TO LOGIN", txt_color=BLACK_COLOR, is_outlined=True)
         btn_switch.bind(on_release=lambda x: self.switch_tab("login_tab", "right"))
         
         widgets = [reg_username, reg_displayname, reg_password, btn_register, btn_google, btn_github, btn_switch]
@@ -205,11 +205,11 @@ class AuthScreen(MDScreen):
         self.oauth_container.bind(minimum_height=self.oauth_container.setter('height'))
         self.sm.bind(width=self.oauth_container.setter('width'))
         
-        lbl_info = MDLabel(text="Liên kết thành công!\nVui lòng tạo Username cho tài khoản:", halign="center", theme_text_color="Custom", text_color=BLACK_COLOR, size_hint_y=None, height=dp(50))
+        lbl_info = MDLabel(text="Linked successfully!\nPlease create a Username for your account:", halign="center", theme_text_color="Custom", text_color=BLACK_COLOR, size_hint_y=None, height=dp(50))
         self.oauth_username = CustomTextField(hint="Username")
-        btn_confirm = CustomButton(text="Xác nhận", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
+        btn_confirm = CustomButton(text="Confirm", bg_color=BLUE_COLOR, txt_color=WHITE_COLOR)
         btn_confirm.bind(on_release=self.confirm_oauth_username)
-        btn_cancel = CustomButton(text="HỦY (QUAY LẠI)", txt_color=BLACK_COLOR, is_outlined=True)
+        btn_cancel = CustomButton(text="CANCEL (GO BACK)", txt_color=BLACK_COLOR, is_outlined=True)
         btn_cancel.bind(on_release=lambda x: self.switch_tab("login_tab", "right"))
 
         widgets = [lbl_info, self.oauth_username, btn_confirm, btn_cancel]
@@ -270,7 +270,7 @@ class AuthScreen(MDScreen):
         """
         username = self.oauth_username.text
         if not username:
-            self.show_error("Vui lòng nhập Username để hoàn tất liên kết.")
+            self.show_error("Please enter a Username to complete linking.")
             return
         
         # Mô phỏng việc API trả về OK -> Chuyển thẳng vào Home Screen
@@ -282,7 +282,7 @@ class AuthScreen(MDScreen):
     def do_register(self, username, display_name, password):
         self.clear_error()
         if not username or not display_name or not password:
-            self.show_error("Vui lòng nhập đầy đủ các trường thông tin.")
+            self.show_error("Please fill in all fields.")
             return
 
         api.register(
@@ -299,14 +299,14 @@ class AuthScreen(MDScreen):
         # [CẦN BACKEND XỬ LÝ]: Backend phải đảm bảo trả về mã 409 nếu trùng lặp username.
         status_code = req.resp_status
         if status_code == 409:
-            self.show_error("Tên đăng nhập đã tồn tại")
+            self.show_error("Username already exists")
         else:
-            self.show_error(f"Lỗi hệ thống ({status_code}). Vui lòng thử lại sau.")
+            self.show_error(f"System error ({status_code}). Please try again later.")
 
     def do_login(self, username, password):
         self.clear_error()
         if not username or not password:
-            self.show_error("Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu.")
+            self.show_error("Please enter both Username and Password.")
             return
 
         api.login(
@@ -330,12 +330,12 @@ class AuthScreen(MDScreen):
         # [CẦN BACKEND XỬ LÝ]: Backend phải đảm bảo trả về mã 401 khi sai mật khẩu.
         status_code = req.resp_status
         if status_code == 401:
-            self.show_error("Sai tên đăng nhập hoặc mật khẩu!")
+            self.show_error("Invalid username or password!")
         else:
-            self.show_error(f"Đăng nhập thất bại ({status_code})")
+            self.show_error(f"Login failed ({status_code})")
 
     def on_network_error(self, req, error):
-        self.show_error("Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng.")
+        self.show_error("Cannot connect to server. Please check your network connection.")
 
 if __name__ == "__main__":
     from kivy.core.window import Window
