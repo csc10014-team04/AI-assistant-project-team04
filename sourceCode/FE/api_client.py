@@ -36,6 +36,11 @@ class APIClient:
         self.user_id = None
         self.display_name = None
         self._load_session()
+
+    @property
+    def token(self):
+        """Thuộc tính tương thích alias cho access_token"""
+        return self.access_token
     
     def set_base_url(self, url):
         """remember the backend address on the device (settings screen / first-run prompt)."""
@@ -78,14 +83,18 @@ class APIClient:
     def _request(self, endpoint, method="GET", payload=None, on_success=None, on_failure=None, on_error=None, timeout=None):
         """Hàm cốt lõi xử lý gửi HTTP Request"""
         url = f"{self.base_url}{endpoint}"
-        req_body = json.dumps(payload) if payload else None
+        req_body = json.dumps(payload) if payload is not None else None
+        headers = self.get_headers()
+        # Bỏ header Content-Type nếu request không có body (GET, DELETE) để tránh lỗi một số HTTP server
+        if req_body is None and "Content-Type" in headers:
+            del headers["Content-Type"]
         
         def default_cb(req, result): pass
         
         return UrlRequest(
             url,
             req_body=req_body,
-            req_headers=self.get_headers(),
+            req_headers=headers,
             method=method,
             on_success=on_success or default_cb,
             on_failure=on_failure or default_cb,
@@ -347,6 +356,11 @@ class APIClient:
         """Tạo hoặc cập nhật thời gian báo trước nhắc hẹn lên Backend (PUT /api/v1/reminders/{event_id})."""
         payload = {"offset_minutes": int(offset_minutes)}
         self._request(f"/api/v1/reminders/{event_id}", method="PUT", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def get_reminders(self, on_success, on_failure=None, on_error=None):
+        """Lấy danh sách nhắc hẹn của người dùng hiện tại từ Backend (GET /api/v1/reminders/audit)."""
+        self._request("/api/v1/reminders/audit", method="GET",
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def audit_reminder(self, event_id, offset_minutes=30, scheduled_on_device_at=None, on_success=None, on_failure=None, on_error=None):

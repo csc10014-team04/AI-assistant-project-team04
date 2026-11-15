@@ -499,6 +499,7 @@ class EditEventTimeModal(ModalView):
 
         # Cập nhật vào đối tượng sự kiện
         old_start = self.event.get("start_time")
+        old_end = self.event.get("end_time")
         self.event["start_time"] = new_start_iso
         self.event["end_time"] = new_end_iso
 
@@ -515,18 +516,69 @@ class EditEventTimeModal(ModalView):
         if matched:
             store.set_events(store.events, demo=store.is_demo)
 
+        # Cập nhật lại lịch báo thức cục bộ nếu sự kiện này đang bật thông báo
+        if self.event.get("is_important"):
+            try:
+                fire_dt = datetime.fromisoformat(new_end_iso) - timedelta(minutes=30)
+                title = self.event.get("title", "Sự kiện")
+                reminder_scheduler.schedule(
+                    event_id or 0,
+                    fire_at=fire_dt.isoformat(),
+                    title=title,
+                    room=self.event.get("room", ""),
+                    start_time_str=self.temp_start_time,
+                    offset_minutes=30
+                )
+            except Exception:
+                pass
+
         if event_id and getattr(api, "access_token", None):
+            self.lbl_conflict.text = "Đang lưu thay đổi vào máy chủ..."
+            self.lbl_conflict.theme_text_color = "Hint"
+
+            def on_patch_success(req, res):
+                store.refresh(api)
+                if self.on_saved:
+                    self.on_saved(self.event)
+                self.dismiss()
+
+            def on_patch_fail(req, res):
+                err_msg = res.get("detail", "Máy chủ từ chối cập nhật thời gian") if isinstance(res, dict) else str(res)
+                # Nếu máy chủ trả về 404 Not Found (do tiến trình server chưa nạp router /api/v1/events mới)
+                if (req and getattr(req, "resp_status", None) == 404) or "Not Found" in str(err_msg):
+                    # Vẫn giữ cập nhật thời gian cục bộ để người dùng thao tác bình thường
+                    if self.on_saved:
+                        self.on_saved(self.event)
+                    self.dismiss()
+                    return
+
+                # Khôi phục lại thời gian cũ nếu server từ chối vì lý do nghiệp vụ (ví dụ lịch cố định)
+                self.event["start_time"] = old_start
+                self.event["end_time"] = old_end
+                for e in store.events:
+                    if (event_id and e.get("id") == event_id):
+                        e["start_time"] = old_start
+                        e["end_time"] = old_end
+                        break
+                store.set_events(store.events, demo=store.is_demo)
+                self.lbl_conflict.text = f"Lỗi lưu máy chủ: {err_msg}"
+                self.lbl_conflict.theme_text_color = "Error"
+
+            def on_patch_err(req, err):
+                self.lbl_conflict.text = f"Lỗi kết nối máy chủ: {err}"
+                self.lbl_conflict.theme_text_color = "Error"
+
             api.patch_event(
                 event_id,
                 payload={"start_time": new_start_iso, "end_time": new_end_iso},
-                on_success=lambda req, res: store.refresh(api),
-                on_failure=lambda req, res: None,
-                on_error=lambda req, err: None,
+                on_success=on_patch_success,
+                on_failure=on_patch_fail,
+                on_error=on_patch_err,
             )
-
-        if self.on_saved:
-            self.on_saved(self.event)
-        self.dismiss()
+        else:
+            if self.on_saved:
+                self.on_saved(self.event)
+            self.dismiss()
 
 
 # ==============================================================================
@@ -1494,6 +1546,22 @@ class EventDetailModal(ModalView):
         self.offset_minutes = 30  # Mặc định kích hoạt trước 30 phút
         self.offset_str = "00:30"
 
+        # Tải mốc thời gian báo trước từ server nếu có kết nối
+        if self.event_id and getattr(api, "access_token", None):
+            def on_reminders_loaded(req, res):
+                if isinstance(res, list):
+                    for r in res:
+                        if r.get("event_id") == self.event_id:
+                            mins = r.get("offset_minutes", 30)
+                            self.offset_minutes = mins
+                            h = mins // 60
+                            m = mins % 60
+                            self.offset_str = f"{h:02d}:{m:02d}"
+                            if hasattr(self, "btn_offset") and self.btn_offset.children:
+                                self.btn_offset.children[0].text = self.offset_str
+                            break
+            api.get_reminders(on_success=on_reminders_loaded)
+
         layout = MDBoxLayout(
             orientation='vertical',
             padding=[dp(16), dp(16), dp(16), dp(16)],
@@ -1713,16 +1781,27 @@ class EventDetailModal(ModalView):
         ).open()
 
     def _on_offset_chosen(self, time_str, minutes):
-        """Cập nhật mốc thời gian báo trước; nếu đang bật quan trọng thì tái lập lịch hẹn."""
+        """Cập nhật mốc thời gian báo trước; lưu lên server và tái lập lịch hẹn nếu đang bật."""
         self.offset_str = time_str
         self.offset_minutes = minutes
         if self.btn_offset.children:
             self.btn_offset.children[0].text = time_str
+
+        # Lưu ngay giá trị offset lên Database Server nếu có event_id
+        if self.event_id and getattr(api, "access_token", None):
+            api.upsert_reminder(
+                self.event_id,
+                offset_minutes=self.offset_minutes,
+                on_success=lambda req, res: setattr(self.lbl_status, "text", f"Đã lưu mốc báo trước ({time_str}) lên máy chủ!"),
+                on_failure=lambda req, res: setattr(self.lbl_status, "text", "Lỗi: Không thể lưu mốc báo trước lên máy chủ."),
+                on_error=lambda req, err: setattr(self.lbl_status, "text", "Lỗi kết nối khi lưu mốc báo trước."),
+            )
+
         if self.is_important:
             self._arm_alarm()
 
     def _arm_alarm(self):
-        """Tính toán thời gian thông báo = [end_time] - [báo trước] và lên lịch hẹn."""
+        """Tính toán thời gian thông báo = [end_time] - [báo trước], lên lịch hẹn và đồng bộ server."""
         try:
             end_dt = datetime.fromisoformat(self.event["end_time"])
         except Exception:
@@ -1748,7 +1827,16 @@ class EventDetailModal(ModalView):
             offset_minutes=self.offset_minutes
         )
 
-        if self.event_id:
+        if self.event_id and getattr(api, "access_token", None):
+            # 1. Cập nhật is_important = True trong bảng events trên server
+            api.patch_event(
+                self.event_id,
+                payload={"is_important": True},
+                on_success=lambda req, res: store.refresh(api),
+                on_failure=lambda req, res: None,
+                on_error=lambda req, err: None,
+            )
+            # 2. Lưu bản ghi reminder với mốc offset vào bảng reminders trên server
             api.upsert_reminder(
                 self.event_id,
                 offset_minutes=self.offset_minutes,
@@ -1756,6 +1844,7 @@ class EventDetailModal(ModalView):
                 on_failure=lambda req, res: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
                 on_error=lambda req, err: setattr(self.lbl_status, "text", f"Đã bật báo thức cục bộ ({self.offset_str})."),
             )
+            # 3. Ghi vết audit lên server
             api.audit_reminder(
                 self.event_id,
                 offset_minutes=self.offset_minutes,
@@ -1765,8 +1854,16 @@ class EventDetailModal(ModalView):
             self.lbl_status.text = f"Đã bật báo thức cục bộ ({self.offset_str})."
 
     def toggle_important(self, instance):
+        """Bật / tắt đánh dấu sự kiện quan trọng và đồng bộ trạng thái xuống Database Server."""
         self.is_important = not self.is_important
         self.event["is_important"] = self.is_important
+
+        # Cập nhật ngay trong danh sách store cục bộ
+        if self.event_id:
+            for e in store.events:
+                if e.get("id") == self.event_id:
+                    e["is_important"] = self.is_important
+                    break
 
         if self.is_important:
             self.lbl_imp_status.text = "Sự kiện Quan trọng: ĐÃ BẬT (!)"
@@ -1785,33 +1882,64 @@ class EventDetailModal(ModalView):
             # Hủy báo thức cục bộ
             reminder_scheduler.cancel(self.event_id or 0)
 
-            # Gửi API cập nhật
-            if self.event_id:
+            # Gửi API cập nhật tắt quan trọng trên máy chủ (PATCH /api/v1/events/{id} -> is_important: False)
+            if self.event_id and getattr(api, "access_token", None):
+                self.lbl_status.text = "Đang lưu thay đổi vào máy chủ..."
                 api.patch_event(
                     self.event_id,
                     payload={"is_important": False},
-                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt quan trọng.")),
-                    on_failure=lambda req, res: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
-                    on_error=lambda req, err: setattr(self.lbl_status, "text", "Đã tắt cục bộ."),
+                    on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", "Đã tắt thông báo quan trọng trên máy chủ.")),
+                    on_failure=lambda req, res: setattr(self.lbl_status, "text", "Lỗi: Không thể tắt trên máy chủ, đã tắt cục bộ."),
+                    on_error=lambda req, err: setattr(self.lbl_status, "text", "Lỗi kết nối máy chủ, đã tắt cục bộ."),
                 )
             else:
                 self.lbl_status.text = "Đã tắt cục bộ."
 
     def delete_event(self, instance):
-        # Hủy báo thức nếu có
-        if self.event_id:
+        """Xóa sự kiện: gọi API DELETE /api/v1/events/{id} xuống Server và cập nhật local store."""
+        if self.event_id and getattr(api, "access_token", None):
+            self.btn_delete.disabled = True
+            self.lbl_status.text = "Đang xóa sự kiện trên máy chủ..."
+            self.lbl_status.theme_text_color = "Hint"
+
+            # Hủy báo thức cục bộ nếu có
             reminder_scheduler.cancel(self.event_id)
+
+            def on_del_ok(req, res):
+                self._remove_from_local_store()
+                store.refresh(api)
+                self.dismiss()
+
+            def on_del_fail(req, res):
+                err_msg = res.get("detail", "Máy chủ từ chối xóa sự kiện") if isinstance(res, dict) else str(res)
+                # Nếu máy chủ trả về 404 (do chưa nạp router /api/v1/events hoặc id mock) -> vẫn xóa trên local store cho người dùng
+                if (req and getattr(req, "resp_status", None) == 404) or "Not Found" in str(err_msg):
+                    self._remove_from_local_store()
+                    self.dismiss()
+                    return
+                self.btn_delete.disabled = False
+                self.lbl_status.text = f"Lỗi xóa trên máy chủ: {err_msg}"
+                self.lbl_status.theme_text_color = "Error"
+
+            def on_del_err(req, err):
+                self.btn_delete.disabled = False
+                self.lbl_status.text = f"Lỗi kết nối khi xóa: {err}"
+                self.lbl_status.theme_text_color = "Error"
+
             api.delete_event(
                 self.event_id,
-                on_success=lambda req, res: (self._remove_from_local_store(), self.dismiss()),
-                on_failure=lambda req, res: (self._remove_from_local_store(), self.dismiss()),
-                on_error=lambda req, err: (self._remove_from_local_store(), self.dismiss()),
+                on_success=on_del_ok,
+                on_failure=on_del_fail,
+                on_error=on_del_err,
             )
         else:
+            if self.event_id:
+                reminder_scheduler.cancel(self.event_id)
             self._remove_from_local_store()
             self.dismiss()
 
     def _remove_from_local_store(self):
+        """Xóa sự kiện ra khỏi store.events cục bộ của giao diện."""
         if self.event_id:
             remaining = [e for e in store.events if e.get("id") != self.event_id]
             store.set_events(remaining, demo=store.is_demo)

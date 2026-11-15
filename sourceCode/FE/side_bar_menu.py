@@ -667,6 +667,11 @@ class SideBarMenu(ModalView):
             m = 5
         total_mins = max(1, h * 60 + m)
         set_snooze_interval(total_mins)
+        # Lưu vào local store vĩnh viễn để ghi nhớ thời gian báo lại
+        try:
+            api.store.put("snooze_settings", hours=h, minutes=m, total_mins=total_mins)
+        except Exception:
+            pass
 
     @property
     def tf_break(self):
@@ -849,6 +854,13 @@ class SideBarMenu(ModalView):
         self.main_container.x = -self.menu_width
         # Cập nhật lại thông tin user & preferences mỗi lần mở menu
         self.load_preferences()
+        if api.store.exists("snooze_settings"):
+            try:
+                s_data = api.store.get("snooze_settings")
+                self.tf_snooze_h.text = str(s_data.get("hours", 0))
+                self.tf_snooze_m.text = str(s_data.get("minutes", 5))
+            except Exception:
+                pass
         self.user_widget.lbl_display.text = api.display_name or "Người dùng"
         self.user_widget.lbl_username.text = f"ID: {api.user_id or 'username'}"
         self.user_widget.logout_container.height = 0
