@@ -8,12 +8,24 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from database import UTC_TZ, active_events_stmt, from_db_to_vn, get_db, to_db_utc
-from models import Event, Reminder, User, UserPreference
+from database import UTC_TZ, VN_TZ, active_events_stmt, from_db_to_vn, get_db, to_db_utc
+from models import Event, EventKind, EventSource, Reminder, User, UserPreference
+from routers.reminders import _audit
 from services.security import get_current_user
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
 user_router = APIRouter(prefix="/api/v1/user", tags=["user"])
+
+
+class CreateEventRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    kind: EventKind = EventKind.TASK
+    start_time: datetime
+    end_time: datetime
+    room: str | None = Field(default=None, max_length=100)
+    is_important: bool = False
+    recurrence_rule: str | None = Field(default=None, max_length=255)
+    description: str | None = None
 
 
 class EventPatchRequest(BaseModel):
@@ -60,6 +72,57 @@ def _get_event(db: Session, owner_id: int, event_id: int) -> Event:
     return event
 
 
+def _parse_aware_dt(raw: datetime | str) -> datetime:
+    """parse iso string or datetime and default naive timestamps to +07:00."""
+    try:
+        dt = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+    except ValueError as exc:
+        raise HTTPException(422, f"invalid datetime: {raw}") from exc
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return dt.replace(tzinfo=VN_TZ)
+    return dt
+
+
+@router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)
+def create_event(
+    body: CreateEventRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventOut:
+    """create a manual calendar event for any of the 5 event kinds."""
+    clean_title = body.title.strip()
+    if not clean_title:
+        raise HTTPException(422, "title must not be empty")
+
+    start_aware = _parse_aware_dt(body.start_time)
+    end_aware = _parse_aware_dt(body.end_time)
+    if body.kind == EventKind.DEADLINE:
+        end_aware = start_aware  # deadlines must be zero-duration point events
+    elif end_aware <= start_aware:
+        raise HTTPException(422, "end_time must be strictly after start_time")
+
+    event = Event(
+        owner_id=current_user.id,
+        title=clean_title,
+        room=body.room.strip() or None if body.room else None,
+        kind=body.kind,
+        source=EventSource.MANUAL,
+        start_time=to_db_utc(start_aware),
+        end_time=to_db_utc(end_aware),
+        is_hard=body.kind in (EventKind.CLASS, EventKind.EXAM),
+        is_important=bool(body.is_important),
+    )
+    db.add(event)
+    db.flush()
+
+    if event.is_important:
+        db.add(Reminder(owner_id=current_user.id, event_id=event.id, offset_minutes=30))
+
+    db.commit()
+    db.refresh(event)
+    return _event_out(event)
+
+
 @router.patch("/{event_id}", response_model=EventOut)
 def patch_event(
     event_id: int,
@@ -71,15 +134,33 @@ def patch_event(
     if body.start_time is not None or body.end_time is not None:
         if event.is_hard:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "cannot edit time of hard events (CLASS/EXAM)")
-        if body.start_time:
-            event.start_time = to_db_utc(datetime.fromisoformat(body.start_time))
-        if body.end_time:
-            event.end_time = to_db_utc(datetime.fromisoformat(body.end_time))
-        if event.end_time < event.start_time:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "end_time must be after start_time")
+        if body.start_time is not None:
+            event.start_time = to_db_utc(_parse_aware_dt(body.start_time))
+        if body.end_time is not None:
+            event.end_time = to_db_utc(_parse_aware_dt(body.end_time))
+        if event.kind == EventKind.DEADLINE:
+            # keep deadline zero duration regardless of whether only start or end was supplied
+            if body.start_time is not None:
+                event.end_time = event.start_time
+            else:
+                event.start_time = event.end_time
+        elif event.end_time <= event.start_time:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "end_time must be strictly after start_time")
 
     if body.is_important is not None:
-        event.is_important = body.is_important
+        event.is_important = bool(body.is_important)
+        if not event.is_important:
+            db.query(Reminder).filter(
+                Reminder.event_id == event_id,
+                Reminder.owner_id == current_user.id,
+                Reminder.delivered_at.is_(None),
+            ).delete(synchronize_session=False)
+        else:
+            existing_rem = db.scalar(
+                select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id)
+            )
+            if existing_rem is None:
+                db.add(Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=30))
 
     if body.title is not None and body.title.strip():
         event.title = body.title.strip()
@@ -114,7 +195,7 @@ def reminder_audit(
     event.is_important = True
 
     reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
-    scheduled_at = to_db_utc(body.scheduled_on_device_at or datetime.now(UTC_TZ))
+    scheduled_at = to_db_utc(_parse_aware_dt(body.scheduled_on_device_at or datetime.now(UTC_TZ)))
     if reminder is None:
         reminder = Reminder(
             owner_id=current_user.id,
@@ -128,7 +209,15 @@ def reminder_audit(
         reminder.scheduled_on_device_at = scheduled_at
 
     db.commit()
-    return {"status": "ok", "event_id": event_id, "offset_minutes": body.offset_minutes}
+    db.refresh(reminder)
+    _audit("scheduled", reminder, current_user.id)
+    fire_at = from_db_to_vn(event.start_time) - timedelta(minutes=body.offset_minutes)
+    return {
+        "status": "ok",
+        "event_id": event_id,
+        "offset_minutes": body.offset_minutes,
+        "fire_at": fire_at.isoformat(),
+    }
 
 
 class UserPreferencesPayload(BaseModel):
