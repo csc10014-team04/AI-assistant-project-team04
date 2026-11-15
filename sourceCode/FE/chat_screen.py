@@ -874,9 +874,47 @@ class ChatAssistantScreen(MDScreen):
             self._save_chat_history_to_db()
             Clock.schedule_once(self.scroll_to_bottom, 0.1)
 
+    def delete_chat_session(self, index):
+        """
+        Xóa một phiên trò chuyện khỏi danh sách và cập nhật trực tiếp vào database cục bộ:
+        - Xóa session tại index trong self.chat_sessions.
+        - Ghi đè cập nhật vào JsonStore ('chat_history_db.json') ngay lập tức.
+        - Nếu phiên bị xóa đang mở trên màn hình thì làm sạch và chuyển về màn hình chat mới.
+        - Cập nhật lại giao diện danh sách lịch sử trong sidebar.
+        """
+        if 0 <= index < len(self.chat_sessions):
+            deleted = self.chat_sessions.pop(index)
+            self._save_chat_history_to_db(immediate=True)
+            
+            # Kiểm tra nếu phiên bị xóa chính là phiên đang hiển thị trên màn hình
+            is_active_session = (
+                self.is_current_session_saved and 
+                (self.current_session_title == deleted.get("title") or len(self.chat_sessions) == 0)
+            )
+            if is_active_session:
+                self.chat_history.clear_widgets()
+                self.current_session_title = "Cuộc trò chuyện mới"
+                self.current_session_messages = []
+                self.is_current_session_saved = False
+                self.active_cards = []
+                if self.active_reschedule_proposal:
+                    self.cancel_reschedule()
+                self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+
+            # Tải lại danh sách lịch sử ngay trên menu
+            self.history_menu.load_history(
+                self.chat_sessions,
+                callback=self.load_chat_session,
+                delete_callback=self.delete_chat_session
+            )
+
     def open_history(self):
         self.save_current_session()
-        self.history_menu.load_history(self.chat_sessions, callback=self.load_chat_session)
+        self.history_menu.load_history(
+            self.chat_sessions,
+            callback=self.load_chat_session,
+            delete_callback=self.delete_chat_session
+        )
         self.history_menu.open()
 
 

@@ -175,13 +175,6 @@ class SchedulePreferencesDialog(ModalView):
         self.tf_max_duration = MDTextField(MDTextFieldHintText(text="Làm việc liên tục tối đa (phút)"), text="180", mode="outlined")
         content.add_widget(self.tf_max_duration)
         
-        # 4. Thói quen (Natural language)
-        self.tf_habits = MDTextField(
-            MDTextFieldHintText(text="Thói quen (VD: Thích học sáng, không xếp lịch sau 21h)"),
-            multiline=True, mode="outlined", size_hint_y=None, height=dp(100)
-        )
-        content.add_widget(self.tf_habits)
-        
         scroll.add_widget(content)
         layout.add_widget(scroll)
         
@@ -207,13 +200,12 @@ class SchedulePreferencesDialog(ModalView):
             self.btn_end_sleep.children[0].text = f"Dậy: {time_obj.strftime('%H:%M')}"
 
 
-    #Ghi chú: Kết nối phần này với backend cho chuẩn
+    # Ghi chú: Kết nối phần này với backend cho chuẩn
     def save_preferences(self, instance):
         payload = {
             "sleep_schedule": f"{self.btn_start_sleep.children[0].text} - {self.btn_end_sleep.children[0].text}",
             "min_break_minutes": self.tf_break.text,
             "max_continuous_minutes": self.tf_max_duration.text,
-            "natural_language_preference": self.tf_habits.text
         }
         # Lưu vào local store dự phòng
         try:
@@ -408,24 +400,6 @@ class SideBarMenu(ModalView):
         )
         self.menu_list.add_widget(self.tf_max_duration)
 
-        # 4. Thói quen xếp lịch
-        self.menu_list.add_widget(MDLabel(
-            text="Thói quen cá nhân:",
-            font_style="Body",
-            role="small",
-            theme_text_color="Hint",
-            size_hint_y=None,
-            height=dp(20)
-        ))
-        self.tf_habits = MDTextField(
-            MDTextFieldHintText(text="VD: Thích học sáng, không xếp lịch sau 21h..."),
-            multiline=True,
-            mode="outlined",
-            size_hint_y=None,
-            height=dp(70)
-        )
-        self.menu_list.add_widget(self.tf_habits)
-
         # Trạng thái lưu
         self.lbl_pref_status = MDLabel(
             text="",
@@ -495,7 +469,6 @@ class SideBarMenu(ModalView):
             "sleep_schedule": f"{start_txt} - {end_txt}",
             "min_break_minutes": self.tf_break.text,
             "max_continuous_minutes": self.tf_max_duration.text,
-            "natural_language_preference": self.tf_habits.text
         }
         try:
             api.store.put("user_preferences", **payload)
@@ -529,8 +502,6 @@ class SideBarMenu(ModalView):
                     self.tf_break.text = str(data["min_break_minutes"])
                 if data.get("max_continuous_minutes"):
                     self.tf_max_duration.text = str(data["max_continuous_minutes"])
-                if data.get("natural_language_preference"):
-                    self.tf_habits.text = str(data["natural_language_preference"])
         except Exception:
             pass
 

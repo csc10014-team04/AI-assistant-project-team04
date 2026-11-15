@@ -5,6 +5,9 @@ from kivy.uix.widget import Widget
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
 from kivy.metrics import dp
+from kivy.utils import platform
+from kivy.core.window import Window
+from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.scrollview import ScrollView
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
@@ -833,11 +836,34 @@ class AddEventModal(ModalView):
 # 2. MODAL: IMPORT LỊCH - BƯỚC 1 (Chọn & Tải File .csv, .txt, .png, .jpeg)
 # ==============================================================================
 class ImportStep1Modal(ModalView):
+    """
+    Hộp thoại Import Lịch (Bước 1):
+    - Cho phép người dùng chọn tệp thời khóa biểu định dạng bảng (.csv, .txt, .md)
+      hoặc ảnh chụp thời khóa biểu (.png, .jpg, .jpeg).
+    - Được thiết kế giao diện linh hoạt (Responsive): Căn giữa gọn gàng trên Desktop/PC
+      toàn màn hình, không bị tràn dãn bất hợp lý.
+    - Cấu trúc 3 phần rõ ràng:
+      + Phần trên: Tiêu đề và lời dẫn hướng dẫn.
+      + Phần giữa: Ô khung hiển thị quy cách file hỗ trợ, trạng thái tệp và nút chọn tệp.
+      + Phần dưới: Thanh điều hướng gồm nút Phân tích và Hủy.
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.size_hint = (0.92, 0.55)
         self.auto_dismiss = False
-        
+
+        # Thiết lập kích thước Responsive:
+        # Trên PC (màn hình lớn), cố định kích thước tối đa để không bị dồn lệch xuống nửa dưới.
+        # Trên thiết bị di động (Android/iOS), đặt tỷ lệ khung hình phù hợp.
+        is_pc = (platform not in ['android', 'ios']) and (Window.width >= dp(700))
+        if is_pc:
+            self.size_hint = (None, None)
+            self.width = min(dp(540), Window.width * 0.9)
+            self.height = min(dp(480), Window.height * 0.85)
+        else:
+            self.size_hint = (0.92, None)
+            self.height = dp(460)
+
+        # Container chính của Modal
         layout = MDBoxLayout(
             orientation='vertical',
             padding=dp(20),
@@ -845,60 +871,134 @@ class ImportStep1Modal(ModalView):
             md_bg_color=[1, 1, 1, 1],
             radius=[dp(12)]
         )
-        layout.add_widget(
+
+        # 1. KHUNG TIÊU ĐỀ Ở TRÊN CÙNG
+        header_box = MDBoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            adaptive_height=True,
+            spacing=dp(4)
+        )
+        header_box.add_widget(
             MDLabel(
                 text="Import Lịch (Bước 1/3)",
                 font_style="Title",
                 role="large",
                 bold=True,
+                adaptive_height=True,
                 size_hint_y=None,
-                height=dp(35),
             )
         )
-        layout.add_widget(
+        header_box.add_widget(
             MDLabel(
-                text="Hỗ trợ file: .csv, .txt, .md, .png, .jpg, .jpeg",
+                text="Tải lên tệp thời khóa biểu để tự động nhận diện lịch học và sự kiện",
                 theme_text_color="Hint",
+                font_style="Body",
+                role="small",
+                adaptive_height=True,
                 size_hint_y=None,
-                height=dp(22),
             )
         )
-        
+        layout.add_widget(header_box)
+
+        # 2. KHU VỰC Ở GIỮA: Ô TRỐNG HIỂN THỊ YÊU CẦU ĐỊNH DẠNG VÀ TỆP ĐÃ CHỌN
+        # Sử dụng size_hint_y=1 để chiếm trọn không gian phần giữa một cách cân đối
+        self.middle_card = MDBoxLayout(
+            orientation='vertical',
+            size_hint=(1, 1),
+            padding=[dp(16), dp(16), dp(16), dp(16)],
+            spacing=dp(10),
+            md_bg_color=[0.96, 0.97, 0.99, 1],
+            radius=[dp(10)]
+        )
+        with self.middle_card.canvas.before:
+            Color(0.80, 0.84, 0.90, 1)
+            self.middle_border = Line(rounded_rectangle=[0, 0, 100, 100, dp(10)], width=1.1)
+        self.middle_card.bind(pos=self._update_middle_border, size=self._update_middle_border)
+
+        # Icon tải lên tệp
+        icon_upload = MDIconButton(
+            icon="file-upload-outline",
+            theme_icon_color="Custom",
+            icon_color=[0, 51/255, 204/255, 1],
+            pos_hint={"center_x": 0.5},
+            size_hint_y=None,
+            height=dp(42)
+        )
+        icon_upload.bind(on_release=self.open_file_manager)
+        self.middle_card.add_widget(icon_upload)
+
+        # Tiêu đề yêu cầu định dạng
+        lbl_format_title = MDLabel(
+            text="Yêu cầu định dạng tệp:",
+            bold=True,
+            halign="center",
+            font_style="Body",
+            role="medium",
+            adaptive_height=True,
+            size_hint_y=None,
+        )
+        lbl_format_desc = MDLabel(
+            text="Hỗ trợ các tệp: .csv, .txt, .md, .png, .jpg, .jpeg\n(Ảnh chụp thời khóa biểu hoặc tệp bảng tính)",
+            halign="center",
+            theme_text_color="Hint",
+            font_style="Body",
+            role="small",
+            adaptive_height=True,
+            size_hint_y=None,
+        )
+        self.middle_card.add_widget(lbl_format_title)
+        self.middle_card.add_widget(lbl_format_desc)
+
+        # Nhãn hiển thị trạng thái tệp đã chọn
         self.lbl_file = MDLabel(
-            text="Chưa chọn file nào",
+            text="Chưa chọn tệp nào",
             theme_text_color="Hint",
             halign="center",
+            bold=True,
+            font_style="Body",
+            role="medium",
             adaptive_height=True,
             size_hint_y=None,
         )
         self.lbl_file.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
-        layout.add_widget(self.lbl_file)
-        
+        self.middle_card.add_widget(self.lbl_file)
+
+        # Nút nhấn mở File Manager
         btn_select = MDButton(
-            MDButtonText(text="CHỌN FILE (.csv, .txt, .png, .jpeg)"),
+            MDButtonText(text="CHỌN FILE TỪ THIẾT BỊ"),
             style="elevated",
-            size_hint_x=1,
+            pos_hint={"center_x": 0.5},
+            size_hint_y=None,
+            height=dp(38),
             on_release=self.open_file_manager,
         )
-        layout.add_widget(btn_select)
-        
-        btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(50))
+        self.middle_card.add_widget(btn_select)
+        layout.add_widget(self.middle_card)
+
+        # 3. THANH NÚT ĐIỀU HƯỚNG DƯỚI CÙNG
+        btn_box = MDBoxLayout(
+            orientation='horizontal',
+            spacing=dp(10),
+            size_hint_y=None,
+            height=dp(48)
+        )
         self.btn_analyze_text = MDButtonText(text="PHÂN TÍCH", text_color=[1, 1, 1, 1])
         self.btn_analyze = MDButton(
             self.btn_analyze_text,
             style="filled",
             md_bg_color=[0, 51/255, 204/255, 1],
-            size_hint_x=1,
+            size_hint_x=0.5,
             on_release=self.analyze_data,
             disabled=True,
         )
         btn_cancel = MDButton(
             MDButtonText(text="HỦY"),
             style="outlined",
-            size_hint_x=1,
+            size_hint_x=0.5,
             on_release=self.dismiss,
         )
-        
+
         btn_box.add_widget(self.btn_analyze)
         btn_box.add_widget(btn_cancel)
         layout.add_widget(btn_box)
@@ -915,6 +1015,14 @@ class ImportStep1Modal(ModalView):
             ".CSV", ".TXT", ".MD", ".PNG", ".JPG", ".JPEG",
         ]
         self.selected_path = None
+
+    def _update_middle_border(self, instance, value):
+        """Cập nhật tọa độ viền bo góc khi widget thay đổi vị trí hoặc kích thước"""
+        if hasattr(self, 'middle_border') and hasattr(self, 'middle_card'):
+            self.middle_border.rounded_rectangle = [
+                self.middle_card.x, self.middle_card.y,
+                self.middle_card.width, self.middle_card.height, dp(10)
+            ]
 
     def open_file_manager(self, instance):
         start_dir = os.path.expanduser("~")
