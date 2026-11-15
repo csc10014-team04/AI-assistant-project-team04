@@ -371,9 +371,11 @@ class ProposalCard(MDBoxLayout):
         try:
             st = datetime.fromisoformat(self.proposal["start_time"])
             et = datetime.fromisoformat(self.proposal["end_time"])
-            wd = WEEKDAYS_VN[st.weekday()]
+            wd = WEEKDAYS_EN[st.weekday()]
             time_str = f"{wd} ({st.day}/{st.month}) | {st.strftime('%H:%M')} - {et.strftime('%H:%M')}"
-        except Exception:
+        except Exception as exc:
+            print("[DEBUG PROPOSAL TIME ERROR]", type(exc).__name__, str(exc))
+            print("[DEBUG PROPOSAL TIME DATA]", repr(self.proposal))
             time_str = "Unknown time"
 
         extra_slots = self.proposal.get("extra_slots") or []
@@ -747,6 +749,7 @@ class ChatAssistantScreen(MDScreen):
             print(f"[AI FALLBACK] {nlu.get('fallback_reason')}")
 
         proposal = result.get("proposal")
+        print("[DEBUG FRONTEND PROPOSAL]", repr(proposal))
         if proposal:  # server found a free slot -> show the Accept / Reject / Reschedule card
             self.append_ai_message(result.get("message") or "I propose this time slot:")
             new_card = ProposalCard(proposal_data=proposal, chat_screen=self)

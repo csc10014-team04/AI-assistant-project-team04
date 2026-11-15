@@ -15,6 +15,28 @@ from services.temporal import resolve_date_hint
 
 NOW = datetime(2026, 10, 19, 9, 0, tzinfo=VN_TZ)  # Monday
 
+@pytest.mark.parametrize("prompt,expected", [
+    ("from 9 AM to 11 AM", (540, 660)),
+    ("from 9:00 AM to 11:00 AM", (540, 660)),
+    ("from 1 PM to 3 PM", (780, 900)),
+    ("from 12 AM to 2 AM", (0, 120)),
+    ("from 12 PM to 2 PM", (720, 840)),
+    ("từ 9h sáng đến 11h", (540, 660)),
+    ("từ 2h chiều đến 4h chiều", (840, 960)),
+])
+def test_parse_clock_windows(prompt, expected):
+    assert nlu.parse_clock_window(prompt) == expected
+
+@pytest.mark.parametrize("hint,expected", [
+    ("17th", date(2026, 11, 17)),
+    ("25th", date(2026, 10, 25)),
+    ("1st", date(2026, 11, 1)),
+])
+def test_resolve_ordinal_dates(hint, expected):
+    w = resolve_date_hint(hint, NOW)
+    assert w.start == expected
+    assert w.end == expected
+    assert w.clarification_question is None
 
 @pytest.fixture(autouse=True)
 def _isolate_logs(tmp_path, monkeypatch):

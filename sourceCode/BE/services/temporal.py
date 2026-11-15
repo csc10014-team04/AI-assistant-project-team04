@@ -41,7 +41,49 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
     if not hint or not hint.strip():
         return default
     h = unicodedata.normalize("NFC", hint).lower().strip()
-
+    months = {
+        "january": 1, "jan": 1,
+        "february": 2, "feb": 2,
+        "march": 3, "mar": 3,
+        "april": 4, "apr": 4,
+        "may": 5,
+        "june": 6, "jun": 6,
+        "july": 7, "jul": 7,
+        "august": 8, "aug": 8,
+        "september": 9, "sep": 9, "sept": 9,
+        "october": 10, "oct": 10,
+        "november": 11, "nov": 11,
+        "december": 12, "dec": 12,
+    }
+    month_pattern = "|".join(sorted(months, key=len, reverse=True))
+    month_date = re.search(
+        rf"\b({month_pattern})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{4}}))?\b"
+        rf"|\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_pattern})(?:,?\s+(\d{{4}}))?\b",
+        h,
+    )
+    if month_date:
+        if month_date.group(1):
+            month = months[month_date.group(1)]
+            day = int(month_date.group(2))
+            year = int(month_date.group(3)) if month_date.group(3) else today.year
+            has_year = month_date.group(3) is not None
+        else:
+            day = int(month_date.group(4))
+            month = months[month_date.group(5)]
+            year = int(month_date.group(6)) if month_date.group(6) else today.year
+            has_year = month_date.group(6) is not None
+        try:
+            d = date(year, month, day)
+        except ValueError:
+            default.clarification_question = f'Ngày "{month_date.group(0)}" không hợp lệ. Bạn muốn chọn ngày nào?'
+            return default
+        if not has_year and d < today:
+            try:
+                d = date(year + 1, month, day)
+            except ValueError:
+                default.clarification_question = f'Ngày "{month_date.group(0)}" không hợp lệ trong năm tiếp theo.'
+                return default
+        return ResolvedWindow(d, d)
     if any(v in h for v in _VAGUE):
         default.clarification_question = "Bạn muốn xếp vào ngày nào? (ví dụ: ngày mai, thứ sáu, tuần sau)"
         default.note = "vague date; defaulted to next 7 days"
@@ -61,7 +103,23 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         if not m.group(3) and d < today:
             d = date(year + 1, month, day)
         return ResolvedWindow(d, d)
-
+    ordinal = re.search(r"\b(\d{1,2})(st|nd|rd|th)\b", h)
+    if ordinal:
+        day = int(ordinal.group(1))
+        year = today.year
+        try:
+            d = date(year, today.month, day)
+        except ValueError:
+            default.clarification_question = f"Ngày {ordinal.group(0)} không hợp lệ, bạn muốn ngày nào?"
+            return default
+        if d < today:
+            next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+            try:
+                d = date(next_month.year, next_month.month, day)
+            except ValueError:
+                default.clarification_question = f"Ngày {ordinal.group(0)} không hợp lệ trong tháng tiếp theo."
+                return default
+        return ResolvedWindow(d, d)
     if "hôm nay" in h or h == "today":
         return ResolvedWindow(today, today)
     if "ngày mai" in h or h == "tomorrow":

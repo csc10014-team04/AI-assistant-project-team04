@@ -1,13 +1,14 @@
 # [pic: khoi] p1-7 conversational scheduling entry & cross-tab redirect (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
-from datetime import datetime, time, timedelta
+import re
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, VN_TZ, abandon_pending_proposals, from_db_to_vn, get_db
-from models import ProposalStatus, User
+from models import PendingClarification, ProposalStatus, User
 from routers.proposals import ProposalOut, proposal_out
 from services import proposals as proposal_svc
 from services import rag
@@ -57,18 +58,147 @@ def understand(
     """
     parent = None
     abandoned = 0
-    if body.reschedule_proposal_id is None:
-        abandoned = abandon_pending_proposals(db, current_user.id)
-    else:  # reschedule follow-up: the old proposal must still be waiting for the user
+    now = datetime.now(UTC_TZ)
+
+    pending = db.get(PendingClarification, current_user.id)
+    context = None
+
+    if pending is not None:
+        created_at = pending.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC_TZ)
+
+        if now - created_at <= timedelta(minutes=10):
+            context = pending.context_json
+        else:
+            db.delete(pending)
+            pending = None
+
+    prompt_lower = body.prompt.strip().lower()
+
+    is_cancel = bool(
+        re.fullmatch(
+            r"(cancel|never mind|nevermind|stop|huy|huỷ|hủy|thôi|bỏ qua)[.!]?",
+            prompt_lower,
+        )
+    )
+
+    is_new_topic = bool(
+        re.search(
+            r"\b(schedule|plan|add|book|reschedule|move|delete|remove|"
+            r"what|when|show|find|check|lịch|xếp|đặt|thêm|xem|tra cứu|"
+            r"xóa|xoá)\b",
+            prompt_lower,
+        )
+    )
+
+    if body.reschedule_proposal_id is not None:
+        if pending is not None:
+            db.delete(pending)
+            context = None
+
         try:
-            parent = proposal_svc.get_proposal(db, current_user.id, body.reschedule_proposal_id)
+            parent = proposal_svc.get_proposal(
+                db, current_user.id, body.reschedule_proposal_id
+            )
         except proposal_svc.ProposalError as exc:
             raise HTTPException(exc.status_code, exc.detail) from exc
+
         if parent.status != ProposalStatus.PROPOSED:
             raise HTTPException(409, f"proposal is already {parent.status.value}")
-    now = datetime.now(UTC_TZ)
-    result = understand_prompt(body.prompt, now, db=db, user_id=current_user.id)
 
+    elif is_cancel:
+        if pending is not None:
+            db.delete(pending)
+        context = None
+
+    elif context is not None and not is_new_topic:
+        original_prompt = context["original_prompt"]
+        combined_prompt = f"Schedule {body.prompt.strip()} {original_prompt}"
+
+        result = understand_prompt(
+            combined_prompt,
+            now,
+            db=db,
+            user_id=current_user.id,
+        )
+
+        result.requested_start = context["requested_start"]
+        result.requested_end = context["requested_end"]
+        result.duration_minutes = context["duration_minutes"]
+
+        if context.get("window_start"):
+            result.window_start = date.fromisoformat(context["window_start"])
+
+        if context.get("window_end"):
+            result.window_end = date.fromisoformat(context["window_end"])
+
+        if result.intent == "unknown" and result.title:
+            result.intent = "schedule_task"
+
+    else:
+        if pending is not None:
+            db.delete(pending)
+
+        abandoned = abandon_pending_proposals(db, current_user.id)
+
+    if context is None and not is_cancel:
+        result = understand_prompt(
+            body.prompt,
+            now,
+            db=db,
+            user_id=current_user.id,
+        )
+
+    if is_cancel:
+        result = understand_prompt(
+            body.prompt,
+            now,
+            db=db,
+            user_id=current_user.id,
+        )
+        result.intent = "unknown"
+        result.title = None
+        result.needs_clarification = False
+        result.clarification_question = None
+        message = "Clarification cancelled."
+    else:
+        message = None
+
+    if (
+        result.needs_clarification
+        and result.intent == "unknown"
+        and result.requested_start
+        and result.requested_end
+    ):
+        context_data = {
+            "original_prompt": (
+                context["original_prompt"] if context is not None else body.prompt
+            ),
+            "requested_start": result.requested_start,
+            "requested_end": result.requested_end,
+            "duration_minutes": result.duration_minutes,
+            "window_start": (
+                result.window_start.isoformat() if result.window_start else None
+            ),
+            "window_end": (
+                result.window_end.isoformat() if result.window_end else None
+            ),
+        }
+
+        if pending is None:
+            pending = PendingClarification(
+                user_id=current_user.id,
+                context_json=context_data,
+            )
+            db.add(pending)
+        else:
+            pending.context_json = context_data
+
+    elif pending is not None:
+        db.delete(pending)
+
+    print("[DEBUG NLU]", result.model_dump())
     proposal = None
     message = None
     available_slots: list[FallbackSlotOut] = []
@@ -102,6 +232,11 @@ def understand(
                 ]
     elif not result.needs_clarification and (result.intent == "schedule_task" or (parent and result.intent != "unknown")):
         created = proposal_svc.create_proposal(db, current_user.id, result, body.prompt, now, parent)
+        print("[DEBUG PROPOSAL]", None if created is None else {
+            "start": from_db_to_vn(created.start_time).isoformat(),
+            "end": from_db_to_vn(created.end_time).isoformat(),
+            "title": created.task.title,
+        })
         if created is None:
             message = "Không tìm thấy khung giờ trống phù hợp trong khoảng thời gian này. Bạn thử chọn ngày khác nhé."
         else:
@@ -110,6 +245,12 @@ def understand(
             db.flush()
             proposal = proposal_out(created)
             message = "Mình đề xuất khung giờ này, bạn xác nhận nhé."
+    print("[DEBUG CLARIFICATION]", {
+        "user_id": current_user.id,
+        "pending_exists": pending is not None,
+        "context": pending.context_json if pending is not None else None,
+        "new_or_dirty": pending in db.new or pending in db.dirty if pending is not None else False,
+    })
     db.commit()
 
     redirect_target: str | None = None
