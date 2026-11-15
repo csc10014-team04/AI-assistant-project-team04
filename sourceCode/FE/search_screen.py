@@ -8,7 +8,6 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.modalview import ModalView
-
 # IMPORT THUẦN KIVY ĐỂ CHỐNG CRASH CHO POPUP
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
@@ -101,8 +100,8 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         
         start_dt = datetime.fromisoformat(event["start_time"])
         end_dt = datetime.fromisoformat(event["end_time"])
-        days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-        day_str = days_vn[start_dt.weekday()]
+        days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        day_str = days_en[start_dt.weekday()]
         date_str = start_dt.strftime("%d/%m/%Y")
         start_time_str = start_dt.strftime("%H:%M")
         end_time_str = end_dt.strftime("%H:%M")
@@ -119,19 +118,19 @@ class EventCard(ButtonBehavior, MDBoxLayout):
             self.labels.append(lbl_deadline)
         else:
             lbl_date = MDLabel(
-                text=f"[b]{day_str} Ngày {date_str}:[/b]",
+                text=f"[b]{day_str}, {date_str}:[/b]",
                 markup=True, halign='left',
                 theme_text_color="Custom", text_color=BLACK_COLOR,
                 adaptive_height=True, size_hint_x=1
             )
             lbl_title = MDLabel(
-                text=f"Công việc: {title}",
+                text=f"Event: {title}",
                 markup=True, halign='left',
                 theme_text_color="Custom", text_color=BLACK_COLOR,
                 adaptive_height=True, size_hint_x=1
             )
             lbl_time = MDLabel(
-                text=f"Thời gian: {start_time_str} - {end_time_str}",
+                text=f"Time: {start_time_str} - {end_time_str}",
                 halign='left',
                 theme_text_color="Custom", text_color=BLACK_COLOR,
                 adaptive_height=True, size_hint_x=1
@@ -140,7 +139,7 @@ class EventCard(ButtonBehavior, MDBoxLayout):
 
         if room and str(room).strip() and str(room).lower() not in ("none", "null"):
             lbl_room = MDLabel(
-                text=f"[b]Địa điểm:[/b] {str(room).strip()}",
+                text=f"[b]Location:[/b] {str(room).strip()}",
                 markup=True, halign='left',
                 theme_text_color="Custom", text_color=BLACK_COLOR,
                 adaptive_height=True, size_hint_x=1
@@ -169,8 +168,8 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         try:
             st = datetime.fromisoformat(updated_event["start_time"])
             et = datetime.fromisoformat(updated_event["end_time"])
-            days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-            day_str = days_vn[st.weekday()]
+            days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            day_str = days_en[st.weekday()]
             date_str = st.strftime("%d/%m/%Y")
             s_str = st.strftime("%H:%M")
             e_str = et.strftime("%H:%M")
@@ -179,8 +178,8 @@ class EventCard(ButtonBehavior, MDBoxLayout):
                     self.labels[0].text = f"[b]Deadline:[/b] {self.event.get('title')} - {e_str} ({date_str})"
             else:
                 if len(self.labels) >= 3:
-                    self.labels[0].text = f"[b]{day_str} Ngày {date_str}:[/b]"
-                    self.labels[2].text = f"Thời gian: {s_str} - {e_str}"
+                    self.labels[0].text = f"[b]{day_str}, {date_str}:[/b]"
+                    self.labels[2].text = f"Time: {s_str} - {e_str}"
         except Exception:
             pass
 
@@ -301,7 +300,7 @@ class SearchScreen(MDScreen):
         input_bg.bind(pos=update_input_border, size=update_input_border)
         
         self.txt_search = TextInput(
-            hint_text="Nhập tên, ngày (vd: ctdl, 26/10)...", background_color=[0, 0, 0, 0],
+            hint_text="Search title, date (e.g. math, 26/10)...", background_color=[0, 0, 0, 0],
             foreground_color=BLACK_COLOR, multiline=False, font_size=dp(15), 
             size_hint_y=None, height=dp(30), pos_hint={"center_y": .5}
         )
@@ -347,12 +346,12 @@ class SearchScreen(MDScreen):
             mode_bar_outer.add_widget(mode_bar)
 
         self.btn_mode_schedule = MDButton(
-            MDButtonText(text="Tìm lịch cá nhân", font_style="Label", role="small"),
+            MDButtonText(text="My Schedule", font_style="Label", role="small"),
             style="filled", md_bg_color=BLUE_COLOR, size_hint_x=0.5,
             on_release=lambda x: self.switch_mode("schedule")
         )
         self.btn_mode_academic = MDButton(
-            MDButtonText(text="Hỏi đáp Học vụ", font_style="Label", role="small"),
+            MDButtonText(text="Academic Q&A", font_style="Label", role="small"),
             style="outlined", size_hint_x=0.5,
             on_release=lambda x: self.switch_mode("academic")
         )
@@ -371,9 +370,9 @@ class SearchScreen(MDScreen):
             orientation='horizontal', size_hint_y=None, height=dp(50), 
             padding=[dp(10), dp(5), dp(10), dp(5)], spacing=dp(10), md_bg_color=WHITE_COLOR
         )
-        nav_bar.add_widget(NavTab(text="Lịch chính", target_screen="calendar_home", is_active=False))
-        nav_bar.add_widget(NavTab(text="Tìm kiếm", target_screen="search_home", is_active=True))
-        nav_bar.add_widget(NavTab(text="Trợ lý AI", target_screen="chat_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="Calendar", target_screen="calendar_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="Search", target_screen="search_home", is_active=True))
+        nav_bar.add_widget(NavTab(text="AI Assistant", target_screen="chat_home", is_active=False))
         self.main_layout.add_widget(nav_bar)
 
         self.txt_search.bind(text=self.on_text_change)
@@ -392,7 +391,7 @@ class SearchScreen(MDScreen):
             if self.btn_mode_academic.children:
                 self.btn_mode_academic.children[0].text_color = BLUE_COLOR
 
-            self.txt_search.hint_text = "Nhập tên, ngày (vd: ctdl, 26/10)..."
+            self.txt_search.hint_text = "Search title, date (e.g. math, 26/10)..."
             self.btn_filter.opacity = 1
             self.btn_filter.disabled = False
         else:
@@ -406,7 +405,7 @@ class SearchScreen(MDScreen):
             if self.btn_mode_academic.children:
                 self.btn_mode_academic.children[0].text_color = WHITE_COLOR
 
-            self.txt_search.hint_text = "Hỏi học vụ (vd: điều kiện tốt nghiệp, môn tiên quyết)..."
+            self.txt_search.hint_text = "Ask academic KB (e.g. graduation requirements)..."
             self.btn_filter.opacity = 0
             self.btn_filter.disabled = True
 
@@ -444,7 +443,7 @@ class SearchScreen(MDScreen):
         modal_content.bind(pos=update_modal_bg, size=update_modal_bg)
         
         lbl_title = Label(
-            text="BỘ LỌC SỰ KIỆN", bold=True, color=BLACK_COLOR,
+            text="EVENT FILTERS", bold=True, color=BLACK_COLOR,
             size_hint_y=None, height=dp(30) 
         )
         modal_content.add_widget(lbl_title)
@@ -453,9 +452,9 @@ class SearchScreen(MDScreen):
         grid.bind(minimum_height=grid.setter('height'))
         
         options = {
-            "CLASS": "Lớp học", "EXAM": "Bài thi", 
-            "EVENT": "Sự kiện", "TASK": "Nhiệm vụ", 
-            "DEADLINE": "Hạn chót"
+            "CLASS": "Class", "EXAM": "Exam", 
+            "EVENT": "Event", "TASK": "Task", 
+            "DEADLINE": "Deadline"
         }
         
         def update_filter(key):
@@ -483,7 +482,7 @@ class SearchScreen(MDScreen):
         )
         chk_imp.bind(active=lambda inst, val: setattr(self, 'filter_important_only', val))
         
-        lbl_imp = Label(text="Quan trọng", color=BLACK_COLOR, bold=True, halign="left", valign="center")
+        lbl_imp = Label(text="Important", color=BLACK_COLOR, bold=True, halign="left", valign="center")
         lbl_imp.bind(size=lbl_imp.setter('text_size'))
         
         box_imp.add_widget(chk_imp)
@@ -493,7 +492,7 @@ class SearchScreen(MDScreen):
         modal_content.add_widget(grid)
         
         btn_apply = Button(
-            text="Áp dụng & Tìm kiếm",
+            text="Apply & Search",
             background_normal='', background_color=BLUE_COLOR, color=WHITE_COLOR, bold=True,
             size_hint=(None, None), size=(dp(180), dp(40)), pos_hint={"center_x": 0.5} 
         )
@@ -542,14 +541,14 @@ class SearchScreen(MDScreen):
             adaptive_height=True,
         )
         card.add_widget(MDLabel(
-            text=f"[Gợi ý] {message}",
+            text=f"[Suggestion] {message}",
             theme_text_color="Primary",
             font_style="Body",
             role="medium",
             adaptive_height=True,
         ))
         nav_btn = MDButton(
-            MDButtonText(text=f"Chuyển sang {redirect_label}", text_color=WHITE_COLOR),
+            MDButtonText(text=f"Switch to {redirect_label}", text_color=WHITE_COLOR),
             style="filled",
             md_bg_color=BLUE_COLOR,
             size_hint=(None, None),
@@ -584,10 +583,10 @@ class SearchScreen(MDScreen):
             return
 
         redirect_target = res.get("redirect_target")
-        redirect_label = res.get("redirect_button_label") or "Trợ lý AI"
+        redirect_label = res.get("redirect_button_label") or "AI Assistant"
         if redirect_target:
             self._show_redirect_banner(
-                res.get("message") or "Bạn đang muốn yêu cầu xếp lịch công việc.",
+                res.get("message") or "You may want to schedule this task with the assistant.",
                 redirect_target,
                 redirect_label,
             )
@@ -609,7 +608,7 @@ class SearchScreen(MDScreen):
 
         if count == 0:
             self.results_box.add_widget(MDLabel(
-                text="Không tìm thấy lịch trình phù hợp!",
+                text="No matching schedule found!",
                 halign="center",
                 theme_text_color="Custom",
                 text_color=GRAY_TEXT,
@@ -626,7 +625,7 @@ class SearchScreen(MDScreen):
         for event in store.events:
             if count >= MAX_RESULTS:
                 self.results_box.add_widget(MDLabel(
-                    text=f"Đã hiển thị {MAX_RESULTS} kết quả...",
+                    text=f"Displaying {MAX_RESULTS} results...",
                     halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
                     font_style="Body", role="medium", size_hint_y=None, height=dp(40)
                 ))
@@ -660,7 +659,7 @@ class SearchScreen(MDScreen):
 
         if count == 0:
             self.results_box.add_widget(MDLabel(
-                text="Không tìm thấy kết quả nào!",
+                text="No results found!",
                 halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
                 font_style="Body", role="large", size_hint_y=None, height=dp(50)
             ))
@@ -673,18 +672,18 @@ class SearchScreen(MDScreen):
                 md_bg_color=WHITE_COLOR, radius=[dp(12)], adaptive_height=True
             )
             hint_box.add_widget(MDLabel(
-                text="Hỏi đáp Cơ sở Tri thức Học vụ",
+                text="Academic Knowledge Base Q&A",
                 bold=True, font_style="Title", role="medium", adaptive_height=True
             ))
             hint_box.add_widget(MDLabel(
-                text="Bạn có thể hỏi về:\n- Điều kiện tốt nghiệp, số tín chỉ tích lũy\n- Giảng viên, bộ môn, khoa\n- Môn học tiên quyết, mô tả học phần\n- Quy chế học vụ, kiểm tra, thi cử",
+                text="You can ask about:\n- Graduation requirements, credits\n- Lecturers, departments, faculties\n- Prerequisites, course descriptions\n- Academic regulations, exams",
                 theme_text_color="Secondary", font_style="Body", role="medium", adaptive_height=True
             ))
             self.results_box.add_widget(hint_box)
             return
 
         self.results_box.add_widget(MDLabel(
-            text="Đang tra cứu cơ sở tri thức học vụ...",
+            text="Searching academic knowledge base...",
             halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
             font_style="Body", role="medium", size_hint_y=None, height=dp(40)
         ))
@@ -700,16 +699,16 @@ class SearchScreen(MDScreen):
         self.results_box.clear_widgets()
         if not isinstance(res, dict):
             self.results_box.add_widget(MDLabel(
-                text="Không nhận được dữ liệu phản hồi hợp lệ.",
+                text="Invalid response received from server.",
                 theme_text_color="Error", size_hint_y=None, height=dp(40)
             ))
             return
 
         redirect_target = res.get("redirect_target")
-        redirect_label = res.get("redirect_button_label") or "Trợ lý AI"
+        redirect_label = res.get("redirect_button_label") or "AI Assistant"
         if redirect_target:
             self._show_redirect_banner(
-                res.get("message") or "Bạn đang muốn yêu cầu xếp lịch công việc.",
+                res.get("message") or "You may want to schedule this task with the assistant.",
                 redirect_target,
                 redirect_label,
             )
@@ -721,10 +720,10 @@ class SearchScreen(MDScreen):
             md_bg_color=WHITE_COLOR, radius=[dp(12)], adaptive_height=True
         )
         ans_box.add_widget(MDLabel(
-            text="Trả lời từ Trợ lý Học vụ:",
+            text="Answer from Academic Assistant:",
             bold=True, theme_text_color="Primary", font_style="Title", role="small", adaptive_height=True
         ))
-        ans_text = res.get("answer") or "Chưa có thông tin phù hợp cho câu hỏi này."
+        ans_text = res.get("answer") or "No matching information found for this question."
         ans_box.add_widget(MDLabel(
             text=ans_text,
             font_style="Body", role="medium", adaptive_height=True
@@ -739,11 +738,11 @@ class SearchScreen(MDScreen):
                 md_bg_color=[0.96, 0.96, 0.98, 1], radius=[dp(10)], adaptive_height=True
             )
             cite_container.add_widget(MDLabel(
-                text="Trích dẫn nguồn tham khảo:",
+                text="Reference citations:",
                 bold=True, theme_text_color="Secondary", font_style="Label", role="large", adaptive_height=True
             ))
             for i, c in enumerate(citations, 1):
-                src = c.get("source", "Tài liệu học vụ")
+                src = c.get("source", "Academic Document")
                 txt = c.get("text", "")
                 cite_box = MDBoxLayout(orientation='vertical', spacing=dp(3), adaptive_height=True)
                 cite_box.add_widget(MDLabel(
@@ -761,11 +760,11 @@ class SearchScreen(MDScreen):
 
     def _on_academic_error(self, req, err):
         self.results_box.clear_widgets()
-        err_msg = "Không thể kết nối đến máy chủ tra cứu học vụ."
+        err_msg = "Cannot connect to academic search server."
         if isinstance(err, dict) and err.get("detail"):
-            err_msg = f"Lỗi: {err.get('detail')}"
+            err_msg = f"Error: {err.get('detail')}"
         elif isinstance(err, str):
-            err_msg = f"Lỗi: {err}"
+            err_msg = f"Error: {err}"
         self.results_box.add_widget(MDLabel(
             text=err_msg,
             theme_text_color="Error",

@@ -198,6 +198,10 @@ class APIClient:
         """Hàm cốt lõi xử lý gửi HTTP Request"""
         url = f"{self.base_url}{endpoint}"
         req_body = json.dumps(payload) if payload is not None else None
+        headers = self.get_headers()
+        # Bỏ header Content-Type nếu request không có body (GET, DELETE) để tránh lỗi một số HTTP server
+        if req_body is None and "Content-Type" in headers:
+            del headers["Content-Type"]
 
         def default_cb(req, result):
             pass
@@ -322,11 +326,11 @@ class APIClient:
             except requests.exceptions.Timeout as e:
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, "Quá thời gian kết nối tới máy chủ (Timeout 30s)"), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, "Connection timed out (Timeout 30s)"), 0)
             except requests.exceptions.ConnectionError as e:
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, "Không thể kết nối tới máy chủ (kiểm tra mạng hoặc VPN)"), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, "Cannot connect to server (check network or VPN)"), 0)
             except Exception as e:
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
@@ -559,7 +563,6 @@ class APIClient:
                    "slot_start": slot_start, "slot_end": slot_end}
         self._request("/api/v1/proposals/manual", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
-
 
 # Khởi tạo instance duy nhất
 api = APIClient()

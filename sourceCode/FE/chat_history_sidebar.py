@@ -1,5 +1,5 @@
 """
-FILE: chat_history_sidebar.py
+FILE:chat_history_sidebar.py
 """
 from kivy.metrics import dp
 from kivy.core.window import Window
@@ -210,7 +210,7 @@ class ChatHistorySideBar(ModalView):
         btn_close.bind(on_release=lambda x: self.dismiss())
         
         lbl_title = MDLabel(
-            text="Lịch sử",
+            text="History",
             bold=True,
             font_style="Title",
             role="medium",
@@ -256,7 +256,7 @@ class ChatHistorySideBar(ModalView):
         
         if not sessions:
             lbl_empty = MDLabel(
-                text="Chưa có cuộc trò chuyện nào",
+                text="No conversations yet",
                 theme_text_color="Hint",
                 halign="center",
                 font_style="Body",
@@ -268,7 +268,7 @@ class ChatHistorySideBar(ModalView):
             return
 
         for i, session in enumerate(sessions):
-            title = session.get("title", f"Trò chuyện {i+1}") if isinstance(session, dict) else str(session)
+            title = session.get("title", f"Chat {i+1}") if isinstance(session, dict) else str(session)
             item = HistoryItem(
                 text=title,
                 index=i,

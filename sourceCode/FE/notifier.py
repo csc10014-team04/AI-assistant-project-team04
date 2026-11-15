@@ -19,7 +19,6 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDButton, MDButtonText
 from kivy.clock import Clock
-
 VN_TZ = timezone(timedelta(hours=7))
 LATE_GRACE = timedelta(minutes=5)  # a reminder this much overdue is still shown (app was just opened)
 
@@ -72,7 +71,7 @@ class DeviceNotificationModal(ModalView):
 
         # Tiêu đề thông báo
         layout.add_widget(MDLabel(
-            text="THÔNG BÁO SỰ KIỆN",
+            text="EVENT REMINDER",
             bold=True,
             font_style="Title",
             role="medium",
@@ -81,12 +80,12 @@ class DeviceNotificationModal(ModalView):
             adaptive_height=True
         ))
 
-        # Định dạng nội dung: "({Địa điểm}) - {tên sự kiện}: Lúc {Start_time}"
+        # Định dạng nội dung: "({Địa điểm}) - {tên sự kiện}: At {Start_time}"
         room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
         if room_clean:
-            msg_text = f"({room_clean}) - {title}: Lúc {start_time_str}"
+            msg_text = f"({room_clean}) - {title}: At {start_time_str}"
         else:
-            msg_text = f"{title}: Lúc {start_time_str}"
+            msg_text = f"{title}: At {start_time_str}"
 
         self.lbl_msg = MDLabel(
             text=msg_text,
@@ -102,7 +101,7 @@ class DeviceNotificationModal(ModalView):
         # Nhãn đếm ngược tự động báo lại sau 60 giây
         self.remaining_seconds = 60
         self.lbl_timer = MDLabel(
-            text=f"Tự động báo lại sau: {self.remaining_seconds}s",
+            text=f"Auto-snooze in: {self.remaining_seconds}s",
             font_style="Label",
             role="small",
             theme_text_color="Hint",
@@ -114,14 +113,14 @@ class DeviceNotificationModal(ModalView):
         # 2 nút hệ thống: Xác nhận và Báo lại
         btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(42))
         btn_confirm = MDButton(
-            MDButtonText(text="Xác nhận", text_color=[1, 1, 1, 1]),
+            MDButtonText(text="Confirm", text_color=[1, 1, 1, 1]),
             style="filled",
             md_bg_color=[0, 51/255, 204/255, 1],
             size_hint_x=0.5,
             on_release=self.confirm_action
         )
         btn_snooze = MDButton(
-            MDButtonText(text="Báo lại"),
+            MDButtonText(text="Snooze"),
             style="outlined",
             size_hint_x=0.5,
             on_release=self.snooze_action
@@ -143,7 +142,7 @@ class DeviceNotificationModal(ModalView):
                 self._countdown_event = None
             self.snooze_action(None)
         else:
-            self.lbl_timer.text = f"Tự động báo lại sau: {self.remaining_seconds}s"
+            self.lbl_timer.text = f"Auto-snooze in: {self.remaining_seconds}s"
 
     def confirm_action(self, instance=None):
         if self._countdown_event:
@@ -223,7 +222,7 @@ class ReminderScheduler:
         titles = {e["event_id"]: e["title"] for e in response.get("events", [])}
         armed = 0
         for r in response.get("reminders", []):
-            armed += self.schedule(r["event_id"], r["fire_at"], titles.get(r["event_id"], "Sự kiện"), offset_minutes=r.get("offset_minutes", 30))
+            armed += self.schedule(r["event_id"], r["fire_at"], titles.get(r["event_id"], "Event"), offset_minutes=r.get("offset_minutes", 30))
         return armed
 
     def cancel(self, event_id: int) -> bool:
@@ -241,12 +240,12 @@ class ReminderScheduler:
         self._armed.pop(event_id, None)
         room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
         if room_clean:
-            msg_text = f"({room_clean}) - {title}: Lúc {start_time_str}"
+            msg_text = f"({room_clean}) - {title}: At {start_time_str}"
         else:
-            msg_text = f"{title}: Lúc {start_time_str}"
+            msg_text = f"{title}: At {start_time_str}"
 
         # Báo thông báo hệ thống qua plyer
-        self.notify("Sắp đến giờ", msg_text)
+        self.notify("Upcoming Event", msg_text)
 
         # Mở popup thông báo trực quan trên giao diện ứng dụng (với 2 nút Xác nhận và Báo lại)
         try:

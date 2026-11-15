@@ -44,7 +44,7 @@ GRAY_TEXT   = [0.5, 0.5, 0.5, 1]
 BLUE_COLOR  = [0, 51/255, 204/255, 1]
 BLUE_LIGHT  = [230/255, 240/255, 255/255, 1]
 
-WEEKDAYS_VN = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+WEEKDAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # ==============================================================================
 # WIDGET DÙNG CHUNG
@@ -70,7 +70,7 @@ class SlotSelectionItem(MDBoxLayout):
         try:
             st = datetime.fromisoformat(slot_data["start_time"])
             et = datetime.fromisoformat(slot_data["end_time"])
-            wd = WEEKDAYS_VN[st.weekday()]
+            wd = WEEKDAYS_EN[st.weekday()]
             time_str = f"{wd} ({st.day}/{st.month}): {st.strftime('%H:%M')} - {et.strftime('%H:%M')}"
         except Exception:
             time_str = str(slot_data)
@@ -136,7 +136,7 @@ class SelectableChatLabel(TextInput):
     - Bôi đen, chọn vùng văn bản (select text region).
     - Sao chép bằng phím tắt Ctrl+C trên Desktop hoặc công cụ chọn/sao chép vùng trên mobile.
     - readonly=True: Ngăn chặn sửa đổi nội dung và không bật bàn phím ảo.
-    - cursor_color=[0, 0, 0, 0]: Ẩn con trỏ nhấp nháy, giữ giao diện sạch đẹp như nhãn văn bản thuần.
+    - cursor_color=[0,0,0,0]: Ẩn con trỏ nhấp nháy, giữ giao diện sạch đẹp như nhãn văn bản thuần.
     """
     def __init__(self, text="", text_color=BLACK_COLOR, **kwargs):
         super().__init__(**kwargs)
@@ -258,20 +258,20 @@ class ManualFallbackModal(ModalView):
         )
         
         self.title_label = MDLabel(
-            text=("(!) Trợ lý AI đang bận. Bạn hãy chọn nhanh khung giờ dưới:" if ai_busy
-                  else "Hãy chọn khung giờ phù hợp bên dưới:"),
+            text=("(!) AI Assistant is busy. Please select a time slot below:" if ai_busy
+                  else "Please select a suitable time slot below:"),
             theme_text_color="Custom", text_color=[0.9, 0.4, 0, 1],
             bold=True, size_hint_y=None, height=dp(40)
         )
         self.main_layout.add_widget(self.title_label)
         
         info_box = MDBoxLayout(orientation='vertical', size_hint_y=None, height=dp(50), spacing=dp(5))
-        info_box.add_widget(MDLabel(text=f"Tên hoạt động: [b]{task_title}[/b]", markup=True))
-        info_box.add_widget(MDLabel(text=f"Thời lượng: {duration} phút"))
+        info_box.add_widget(MDLabel(text=f"Task name: [b]{task_title}[/b]", markup=True))
+        info_box.add_widget(MDLabel(text=f"Duration: {duration} mins"))
         self.main_layout.add_widget(info_box)
         
         self.main_layout.add_widget(MDLabel(
-            text="CÁC KHUNG GIỜ CÒN TRỐNG TRONG TUẦN:",
+            text="AVAILABLE TIME SLOTS THIS WEEK:",
             theme_text_color="Custom", text_color=GRAY_TEXT,
             bold=True, size_hint_y=None, height=dp(30)
         ))
@@ -292,12 +292,12 @@ class ManualFallbackModal(ModalView):
             
         btn_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(45), spacing=dp(10))
         btn_confirm = MDButton(
-            MDButtonText(text="XÁC NHẬN THÊM", text_color=WHITE_COLOR, font_style="Label", role="small"),
+            MDButtonText(text="CONFIRM", text_color=WHITE_COLOR, font_style="Label", role="small"),
             style="filled", md_bg_color=BLUE_COLOR, size_hint_x=0.6,
             on_release=self.on_confirm
         )
         btn_cancel = MDButton(
-            MDButtonText(text="HỦY BỎ", text_color=BLUE_COLOR, font_style="Label", role="small"),
+            MDButtonText(text="CANCEL", text_color=BLUE_COLOR, font_style="Label", role="small"),
             style="outlined", md_bg_color=WHITE_COLOR, size_hint_x=0.4,
             on_release=self.on_cancel_clicked
         )
@@ -330,7 +330,7 @@ class ManualFallbackModal(ModalView):
                 self.task_title, int(self.duration), slot_start, slot_end,
                 on_success=_on_success,
                 on_failure=lambda req, res: self._show_error(res),
-                on_error=lambda req, err: self._show_error({"detail": "Lỗi kết nối Server."}),
+                on_error=lambda req, err: self._show_error({"detail": "Server connection error."}),
             )
 
     def on_cancel_clicked(self, instance):
@@ -340,7 +340,7 @@ class ManualFallbackModal(ModalView):
 
     def _show_error(self, res):
         detail = res.get("detail") if isinstance(res, dict) else None
-        self.title_label.text = f"(!) Không thể lưu: {detail or 'lỗi không xác định'}"
+        self.title_label.text = f"(!) Unable to save: {detail or 'unknown error'}"
 
 
 class ProposalCard(MDBoxLayout):
@@ -374,26 +374,26 @@ class ProposalCard(MDBoxLayout):
             wd = WEEKDAYS_VN[st.weekday()]
             time_str = f"{wd} ({st.day}/{st.month}) | {st.strftime('%H:%M')} - {et.strftime('%H:%M')}"
         except Exception:
-            time_str = "Không rõ thời gian"
+            time_str = "Unknown time"
 
         extra_slots = self.proposal.get("extra_slots") or []
         if extra_slots:
-            parts = [f"Ca 1: {time_str}"]
+            parts = [f"Slot 1: {time_str}"]
             for idx, slot in enumerate(extra_slots, start=2):
                 try:
                     s_dt = datetime.fromisoformat(slot["start_time"])
                     e_dt = datetime.fromisoformat(slot["end_time"])
-                    parts.append(f"Ca {idx}: {s_dt.strftime('%H:%M')} - {e_dt.strftime('%H:%M')} ({s_dt.strftime('%d/%m')})")
+                    parts.append(f"Slot {idx}: {s_dt.strftime('%H:%M')} - {e_dt.strftime('%H:%M')} ({s_dt.strftime('%d/%m')})")
                 except (KeyError, ValueError):
                     continue
             time_str = " | ".join(parts)
 
-        task_title = self.proposal.get('task_title', self.proposal.get('title', 'Sự kiện'))
-        rationale = self.proposal.get('rationale', 'Đề xuất từ trợ lý AI.')
+        task_title = self.proposal.get('task_title', self.proposal.get('title', 'Event'))
+        rationale = self.proposal.get('rationale', 'Proposed by AI Assistant.')
 
-        self.add_widget(MDLabel(text=f"Đề xuất xếp lịch: {task_title}", bold=True, font_style="Title", role="medium", adaptive_height=True))
-        self.add_widget(MDLabel(text=f"Thời gian: {time_str}", font_style="Body", role="medium", adaptive_height=True))
-        self.add_widget(MDLabel(text=f"Lý do: {rationale}", font_style="Body", role="medium", adaptive_height=True))
+        self.add_widget(MDLabel(text=f"Schedule proposal: {task_title}", bold=True, font_style="Title", role="medium", adaptive_height=True))
+        self.add_widget(MDLabel(text=f"Time: {time_str}", font_style="Body", role="medium", adaptive_height=True))
+        self.add_widget(MDLabel(text=f"Rationale: {rationale}", font_style="Body", role="medium", adaptive_height=True))
 
         self.status_lbl = MDLabel(text="", theme_text_color="Custom", text_color=BLUE_COLOR, bold=True, adaptive_height=True, opacity=0)
         self.add_widget(self.status_lbl)
@@ -401,9 +401,9 @@ class ProposalCard(MDBoxLayout):
     def _build_buttons_ui(self):
         self.btn_layout = MDBoxLayout(orientation='horizontal', spacing=dp(4), adaptive_height=True)
         
-        btn_confirm = MDButton(MDButtonText(text="Xác nhận", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_confirm, size_hint_x=1)
-        btn_reject = MDButton(MDButtonText(text="Từ chối", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_reject, size_hint_x=1)
-        btn_reschedule = MDButton(MDButtonText(text="Suy nghĩ thêm", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_reschedule, size_hint_x=1)
+        btn_confirm = MDButton(MDButtonText(text="Confirm", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_confirm, size_hint_x=1)
+        btn_reject = MDButton(MDButtonText(text="Reject", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_reject, size_hint_x=1)
+        btn_reschedule = MDButton(MDButtonText(text="Reschedule", text_color=WHITE_COLOR, font_style="Label", role="small"), style="filled", md_bg_color=BLUE_COLOR, on_release=self.on_reschedule, size_hint_x=1)
         
         self.buttons = [btn_confirm, btn_reject, btn_reschedule]
         for btn in self.buttons: self.btn_layout.add_widget(btn)
@@ -420,23 +420,23 @@ class ProposalCard(MDBoxLayout):
         api.confirm_proposal(
             pid,
             on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api),
-                                         self.disable_card("Đã xác nhận thêm vào lịch")),
+                                         self.disable_card("Confirmed and added to calendar")),
             on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
-            on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),
+            on_error=lambda req, err: self.disable_card("Server connection error"),
         )
 
     def on_reject(self, instance):
         api.reject_proposal(
             self.proposal.get("id"),
-            on_success=lambda req, res: self.disable_card("Đã từ chối"),
+            on_success=lambda req, res: self.disable_card("Rejected"),
             on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
-            on_error=lambda req, err: self.disable_card("Lỗi kết nối máy chủ"),
+            on_error=lambda req, err: self.disable_card("Server connection error"),
         )
 
     @staticmethod
     def _failure_text(res):
         detail = res.get("detail") if isinstance(res, dict) else None
-        return f"Không thực hiện được: {detail}" if detail else "Lỗi khi xử lý đề xuất"
+        return f"Cannot execute: {detail}" if detail else "Error processing proposal"
 
     def on_reschedule(self, instance):
         self.chat_screen.trigger_reschedule_mode(self)
@@ -463,7 +463,7 @@ class ChatAssistantScreen(MDScreen):
         # c. Quản lý trạng thái chat và lưu dữ liệu vào database cục bộ JsonStore
         self.chat_db = JsonStore("chat_history_db.json")
         self.chat_sessions = []
-        self.current_session_title = "Cuộc trò chuyện mới"
+        self.current_session_title = "New conversation"
         self.current_session_messages = []
         self.is_current_session_saved = False
         self._load_chat_history_from_db()
@@ -569,7 +569,7 @@ class ChatAssistantScreen(MDScreen):
         
         self.txt_input = ChatInputField(
             on_send_callback=self.send_message,
-            multiline=True, hint_text="Nhập yêu cầu xếp lịch...", 
+            multiline=True, hint_text="Type a scheduling request...", 
             background_color=[0,0,0,0], foreground_color=BLACK_COLOR,
             font_size=dp(15), padding=[dp(5), dp(10), dp(5), dp(10)]
         )
@@ -590,13 +590,13 @@ class ChatAssistantScreen(MDScreen):
             orientation='horizontal', size_hint_y=None, height=dp(50), 
             padding=[dp(10), dp(5), dp(10), dp(5)], spacing=dp(10)
         )
-        nav_bar.add_widget(NavTab(text="Lịch chính", target_screen="calendar_home", is_active=False))
-        nav_bar.add_widget(NavTab(text="Tìm kiếm", target_screen="search_home", is_active=False))
-        nav_bar.add_widget(NavTab(text="Trợ lý AI", target_screen="chat_home", is_active=True))
+        nav_bar.add_widget(NavTab(text="Calendar", target_screen="calendar_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="Search", target_screen="search_home", is_active=False))
+        nav_bar.add_widget(NavTab(text="AI Assistant", target_screen="chat_home", is_active=True))
         self.main_layout.add_widget(nav_bar)
 
         if not self.current_session_messages:
-            self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+            self.append_ai_message("Hello! How can I help optimize your schedule this week?")
 
     def _update_input_shape(self, *args):
         r = self.input_area.height / 2.0
@@ -621,8 +621,8 @@ class ChatAssistantScreen(MDScreen):
 
     def trigger_reschedule_mode(self, card_instance):
         self.active_reschedule_proposal = card_instance
-        title = card_instance.proposal.get('task_title', card_instance.proposal.get('title', 'sự kiện'))
-        self.lbl_reschedule.text = f"Đang yêu cầu đổi giờ cho: {title}"
+        title = card_instance.proposal.get('task_title', card_instance.proposal.get('title', 'event'))
+        self.lbl_reschedule.text = f"Requesting reschedule for: {title}"
         self.reschedule_banner.height = dp(35)
         self.reschedule_banner.opacity = 1
         self.txt_input.focus = True
@@ -651,11 +651,11 @@ class ChatAssistantScreen(MDScreen):
         reschedule_id = None
         if self.active_reschedule_proposal:
             reschedule_id = self.active_reschedule_proposal.proposal.get("id")
-            self.active_reschedule_proposal.disable_card("Đã yêu cầu đổi giờ")
+            self.active_reschedule_proposal.disable_card("Reschedule requested")
             self.cancel_reschedule()
         else:
             for card in self.active_cards[:]:
-                card.disable_card("Đã hủy do chuyển chủ đề")
+                card.disable_card("Canceled due to topic change")
 
         # 2. Gửi request trực tiếp đến Backend Server
         self._last_text = user_text  # kept so a timeout can still open the manual picker
@@ -676,33 +676,33 @@ class ChatAssistantScreen(MDScreen):
         try:
             st = datetime.fromisoformat(slot["start_time"])
             et = datetime.fromisoformat(slot["end_time"])
-            wd = WEEKDAYS_VN[st.weekday()]
+            wd = WEEKDAYS_EN[st.weekday()]
             return f"{wd} ({st.day}/{st.month}): {st.strftime('%H:%M')} - {et.strftime('%H:%M')}"
         except Exception:
             return str(slot)
 
     def _trigger_fallback_ui(self, title, duration, slots, busy=True, window=None):
         # 1. Bong bóng thông báo chuyển chế độ
-        self.append_ai_message("Trợ lý AI đang bận. Bạn hãy chọn khung giờ trống ở bảng dưới nhé!")
+        self.append_ai_message("AI Assistant is busy. Please select a free slot from the table below!")
 
         # 2. Bong bóng chat thứ 2 ngay bên dưới hiển thị thông tin y hệt trên popup đó:
         slots_lines = [f"- {self._format_slot_vn(s)}" for s in slots[:8]]
-        slots_text = "\n".join(slots_lines) if slots_lines else "- Không có khung giờ trống khả dụng."
+        slots_text = "\n".join(slots_lines) if slots_lines else "- No available free time slots."
         info_bubble_text = (
-            f"[THÔNG TIN CÔNG VIỆC CẦN XẾP]\n"
-            f"- Tên hoạt động: {title}\n"
-            f"- Thời lượng: {duration} phút\n\n"
-            f"CÁC KHUNG GIỜ CÒN TRỐNG TRONG TUẦN:\n"
+            f"[TASK TO BE SCHEDULED]\n"
+            f"- Task: {title}\n"
+            f"- Duration: {duration} mins\n\n"
+            f"AVAILABLE TIME SLOTS THIS WEEK:\n"
             f"{slots_text}"
         )
         self.append_ai_message(info_bubble_text)
 
         def on_scheduled(selected_slot):
-            self.append_ai_message(f"[Xác nhận] Đã chọn khung giờ {self._format_slot_vn(selected_slot)} cho '{title}'.")
+            self.append_ai_message(f"[Confirmed] Selected slot {self._format_slot_vn(selected_slot)} for '{title}'.")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
         def on_canceled():
-            self.append_ai_message("[Hủy bỏ] Bạn đã hủy bỏ chọn khung giờ.")
+            self.append_ai_message("[Canceled] You canceled slot selection.")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
         ManualFallbackModal(
@@ -719,17 +719,17 @@ class ChatAssistantScreen(MDScreen):
     def on_api_success(self, req, result):
         """Xử lý dữ liệu trả về từ máy chủ Backend"""
         if not result:
-            self.append_ai_message("Đã nhận được thông tin nhưng máy chủ không trả về nội dung xử lý.")
+            self.append_ai_message("Received information but server returned no actionable content.")
             return
 
         # 1. Nhánh Redirect (nếu người dùng hỏi lạc sang tra cứu lịch hoặc hỏi quy chế học vụ)
         redirect_target = result.get("redirect_target")
-        redirect_label = result.get("redirect_button_label") or "Chuyển trang"
+        redirect_label = result.get("redirect_button_label") or "Switch tab"
         if redirect_target:
-            msg = result.get("message") or "Bạn đang muốn tra cứu thông tin học vụ hoặc lịch trình."
+            msg = result.get("message") or "You may want to search schedules or query academic regulations."
             self.append_ai_message(msg)
             nav_btn = MDButton(
-                MDButtonText(text=f"Chuyển sang {redirect_label}", text_color=WHITE_COLOR),
+                MDButtonText(text=f"Switch to {redirect_label}", text_color=WHITE_COLOR),
                 style="filled",
                 md_bg_color=BLUE_COLOR,
                 size_hint=(None, None),
@@ -748,7 +748,7 @@ class ChatAssistantScreen(MDScreen):
 
         proposal = result.get("proposal")
         if proposal:  # server found a free slot -> show the Accept / Reject / Reschedule card
-            self.append_ai_message(result.get("message") or "Mình đề xuất khung giờ này:")
+            self.append_ai_message(result.get("message") or "I propose this time slot:")
             new_card = ProposalCard(proposal_data=proposal, chat_screen=self)
             self.chat_history.add_widget(new_card)
             self.active_cards.append(new_card)
@@ -761,7 +761,7 @@ class ChatAssistantScreen(MDScreen):
             return
 
         if nlu.get("fallback_mode"):
-            task_title = nlu.get("title") or "Hoạt động mới"
+            task_title = nlu.get("title") or "New activity"
             duration = int(nlu.get("duration_minutes") or 60)
             precomputed_slots = result.get("available_slots") or []
             if precomputed_slots:
@@ -771,11 +771,11 @@ class ChatAssistantScreen(MDScreen):
             return
 
         self.append_ai_message(result.get("message") or nlu.get("clarification_question")
-                               or "Mình chưa hiểu rõ yêu cầu, bạn thử nói cụ thể hơn nhé.")
+                               or "I could not fully understand your request. Could you please specify more details?")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def _open_manual_picker(self, nlu):
-        title = nlu.get("title") or "Hoạt động"
+        title = nlu.get("title") or "Activity"
         duration = nlu.get("duration_minutes") or 60
         start = nlu.get("window_start") or datetime.now().date().isoformat()
         # no explicit end (e.g. offline fallback): show a whole week of free gaps
@@ -796,12 +796,12 @@ class ChatAssistantScreen(MDScreen):
 
     def on_api_failure(self, req, result):
         code = getattr(req, "resp_status", "?")
-        text = f"Rất tiếc, yêu cầu bị từ chối bởi máy chủ (Mã lỗi: {code})."
+        text = f"Sorry, the request was rejected by the server (Status: {code})."
         if code == 401:
-            text += " Phiên đăng nhập đã hết hạn, bạn hãy đăng nhập lại."
+            text += " Session expired, please log in again."
         # Dùng .get() thay vì _error_detail nếu hàm này chưa được định nghĩa
         elif isinstance(result, dict) and result.get("detail"):
-            text += f" Chi tiết: {result.get('detail')}"
+            text += f" Details: {result.get('detail')}"
             
         print(f"[API FAILURE] {getattr(req, 'url', '')} -> {code}: {result}")
         self.append_ai_message(text)
@@ -811,10 +811,10 @@ class ChatAssistantScreen(MDScreen):
         if is_timeout(error) and getattr(self, "_last_text", None):
             # P1-9: the AI request timed out -> go straight to the manual form with offline-parsed values
             self._open_manual_picker(parse_request(self._last_text))
-            self.append_ai_message("Trợ lý AI phản hồi quá chậm. Bạn hãy chọn khung giờ trống ở bảng trên nhé!")
+            self.append_ai_message("AI Assistant response timed out. Please choose a free slot from the table above!")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
             return
-        self.append_ai_message(f"Không thể kết nối tới Server ({api.base_url}). Vui lòng kiểm tra lại đường truyền mạng.")
+        self.append_ai_message(f"Cannot connect to server ({api.base_url}). Please check your network connection.")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def append_ai_message(self, text):
@@ -843,14 +843,14 @@ class ChatAssistantScreen(MDScreen):
         
         # Reset dữ liệu và UI
         self.chat_history.clear_widgets()
-        self.current_session_title = "Cuộc trò chuyện mới"
+        self.current_session_title = "New conversation"
         self.current_session_messages = []
         self.is_current_session_saved = False
         self.active_cards = []
         if self.active_reschedule_proposal:
             self.cancel_reschedule()
             
-        self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+        self.append_ai_message("Hello! How can I help optimize your schedule this week?")
 
     def load_chat_session(self, index):
         """Được gọi khi người dùng bấm vào 1 đoạn chat trong sidebar"""
@@ -860,7 +860,7 @@ class ChatAssistantScreen(MDScreen):
         if 0 <= index < len(self.chat_sessions):
             selected = self.chat_sessions.pop(index)
             self.chat_history.clear_widgets()
-            self.current_session_title = selected.get("title", "Cuộc trò chuyện")
+            self.current_session_title = selected.get("title", "Conversation")
             self.current_session_messages = selected.get("messages", [])
             self.active_cards = []
             if self.active_reschedule_proposal:
@@ -893,13 +893,13 @@ class ChatAssistantScreen(MDScreen):
             )
             if is_active_session:
                 self.chat_history.clear_widgets()
-                self.current_session_title = "Cuộc trò chuyện mới"
+                self.current_session_title = "New conversation"
                 self.current_session_messages = []
                 self.is_current_session_saved = False
                 self.active_cards = []
                 if self.active_reschedule_proposal:
                     self.cancel_reschedule()
-                self.append_ai_message("Chào bạn, mình có thể giúp gì để tối ưu lịch trình tuần này của bạn?")
+                self.append_ai_message("Hello! How can I help optimize your schedule this week?")
 
             # Tải lại danh sách lịch sử ngay trên menu
             self.history_menu.load_history(
