@@ -10,7 +10,6 @@ from datetime import datetime, date, timedelta
 from kivy.core.window import Window
 from kivy.utils import platform
 
-
 from collections import defaultdict
 
 from kivy.uix.widget import Widget

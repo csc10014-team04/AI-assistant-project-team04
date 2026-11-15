@@ -8,7 +8,6 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.modalview import ModalView
-
 # IMPORT THUẦN KIVY ĐỂ CHỐNG CRASH CHO POPUP
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox

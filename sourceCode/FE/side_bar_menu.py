@@ -5,7 +5,6 @@ CHỨC NĂNG:
 - Tích hợp thông tin tài khoản cố định ở dưới cùng và nút Đăng xuất.
 - Tích hợp hộp thoại tùy chọn xếp lịch (Schedule Preferences).
 """
-
 from kivy.uix.modalview import ModalView
 from kivy.utils import platform
 from kivy.core.window import Window

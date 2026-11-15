@@ -19,7 +19,6 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDButton, MDButtonText
 from kivy.clock import Clock
-
 VN_TZ = timezone(timedelta(hours=7))
 LATE_GRACE = timedelta(minutes=5)  # a reminder this much overdue is still shown (app was just opened)
 

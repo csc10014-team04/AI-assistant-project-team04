@@ -2,7 +2,6 @@ from kivy.uix.screenmanager import ScreenManager, NoTransition
 
 # Import api để kiểm tra trạng thái token đăng nhập
 from api_client import api
-
 # Import các giao diện từ các file tương ứng
 from calendar_screen import CalendarHomeScreen
 from chat_screen import ChatAssistantScreen

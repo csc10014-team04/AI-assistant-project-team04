@@ -564,6 +564,5 @@ class APIClient:
         self._request("/api/v1/proposals/manual", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
 
-
 # Khởi tạo instance duy nhất
 api = APIClient()

@@ -136,7 +136,7 @@ class SelectableChatLabel(TextInput):
     - Bôi đen, chọn vùng văn bản (select text region).
     - Sao chép bằng phím tắt Ctrl+C trên Desktop hoặc công cụ chọn/sao chép vùng trên mobile.
     - readonly=True: Ngăn chặn sửa đổi nội dung và không bật bàn phím ảo.
-    - cursor_color=[0, 0, 0, 0]: Ẩn con trỏ nhấp nháy, giữ giao diện sạch đẹp như nhãn văn bản thuần.
+    - cursor_color=[0,0,0,0]: Ẩn con trỏ nhấp nháy, giữ giao diện sạch đẹp như nhãn văn bản thuần.
     """
     def __init__(self, text="", text_color=BLACK_COLOR, **kwargs):
         super().__init__(**kwargs)

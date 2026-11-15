@@ -2,7 +2,6 @@ from kivymd.app import MDApp
 from kivy.core.window import Window
 from screen_manager import AppScreenManager
 
-
 class MainApp(MDApp):
     def build(self):
         # Cấu hình theme tổng thể cho app

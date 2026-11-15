@@ -22,7 +22,6 @@ from api_client import api
 from event_store import store
 from notifier import reminder_scheduler, VN_TZ
 
-
 # ==============================================================================
 # HÀM VÀ WIDGET TIỆN ÍCH DÙNG CHUNG
 # ==============================================================================

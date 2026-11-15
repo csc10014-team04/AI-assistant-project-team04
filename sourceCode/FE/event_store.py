@@ -1,6 +1,5 @@
 """
 FILE: event_store.py (the calendar and search screens read their events from here)
-
 Before this file the calendar and the search tab displayed `mock_data.mock_events`, i.e. made-up events, even for a
 logged-in student. Now:
   * logged in  -> events come from the backend (GET /api/v1/search/events) and are kept in `store.events`

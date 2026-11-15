@@ -1,5 +1,5 @@
 """
-FILE: chat_history_sidebar.py
+FILE:chat_history_sidebar.py
 """
 from kivy.metrics import dp
 from kivy.core.window import Window

@@ -1,6 +1,5 @@
 """
 FILE: fallback.py (duty P1-9: graceful fallback to a manual form when the AI is too slow)
-
 Pure Python (no Kivy) so it can be unit-tested anywhere.
 - AI_TIMEOUT_SECONDS: strict client-side limit for the AI request. The server itself gives up on the model after
   ~3 s and answers with fallback_mode=true, so this limit is only the safety net for a hung connection.
