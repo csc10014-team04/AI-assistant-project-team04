@@ -1,6 +1,7 @@
 from datetime import datetime
 from kivy.metrics import dp
 from kivy.core.window import Window
+from kivy.utils import platform
 from kivy.clock import Clock
 from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.textinput import TextInput
@@ -46,50 +47,55 @@ from kivy.graphics import Color, RoundedRectangle, Line
 from datetime import datetime
 
 class EventCard(ButtonBehavior, MDBoxLayout):
+    """
+    Thẻ hiển thị thông tin sự kiện trong danh sách kết quả tìm kiếm:
+    - Bố cục ngang (horizontal): Cột trái là dấu chấm than cảnh báo (nếu có),
+      cột giữa là khối nội dung văn bản (content_box), tự động xuống dòng và co dãn mượt mà.
+    - Không sử dụng trigger trễ (delay) hoặc gọi texture_update cưỡng bức để loại bỏ hoàn toàn
+      hiện tượng giật lag và hiện tượng thẻ bị kéo giãn 1 nhịp rồi co lại khi chuyển tab.
+    """
     def __init__(self, event, **kwargs):
         super().__init__(**kwargs)
         self.event = event
         self.orientation = 'horizontal'  
         self.size_hint_y = None
-        # Căn lề padding: trái, trên, phải, dưới
-        self.padding = [dp(15), dp(10), dp(10), dp(10)]
+        self.size_hint_x = 1
+        self.padding = [dp(14), dp(10), dp(14), dp(10)]
         self.spacing = dp(10)
         
         bg_color = self.get_color(event.get("kind", "EVENT"))
 
         with self.canvas.before:
-            Color(0, 0, 0, 0.25)
-            self.shadow = RoundedRectangle(radius=[dp(15)])
+            Color(0, 0, 0, 0.22)
+            self.shadow = RoundedRectangle(radius=[dp(12)])
             Color(*bg_color)
-            self.bg_rect = RoundedRectangle(radius=[dp(15)])
-            Color(*BLACK_COLOR)
-            self.border_line = Line(rounded_rectangle=[0, 0, 0, 0, dp(15)], width=0.8)
+            self.bg_rect = RoundedRectangle(radius=[dp(12)])
+            Color(0, 0, 0, 0.4)
+            self.border_line = Line(rounded_rectangle=[0, 0, 0, 0, dp(12)], width=0.8)
             
         self.bind(pos=self.update_canvas, size=self.update_canvas)
 
-        # ==========================================
-        # CỘT TRÁI: DẤU CHẤM THAN & VÁCH NGĂN (Đảo ngược sang bên trái)
-        # ==========================================
         is_important = event.get("is_important", False)
         self.has_icon = is_important
         
         if is_important:
             self.icon_lbl = Label(
                 text="!", color=[1, 0, 0, 1], outline_color=[0, 0, 0, 1], outline_width=1.15,
-                bold=True, font_size=dp(26), size_hint_x=None, width=dp(20)
+                bold=True, font_size=dp(24), size_hint=(None, None), size=(dp(18), dp(28)),
+                pos_hint={"center_y": 0.5}
             )
-            self.divider = MDBoxLayout(size_hint_x=None, width=dp(1.2), md_bg_color=(0, 0, 0, 0.3))
+            self.divider = MDBoxLayout(size_hint_x=None, width=dp(1.2), md_bg_color=(0, 0, 0, 0.25))
             self.add_widget(self.icon_lbl)
             self.add_widget(self.divider)
 
-        # ==========================================
         # KHỐI VĂN BẢN (THÔNG TIN SỰ KIỆN)
-        # ==========================================
-        self.content_box = MDBoxLayout(orientation='vertical', spacing=dp(2), size_hint_x=None)
-        self.content_box.bind(minimum_height=self.content_box.setter('height'))
-        
-        # Chiều cao thẻ = chiều cao nội dung chữ + padding trên/dưới
-        self.content_box.bind(height=lambda inst, val: setattr(self, 'height', val + dp(20)))
+        self.content_box = MDBoxLayout(
+            orientation='vertical',
+            spacing=dp(3),
+            size_hint_x=1,
+            adaptive_height=True
+        )
+        self.content_box.bind(height=self._on_content_height)
 
         self.labels = []
         
@@ -106,35 +112,54 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         if event["kind"] == "DEADLINE":
             lbl_deadline = MDLabel(
                 text=f"[b]Deadline:[/b] {title} - {end_time_str} ({date_str})",
-                markup=True, halign='left', valign='top', color=(1,1,1,1), size_hint_y=None
+                markup=True, halign='left', valign='top',
+                theme_text_color="Custom", text_color=BLACK_COLOR,
+                adaptive_height=True, size_hint_x=1
             )
             self.labels.append(lbl_deadline)
         else:
-            lbl_date = MDLabel(text=f"[b]{day_str} Ngày {date_str}:[/b]", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
-            lbl_title = MDLabel(text=f"Công việc: {title}", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
-            lbl_time = MDLabel(text=f"Thời gian: {start_time_str} - {end_time_str}", halign='left', color=(1,1,1,1), size_hint_y=None)
+            lbl_date = MDLabel(
+                text=f"[b]{day_str} Ngày {date_str}:[/b]",
+                markup=True, halign='left',
+                theme_text_color="Custom", text_color=BLACK_COLOR,
+                adaptive_height=True, size_hint_x=1
+            )
+            lbl_title = MDLabel(
+                text=f"Công việc: {title}",
+                markup=True, halign='left',
+                theme_text_color="Custom", text_color=BLACK_COLOR,
+                adaptive_height=True, size_hint_x=1
+            )
+            lbl_time = MDLabel(
+                text=f"Thời gian: {start_time_str} - {end_time_str}",
+                halign='left',
+                theme_text_color="Custom", text_color=BLACK_COLOR,
+                adaptive_height=True, size_hint_x=1
+            )
             self.labels.extend([lbl_date, lbl_title, lbl_time])
 
-        # a. Thêm phòng/địa điểm nếu phòng/địa điểm khác NULL
         if room and str(room).strip() and str(room).lower() not in ("none", "null"):
-            lbl_room = MDLabel(text=f"[b]Địa điểm:[/b] {str(room).strip()}", markup=True, halign='left', color=(1,1,1,1), size_hint_y=None)
+            lbl_room = MDLabel(
+                text=f"[b]Địa điểm:[/b] {str(room).strip()}",
+                markup=True, halign='left',
+                theme_text_color="Custom", text_color=BLACK_COLOR,
+                adaptive_height=True, size_hint_x=1
+            )
             self.labels.append(lbl_room)
             
         for lbl in self.labels:
             self.content_box.add_widget(lbl)
 
         self.add_widget(self.content_box)
-            
-        # SPACER: Khoảng trống vô hình tự kéo giãn toàn bộ phần dư thừa đẩy về bên trái
-        self.add_widget(Widget(size_hint_x=1))
         
-        # Bắt sự kiện mỗi khi kích thước màn hình/thẻ thay đổi (debounced để không lag)
-        self._layout_trigger = Clock.create_trigger(self._do_update_layout, 0.05)
-        self.bind(width=lambda *args: self._layout_trigger())
-        Clock.schedule_once(lambda dt: self._layout_trigger(), 0)
+        # Thiết lập chiều cao khởi tạo ngay tức thì để Kivy render không bị co giật
+        self.height = len(self.labels) * dp(24) + dp(20)
+
+    def _on_content_height(self, instance, val):
+        self.height = val + dp(20)
 
     def on_release(self):
-        # b. Mở Modal_view chi tiết sự kiện ở trang Search giống như Calendar_home_screen
+        # Mở Modal_view chi tiết sự kiện ở trang Search
         from event_modals import EventDetailModal
         EventDetailModal(event=self.event, on_event_updated=self._on_event_updated).open()
 
@@ -156,36 +181,9 @@ class EventCard(ButtonBehavior, MDBoxLayout):
                 if len(self.labels) >= 3:
                     self.labels[0].text = f"[b]{day_str} Ngày {date_str}:[/b]"
                     self.labels[2].text = f"Thời gian: {s_str} - {e_str}"
-            self._do_update_layout()
         except Exception:
             pass
-        
-    def _do_update_layout(self, *args):
-        if self.width <= 0:
-            return
-        # 1. Đo lường chiều dài tự nhiên (không xuống dòng) của đoạn text dài nhất
-        max_w = 0
-        for lbl in self.labels:
-            lbl.text_size = (None, None)
-            lbl.texture_update()
-            if lbl.texture_size[0] > max_w:
-                max_w = lbl.texture_size[0]
-        
-        # 2. Tính toán không gian an toàn (Chừa chỗ cho Padding, Vách ngăn, Icon)
-        reserved_w = dp(70) if self.has_icon else dp(40)
-        max_allowed = max(dp(50), self.width - reserved_w)
-        
-        # 3. Ép chiều rộng khối văn bản vừa khít chữ trên PC, hoặc tự hãm lại trên Mobile
-        final_w = max(dp(50), min(max_w, max_allowed))
-        self.content_box.width = final_w
-        
-        # 4. Cập nhật lại giới hạn chữ để Kivy biết điểm tự động xuống dòng
-        for lbl in self.labels:
-            lbl.text_size = (final_w, None)
-            lbl.texture_update()
-            lbl.height = lbl.texture_size[1]
-            
-    # [Giữ nguyên hàm update_canvas và get_color bên dưới]
+
     def get_color(self, kind):
         colors = {
             "CLASS": (0.2, 0.5, 0.9, 1),
@@ -201,7 +199,7 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         self.shadow.size = self.size
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
-        self.border_line.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(15)]
+        self.border_line.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(12)]
 
 class NavTab(ButtonBehavior, MDBoxLayout):
     def __init__(self, text, target_screen, is_active=False, **kwargs):
@@ -271,6 +269,14 @@ class SearchScreen(MDScreen):
     def _on_store_changed(self):
         """Tự động làm mới kết quả tìm kiếm khi store.events có thay đổi (sửa giờ/thêm/xóa)."""
         if hasattr(self, "txt_search") and self.search_mode == "schedule":
+            if self.get_root_window():
+                self.perform_search()
+            else:
+                self._needs_refresh = True
+
+    def on_enter(self, *args):
+        if getattr(self, "_needs_refresh", False):
+            self._needs_refresh = False
             self.perform_search()
 
     def build_ui(self, dt):
@@ -316,11 +322,30 @@ class SearchScreen(MDScreen):
         self.main_layout.add_widget(top_search_bar)
 
         # Thanh chuyển đổi 2 chế độ: [Tìm lịch cá nhân] và [Hỏi đáp Học vụ]
-        mode_bar = MDBoxLayout(
+        mode_bar_outer = MDBoxLayout(
             orientation='horizontal', size_hint_y=None, height=dp(44),
-            padding=[dp(15), dp(4), dp(15), dp(4)], spacing=dp(10),
-            md_bg_color=WHITE_COLOR
+            padding=[dp(15), dp(4), dp(15), dp(4)], md_bg_color=WHITE_COLOR
         )
+        is_pc = (platform not in ['android', 'ios']) and (Window.width >= dp(700))
+        if is_pc:
+            mode_bar = MDBoxLayout(
+                orientation='horizontal',
+                size_hint_x=None,
+                width=min(dp(440), Window.width * 0.9),
+                pos_hint={"center_x": 0.5},
+                spacing=dp(10)
+            )
+            mode_bar_outer.add_widget(Widget(size_hint_x=1))
+            mode_bar_outer.add_widget(mode_bar)
+            mode_bar_outer.add_widget(Widget(size_hint_x=1))
+        else:
+            mode_bar = MDBoxLayout(
+                orientation='horizontal',
+                size_hint_x=1,
+                spacing=dp(10)
+            )
+            mode_bar_outer.add_widget(mode_bar)
+
         self.btn_mode_schedule = MDButton(
             MDButtonText(text="Tìm lịch cá nhân", font_style="Label", role="small"),
             style="filled", md_bg_color=BLUE_COLOR, size_hint_x=0.5,
@@ -333,7 +358,7 @@ class SearchScreen(MDScreen):
         )
         mode_bar.add_widget(self.btn_mode_schedule)
         mode_bar.add_widget(self.btn_mode_academic)
-        self.main_layout.add_widget(mode_bar)
+        self.main_layout.add_widget(mode_bar_outer)
 
         self.results_scroll = ScrollView(size_hint=(1, 1))
         self.results_box = MDBoxLayout(orientation='vertical', size_hint_y=None, padding=dp(15), spacing=dp(10))

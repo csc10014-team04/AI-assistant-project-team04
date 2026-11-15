@@ -8,6 +8,7 @@ from side_bar_menu import SideBarMenu
 
 from datetime import datetime, date, timedelta
 from kivy.core.window import Window
+from kivy.utils import platform
 
 
 from collections import defaultdict
@@ -99,20 +100,47 @@ class EventIndicatorLine(MDBoxLayout):
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
 
-class HoverClickLabel(MDLabel):
-    """Nhãn (Label) có hiệu ứng đổi màu khi hover chuột và có thể click."""
+class HoverClickLabel(ButtonBehavior, MDBoxLayout):
+    """
+    Nút tiêu đề hiển thị Tháng/Năm hoặc khoảng ngày tuần:
+    - Có hiệu ứng đổi màu hover chuột trên PC.
+    - Click vào mở hộp thoại chọn Tháng/Năm nhanh (MonthYearSelectorModal).
+    - Tự động co dãn vừa khít theo độ dài văn bản (adaptive_size) và căn giữa thanh tiêu đề.
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.theme_text_color = "Custom"
-        self.text_color = WHITE_COLOR
-        self.halign = "center"
-        self.bold = True
-        self.font_style = "Title"
-        self.role = "medium"
-        self.font_size = dp(18)
+        self.orientation = 'horizontal'
+        self.size_hint = (None, None)
+        self.adaptive_size = True
+        self.pos_hint = {"center_y": 0.5}
+        self.padding = [dp(6), dp(4), dp(6), dp(4)]
         
-        self.register_event_type('on_release')
+        self.lbl = MDLabel(
+            text="",
+            theme_text_color="Custom",
+            text_color=WHITE_COLOR,
+            halign="center",
+            valign="center",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            font_size=dp(17),
+            size_hint=(None, None),
+            adaptive_size=True,
+            pos_hint={"center_y": 0.5}
+        )
+        self.add_widget(self.lbl)
         self._is_bound = False
+
+    @property
+    def text(self):
+        return self.lbl.text
+
+    @text.setter
+    def text(self, val):
+        self.lbl.text = val
+        self.lbl.texture_update()
+        self.lbl.size = self.lbl.texture_size
 
     def on_parent(self, widget, parent):
         if parent and not self._is_bound:
@@ -126,17 +154,8 @@ class HoverClickLabel(MDLabel):
         if not self.get_root_window():
             return
         target = LIGHT_GRAY if self.collide_point(*pos) else WHITE_COLOR
-        if self.text_color != target:
-            self.text_color = target
-
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            self.dispatch('on_release')
-            return True
-        return super().on_touch_down(touch)
-
-    def on_release(self, *args):
-        pass
+        if self.lbl.text_color != target:
+            self.lbl.text_color = target
 
 
 class NavTab(ButtonBehavior, MDBoxLayout):
@@ -283,13 +302,70 @@ class DayNode(MDCard):
         pass
 
 
-class MonthYearSelectorModal(ModalView):
-    """Popup chọn Tháng/Năm nhanh."""
-    def __init__(self, start_year, on_month_selected, **kwargs):
+class MonthItemButton(ButtonBehavior, MDBoxLayout):
+    """
+    Nút chọn Tháng trong Modal:
+    - Căn giữa hoàn toàn trong ô lưới, tự co giãn theo tỷ lệ cột (size_hint=(1, 1)).
+    - Nền bo góc, viền mỏng thanh lịch.
+    - Đổi màu nhấn nổi bật nếu là tháng đang xem.
+    """
+    def __init__(self, month_num, is_selected=False, **kwargs):
         super().__init__(**kwargs)
-        self.size_hint = (0.8, 0.6)
+        self.orientation = 'horizontal'
+        self.size_hint = (1, 1)
+        self.padding = dp(4)
+        self.month_num = month_num
+
+        bg_color = LIGHT_BLUE if is_selected else WHITE_COLOR
+        border_color = BLUE_COLOR if is_selected else [0.82, 0.86, 0.92, 1]
+        
+        with self.canvas.before:
+            Color(*bg_color)
+            self.bg_rect = RoundedRectangle(radius=[dp(8)])
+            Color(*border_color)
+            self.border_line = Line(rounded_rectangle=[0, 0, 0, 0, dp(8)], width=1.1)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+
+        self.lbl = MDLabel(
+            text=f"Tháng {month_num}",
+            halign="center",
+            valign="center",
+            theme_text_color="Custom",
+            text_color=BLUE_COLOR if is_selected else BLACK_COLOR,
+            bold=True,
+            font_style="Body",
+            role="medium"
+        )
+        self.lbl.bind(size=self.lbl.setter('text_size'))
+        self.add_widget(self.lbl)
+
+    def update_canvas(self, *args):
+        self.bg_rect.pos = self.pos
+        self.bg_rect.size = self.size
+        self.border_line.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(8)]
+
+
+class MonthYearSelectorModal(ModalView):
+    """
+    Popup chọn Tháng/Năm nhanh:
+    - Thiết kế Responsive: Căn gọn gàng ở giữa màn hình trên PC, không bị kéo dãn bè ngang.
+    - Lưới 12 nút tháng chia đều đối xứng hoàn hảo (3 cột x 4 hàng), không bị lệch sang trái.
+    - Cho phép chọn nhanh tháng từ 1 đến 12 và chuyển đổi năm qua lại.
+    """
+    def __init__(self, start_year, on_month_selected, current_month=None, **kwargs):
+        super().__init__(**kwargs)
+        is_pc = (platform not in ['android', 'ios']) and (Window.width >= dp(700))
+        if is_pc:
+            self.size_hint = (None, None)
+            self.width = min(dp(440), Window.width * 0.9)
+            self.height = min(dp(440), Window.height * 0.85)
+        else:
+            self.size_hint = (0.88, 0.6)
+            
         self.auto_dismiss = True
+        self.start_year = start_year
         self.current_modal_year = start_year
+        self.current_month = current_month
         self.on_month_selected = on_month_selected
         self.setup_ui()
 
@@ -301,25 +377,47 @@ class MonthYearSelectorModal(ModalView):
             self.bg_rect = RoundedRectangle(radius=[dp(10)])
         main_layout.bind(pos=self.update_bg, size=self.update_bg)
 
-        header = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50))
+        # Header chọn năm căn giữa cân đối
+        header = MDBoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(50),
+            pos_hint={"center_x": 0.5}
+        )
+        header.add_widget(Widget(size_hint_x=1))
         btn_prev = MDIconButton(icon="chevron-left", pos_hint={"center_y": 0.5})
         btn_prev.bind(on_release=lambda x: self.change_year(-1))
         
-        self.lbl_year = MDLabel(text=f"Năm {self.current_modal_year}", halign="center", bold=True, font_style="Title", role="large")
+        self.lbl_year = MDLabel(
+            text=f"Năm {self.current_modal_year}",
+            halign="center",
+            bold=True,
+            font_style="Title",
+            role="large",
+            adaptive_width=True,
+            size_hint_x=None,
+            pos_hint={"center_y": 0.5}
+        )
         btn_next = MDIconButton(icon="chevron-right", pos_hint={"center_y": 0.5})
         btn_next.bind(on_release=lambda x: self.change_year(1))
         
         header.add_widget(btn_prev)
         header.add_widget(self.lbl_year)
         header.add_widget(btn_next)
+        header.add_widget(Widget(size_hint_x=1))
         main_layout.add_widget(header)
 
-        grid = MDGridLayout(cols=2, spacing=dp(10), padding=dp(10))
+        # Lưới 12 nút tháng: Chia đều 3 cột đối xứng, lấp đầy không gian ô lưới
+        cols = 3 if Window.width >= dp(400) else 2
+        grid = MDGridLayout(
+            cols=cols,
+            spacing=dp(10),
+            padding=[dp(10), dp(10), dp(10), dp(10)],
+            size_hint=(1, 1)
+        )
         for m in range(1, 13):
-            btn_month = MDButton(
-                MDButtonText(text=f"Tháng {m}", theme_text_color="Custom", text_color=BLACK_COLOR),
-                style="elevated", theme_bg_color="Custom", md_bg_color=WHITE_COLOR, size_hint=(1, 1)
-            )
+            is_active = (m == self.current_month and self.current_modal_year == self.start_year)
+            btn_month = MonthItemButton(month_num=m, is_selected=is_active)
             btn_month.bind(on_release=lambda instance, m=m: self.select_month(m))
             grid.add_widget(btn_month)
             
@@ -332,7 +430,7 @@ class MonthYearSelectorModal(ModalView):
 
     def change_year(self, delta):
         self.current_modal_year += delta
-        self.lbl_year.text = f"Năm {self.current_modal_year}"
+        self.setup_ui()
 
     def select_month(self, month):
         self.on_month_selected(month, self.current_modal_year)
@@ -345,16 +443,17 @@ class WeekTimeSlotRow(MDBoxLayout):
         super().__init__(**kwargs)
         self.orientation = 'horizontal'
         self.size_hint_y = None
-        #Chiều cao
+        # Chiều cao mỗi khung giờ
         self.height = dp(120)  # 60 phút * dp(2)/phút = dp(120) cho mỗi khung giờ XX:00
         
         time_str = f"{hour:02d}:00"
 
+        # Thu gọn bề ngang cột giờ từ 38dp xuống 32dp để nhường tối đa không gian cho 7 cột ngày
         self.lbl_time = MDLabel(
-            text=time_str, size_hint_x=None, width=dp(38),
+            text=time_str, size_hint_x=None, width=dp(32),
             halign="center", valign="top",
             theme_text_color="Custom", text_color=BLACK_COLOR,
-            font_style="Label", role="small", font_size=dp(10), bold=True
+            font_style="Label", role="small", font_size=dp(9), bold=True
         )
         self.add_widget(self.lbl_time)
         
@@ -390,7 +489,9 @@ class EventBlock(ButtonBehavior, FloatLayout):
     - Sử dụng FloatLayout để dấu chấm than (is_important) nổi độc lập ở góc trên bên phải.
     - Có vách ngăn nằm ngang chia đôi phần dấu chấm than (trên) và phần chữ thông tin (dưới),
       giúp chữ hoàn toàn nằm bên dưới vách ngăn, không bị chèn hay đè lên dấu chấm than.
-    - Định dạng hiển thị sự kiện theo quy chuẩn: ({Địa điểm})\n{tên sự kiện} (ngoại trừ DEADLINE).
+    - Định dạng hiển thị sự kiện: ({Địa điểm})\n{tên sự kiện} (ngoại trừ DEADLINE).
+    - Tối ưu kích cỡ font (8.5dp trên Mobile, 10.5dp trên PC) và căn lề tối giản để đảm bảo
+      trên Android hiển thị được ít nhất 5-6 ký tự/từ trên một dòng mà không bị ngắt dòng sớm ở ký tự thứ 5.
     """
     def __init__(self, event_data, col_index, **kwargs):
         super().__init__(**kwargs)
@@ -429,13 +530,13 @@ class EventBlock(ButtonBehavior, FloatLayout):
             Color(*bg_color)
             self.bg_rect = RoundedRectangle(radius=[dp(4)])
             
-            # 3. Dải màu nhấn đậm bên trái (Accent Line)
+            # 3. Dải màu nhấn đậm bên trái (Accent Line - thu gọn 2.5dp)
             Color(*base_color[:3], 1.0)
             self.accent_line = RoundedRectangle(radius=[dp(4), 0, 0, dp(4)])
             
             # 4. Viền mỏng bao quanh
             Color(0, 0, 0, 0.5)
-            self.border = Line(width=1.1)
+            self.border = Line(width=1.0)
 
             # 5. Vách ngăn nằm ngang chia phần dấu chấm than (trên) và phần chữ thông tin (dưới)
             Color(1, 1, 1, 0.55)
@@ -445,6 +546,10 @@ class EventBlock(ButtonBehavior, FloatLayout):
 
         has_imp = event_data.get("is_important", False)
         
+        # Kích thước font responsive: Mobile dùng 8.5dp để hiển thị được 5-6 chữ/dòng
+        is_mobile = Window.width < dp(600)
+        font_size = dp(8.5) if is_mobile else dp(10.5)
+
         # Nhãn tiêu đề sự kiện: Nằm bên dưới vách ngăn nằm ngang, căn lề trên cùng của vùng chữ
         self.lbl_title = MDLabel(
             text=self.title, 
@@ -452,12 +557,12 @@ class EventBlock(ButtonBehavior, FloatLayout):
             text_color=WHITE_COLOR,
             font_style="Label",
             role="small",
-            font_size=dp(10),
+            font_size=font_size,
             bold=True, 
             halign="left", 
             valign="top",
             size_hint=(None, None),
-            padding=[dp(5), dp(2), dp(2), dp(2)]
+            padding=[dp(2.5), dp(1), dp(1), dp(1)]
         )
         self.add_widget(self.lbl_title)
 
@@ -470,39 +575,39 @@ class EventBlock(ButtonBehavior, FloatLayout):
             bold=True,
             font_size=dp(11),
             size_hint=(None, None),
-            size=(dp(13), dp(13)),
+            size=(dp(12), dp(12)),
             pos_hint={"right": 0.98, "top": 0.98},
             opacity=1 if has_imp else 0,
         )
         self.add_widget(self.icon_important)
 
     def update_canvas(self, *args):
-        self.shadow.pos = [self.x + dp(2), self.y - dp(2)]
+        self.shadow.pos = [self.x + dp(1.5), self.y - dp(1.5)]
         self.shadow.size = self.size
         
         self.bg_rect.pos = self.pos
         self.bg_rect.size = self.size
         
         self.accent_line.pos = self.pos
-        self.accent_line.size = [dp(4), self.height]
+        self.accent_line.size = [dp(2.5), self.height]
         
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(4)]
 
-        # Cập nhật toạ độ vách ngăn nằm ngang cách đỉnh dp(18)
-        top_bar_h = dp(18)
+        # Cập nhật toạ độ vách ngăn nằm ngang cách đỉnh dp(16)
+        top_bar_h = dp(16)
         divider_y = self.y + self.height - top_bar_h
-        if self.height > top_bar_h + dp(6):
+        if self.height > top_bar_h + dp(5):
             # Vẽ đường vách ngăn ngang bên dưới dấu chấm than
-            self.divider_line.points = [self.x + dp(4), divider_y, self.x + self.width - dp(2), divider_y]
-            # Vùng chữ nằm hoàn toàn bên dưới vách ngăn
+            self.divider_line.points = [self.x + dp(3), divider_y, self.x + self.width - dp(1), divider_y]
+            # Vùng chữ nằm hoàn toàn bên dưới vách ngăn, tận dụng tối đa chiều ngang (trừ 3dp viền/padding)
             self.lbl_title.pos = [self.x, self.y]
             self.lbl_title.size = [self.width, max(dp(10), self.height - top_bar_h)]
-            self.lbl_title.text_size = (max(dp(10), self.width - dp(7)), max(dp(10), self.lbl_title.height - dp(4)))
+            self.lbl_title.text_size = (max(dp(10), self.width - dp(3)), max(dp(10), self.lbl_title.height - dp(2)))
         else:
             self.divider_line.points = [0, 0, 0, 0]
             self.lbl_title.pos = [self.x, self.y]
             self.lbl_title.size = [self.width, self.height]
-            self.lbl_title.text_size = (max(dp(10), self.width - dp(7)), max(dp(10), self.height - dp(4)))
+            self.lbl_title.text_size = (max(dp(10), self.width - dp(3)), max(dp(10), self.height - dp(2)))
 
     def on_release(self):
         from event_modals import EventDetailModal
@@ -696,40 +801,70 @@ class CalendarHomeScreen(MDScreen):
         self.add_widget(self.main_layout)
 
         # --- A. THANH MENU CHỨC NĂNG TRÊN CÙNG ---
-        self.top_menu = MDBoxLayout(
-            orientation='horizontal', size_hint_y=None, height=dp(56),
-            md_bg_color=BLUE_COLOR, padding=dp(10)
+        # Sử dụng MDRelativeLayout để khóa cụm nút tiêu đề chính xác 100% tại trục giữa màn hình (center_x = 0.5)
+        self.top_menu = MDRelativeLayout(
+            size_hint_y=None, height=dp(56),
+            md_bg_color=BLUE_COLOR
         )
+        with self.top_menu.canvas.before:
+            Color(*BLUE_COLOR)
+            self.top_menu_bg = Rectangle(pos=self.top_menu.pos, size=self.top_menu.size)
+        self.top_menu.bind(pos=self._update_top_menu_bg, size=self._update_top_menu_bg)
         
-        self.btn_menu = MDIconButton(icon="menu", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": 0.5})
+        # 1. Nút Menu bên trái (neo sát mép trái)
+        self.btn_menu = MDIconButton(
+            icon="menu", theme_icon_color="Custom", icon_color=WHITE_COLOR,
+            pos_hint={"x": 0.015, "center_y": 0.5}
+        )
         self.btn_menu.bind(on_release=self.on_menu_or_back)
+        self.top_menu.add_widget(self.btn_menu)
         
-        center_nav = MDBoxLayout(orientation='horizontal', size_hint_x=1, spacing=dp(5))
-        self.btn_prev = MDIconButton(icon="chevron-left", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": 0.5})
+        # 2. Cụm chuyển đổi nhanh Tháng/Năm: Khóa tuyệt đối tại vị trí chính giữa màn hình (center_x = 0.5)
+        self.center_nav = MDBoxLayout(
+            orientation='horizontal',
+            size_hint=(None, None),
+            height=dp(56),
+            spacing=dp(4),
+            pos_hint={"center_x": 0.5, "center_y": 0.5}
+        )
+        self.center_nav.bind(minimum_width=self.center_nav.setter('width'))
+
+        self.btn_prev = MDIconButton(
+            icon="chevron-left", theme_icon_color="Custom", icon_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
         self.btn_prev.bind(on_release=lambda x: self.change_time_period(-1))
         
         self.lbl_month_year = HoverClickLabel()
         self.lbl_month_year.bind(on_release=self.open_month_selector)
         
-        self.btn_next = MDIconButton(icon="chevron-right", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_y": 0.5})
+        self.btn_next = MDIconButton(
+            icon="chevron-right", theme_icon_color="Custom", icon_color=WHITE_COLOR,
+            pos_hint={"center_y": 0.5}
+        )
         self.btn_next.bind(on_release=lambda x: self.change_time_period(1))
         
-        center_nav.add_widget(self.btn_prev)
-        center_nav.add_widget(self.lbl_month_year)
-        center_nav.add_widget(self.btn_next)
+        self.center_nav.add_widget(self.btn_prev)
+        self.center_nav.add_widget(self.lbl_month_year)
+        self.center_nav.add_widget(self.btn_next)
+        self.top_menu.add_widget(self.center_nav)
         
-        self.btn_add_box = MDBoxLayout(size_hint=(None, None), size=(dp(36), dp(36)), pos_hint={"center_y": 0.5})
+        # 3. Nút Thêm sự kiện bên phải (neo sát mép phải)
+        self.btn_add_box = MDBoxLayout(
+            size_hint=(None, None), size=(dp(36), dp(36)),
+            pos_hint={"right": 0.985, "center_y": 0.5}
+        )
         with self.btn_add_box.canvas.before:
             Color(*BTN_ADD_BG)
             self.add_bg_rect = RoundedRectangle(radius=[dp(6)])
         self.btn_add_box.bind(pos=self.update_add_btn_bg, size=self.update_add_btn_bg)
             
-        self.btn_add = MDIconButton(icon="plus", theme_icon_color="Custom", icon_color=WHITE_COLOR, pos_hint={"center_x": 0.5, "center_y": 0.5})
+        self.btn_add = MDIconButton(
+            icon="plus", theme_icon_color="Custom", icon_color=WHITE_COLOR,
+            pos_hint={"center_x": 0.5, "center_y": 0.5}
+        )
         self.btn_add.bind(on_release=self.open_add_menu)
         self.btn_add_box.add_widget(self.btn_add)
-        
-        self.top_menu.add_widget(self.btn_menu)
-        self.top_menu.add_widget(center_nav)
         self.top_menu.add_widget(self.btn_add_box)
         
         self.main_layout.add_widget(self.top_menu)
@@ -768,7 +903,7 @@ class CalendarHomeScreen(MDScreen):
         self.week_layout = MDBoxLayout(orientation='vertical')
         
         self.week_header_container = RelativeLayout(size_hint_y=None, height=dp(70))
-        self.week_days_box = MDBoxLayout(orientation='horizontal', padding=[dp(38), dp(5), 0, dp(5)])
+        self.week_days_box = MDBoxLayout(orientation='horizontal', padding=[dp(32), dp(5), 0, dp(5)])
         self.week_day_labels = []
         self.deadline_boxes = []
         
@@ -837,6 +972,11 @@ class CalendarHomeScreen(MDScreen):
     # ==========================================================================
     # 5. HÀM XỬ LÝ LOGIC & DỮ LIỆU
     # ==========================================================================
+    def _update_top_menu_bg(self, instance, val):
+        if hasattr(self, 'top_menu_bg'):
+            self.top_menu_bg.pos = instance.pos
+            self.top_menu_bg.size = instance.size
+
     def update_add_btn_bg(self, instance, val):
         self.add_bg_rect.pos = instance.pos
         self.add_bg_rect.size = instance.size
@@ -864,7 +1004,12 @@ class CalendarHomeScreen(MDScreen):
 
     # ---- events come from the backend (event_store.py) -------------------------------------
     def on_pre_enter(self, *args):
-        store.refresh(api, on_done=self._redraw_events)
+        # Vẽ ngay bằng dữ liệu có sẵn trong store cache để hiệu ứng chuyển tab mượt mà, không giật lag
+        self._redraw_events()
+
+    def on_enter(self, *args):
+        # Sau khi hiệu ứng chuyển tab hoàn tất mới đồng bộ làm mới dữ liệu từ backend
+        Clock.schedule_once(lambda dt: store.refresh(api), 0.05)
 
     def _redraw_events(self):
         if not hasattr(self, "day_nodes") or not hasattr(self, "content_sm"):
@@ -989,7 +1134,7 @@ class CalendarHomeScreen(MDScreen):
         total_width = size[0]
         if total_width <= dp(60):
             return
-        time_col_w = dp(38)
+        time_col_w = dp(32)
         col_width = (total_width - time_col_w) / 7.0 
         pixels_per_min = dp(2)
         
@@ -997,8 +1142,8 @@ class CalendarHomeScreen(MDScreen):
             if isinstance(child, EventBlock):
                 ev = child.event_data
                 child.size_hint = (None, None)
-                child.width = col_width - dp(4) # Bớt 4dp để tạo khoảng trống giữa các cột
-                child.x = time_col_w + (child.col_index * col_width) + dp(2)
+                child.width = col_width - dp(2) # Bớt 2dp để tạo khoảng trống giữa các cột và tối đa hóa chiều rộng chữ
+                child.x = time_col_w + (child.col_index * col_width) + dp(1)
                 child.height = ev["duration"] * pixels_per_min
                 
                 # Tính toạ độ Y từ dưới lên theo kiến trúc toạ độ của Kivy
@@ -1030,7 +1175,11 @@ class CalendarHomeScreen(MDScreen):
         self.render_month_view()
 
     def open_month_selector(self, *args):
-        MonthYearSelectorModal(self.display_year, self.on_month_selected_from_modal).open()
+        MonthYearSelectorModal(
+            self.display_year,
+            self.on_month_selected_from_modal,
+            current_month=self.display_month
+        ).open()
 
     def on_month_selected_from_modal(self, selected_month, selected_year):
         self.display_month = selected_month
