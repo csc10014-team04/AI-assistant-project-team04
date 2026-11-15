@@ -82,21 +82,46 @@ def _score(candidate: TimeSlot, prefer: str | None, avoid: str | None) -> float:
 
 
 def _pick_slot(
-    gaps: list[TimeSlot], duration: int, prefer: str | None, avoid: str | None, excluded: list[TimeSlot], want_start: str | None = None
+    gaps: list[TimeSlot],
+    duration: int,
+    prefer: str | None,
+    avoid: str | None,
+    excluded: list[TimeSlot],
+    want_start: str | None = None,
+    want_end: str | None = None,
 ) -> TimeSlot | None:
-    """best duration-long block inside the free gaps, skipping blocks the user already rejected."""
+    """Find a duration-long block, enforcing explicitly requested clock boundaries."""
+    explicit = want_start is not None or want_end is not None
+    if explicit and (want_start is None or want_end is None):
+        return None
+
     best: tuple[float, datetime, TimeSlot] | None = None
     length = timedelta(minutes=duration)
+
     for gap in gaps:
         start = gap.start
         while start + length <= gap.end:
             cand = TimeSlot(start, start + length)
+
+            if explicit:
+                exact = (
+                    f"{cand.start:%H:%M}" == want_start
+                    and f"{cand.end:%H:%M}" == want_end
+                )
+                if not exact:
+                    start += STEP
+                    continue
+
             if not any(cand.overlaps(x) for x in excluded):
-                exact = want_start is not None and f"{cand.start:%H:%M}" == want_start  # user named this start time
-                key = (-1.0 if exact else _score(cand, prefer, avoid), cand.start)
+                key = (
+                    -1.0 if explicit else _score(cand, prefer, avoid),
+                    cand.start,
+                )
                 if best is None or key < best[:2]:
                     best = (*key, cand)
+
             start += STEP
+
     return best[2] if best else None
 
 
@@ -217,15 +242,61 @@ def create_proposal(
     # One calendar scan supplies gaps for both continuous placement and task splitting.
     gap_floor = min(duration, MIN_BLOCK_MIN)
     gaps = find_user_free_slots(db, owner_id, window_start, window_end, gap_floor)
+    print("[DEBUG WINDOW]", window_start.isoformat(), window_end.isoformat())
+    print("[DEBUG REQUEST]", {
+        "duration": duration,
+        "requested_start": nlu.requested_start,
+        "requested_end": nlu.requested_end,
+        "gap_floor": gap_floor,
+    })
+    print("[DEBUG GAPS]", [
+        (g.start.isoformat(), g.end.isoformat())
+        for g in gaps
+    ])
     pref = db.scalar(select(UserPreference).where(UserPreference.user_id == owner_id))
     cap = pref.max_block_minutes if pref else 180  # longest continuous work block the user accepts
+    print("[DEBUG PREFERENCES]", {
+        "sleep_start": pref.sleep_start if pref else None,
+        "sleep_end": pref.sleep_end if pref else None,
+        "min_break_minutes": pref.min_break_minutes if pref else None,
+        "max_block_minutes": cap,
+    })
     usable_gaps = _subtract(gaps, excluded)
     pieces: list[TimeSlot] | None = None
-    if duration <= cap:  # a whole block is preferred whenever the task is short enough
-        chosen = _pick_slot(usable_gaps, duration, nlu.preferred_time_of_day, nlu.avoid_time_of_day, [], nlu.requested_start)
+    explicit_clock = (
+        nlu.requested_start is not None
+        or nlu.requested_end is not None
+    )
+
+    if explicit_clock:
+        if nlu.requested_start is None or nlu.requested_end is None:
+            return None
+        if duration > cap:
+            return None
+
+        chosen = _pick_slot(
+            usable_gaps,
+            duration,
+            nlu.preferred_time_of_day,
+            nlu.avoid_time_of_day,
+            [],
+            want_start=nlu.requested_start,
+            want_end=nlu.requested_end,
+        )
         pieces = [chosen] if chosen else None
-    if pieces is None:  # too long for one block, or no gap long enough: split it (P2-4)
-        pieces = split_task(usable_gaps, duration, cap)
+    else:
+        if duration <= cap:
+            chosen = _pick_slot(
+                usable_gaps,
+                duration,
+                nlu.preferred_time_of_day,
+                nlu.avoid_time_of_day,
+                [],
+            )
+            pieces = [chosen] if chosen else None
+
+        if pieces is None:
+            pieces = split_task(usable_gaps, duration, cap)
     if not pieces:
         return None
     chosen = pieces[0]

@@ -21,10 +21,5 @@ class AppScreenManager(ScreenManager):
         self.add_widget(SearchScreen(name="search_home"))
         self.add_widget(ChatAssistantScreen(name="chat_home"))
         
-        # Luồng kiểm tra đăng nhập tự động
-        if api.access_token:
-            # Nếu đã có phiên đăng nhập lưu trong máy -> Vào thẳng trang chủ
-            self.current = "calendar_home"
-        else:
-            # Nếu chưa có -> Hiển thị màn hình xác thực
-            self.current = "auth_screen"
+            # Hiển thị màn hình xác thực
+        self.current = "auth_screen"

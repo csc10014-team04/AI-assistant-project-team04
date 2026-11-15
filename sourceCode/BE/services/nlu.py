@@ -137,6 +137,7 @@ _DURATION_RE = re.compile(
 _DATE_HINT_RE = re.compile(
     r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
     r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
+    r"\d{1,2}(?:st|nd|rd|th)|"
     r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week|"
     # vague phrases (P2-3): captured so temporal.resolve_date_hint can ask a clarifying question
     r"sớm|som|lúc nào đó|luc nao do|sắp tới|sap toi|dạo này|dao nay|khi nào rảnh|khi nao ranh|"
@@ -162,10 +163,10 @@ _HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap"
 
 # clock times are NOT durations: "từ 7h đến 18h" is a time range, "lúc 9h" is a moment. Reading "7h" in them as
 # "7 hours" produced wrong durations and left words such as "từ ... đến" in the title.
-_PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|pm|am)"
+_PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|toi|pm|am)"
 _CLOCK_RANGE_RE = re.compile(
-    r"(?:từ|tu|from)?\s*(\d{1,2})\s*(?:h|giờ|gio|:)\s*(\d{2})?\s*" + _PERIOD + r"?\s*"
-    r"(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})\s*(?:h|giờ|gio|:)?\s*(\d{2})?\s*" + _PERIOD + r"?",
+    r"(?:từ|tu|from)?\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?\s*"
+    r"(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?",
     re.IGNORECASE,
 )
 _CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
@@ -179,7 +180,11 @@ def _strip_clock_times(text: str) -> str:
 
 def _hour24(hour: int, period: str | None) -> int:
     period = (period or "").lower()
-    if period in {"chiều", "chieu", "tối", "pm"} and hour < 12:
+    if period == "am":
+        return 0 if hour == 12 else hour
+    if period == "pm":
+        return 12 if hour == 12 else hour + 12
+    if period in {"chiều", "chieu", "tối", "toi"} and hour < 12:
         return hour + 12
     if period in {"trưa", "trua"} and hour < 11:
         return hour + 12
@@ -193,7 +198,7 @@ def parse_clock_window(text: str) -> tuple[int, int] | None:
     None when there is no range, an hour is out of range, or the length is not 15..720 minutes.
     """
     m = _CLOCK_RANGE_RE.search(text)
-    if not m or int(m.group(1)) >= 24 or int(m.group(4)) > 24:
+    if not m or int(m.group(1)) > 23 or int(m.group(4)) > 23:
         return None
     start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
     if not m.group(3) and not m.group(6) and 1 <= start_h <= 5 and end_h <= 11:
@@ -293,7 +298,10 @@ def rule_based_understand(text: str) -> NluResult:
         intent: Intent = "delete_event"
     elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
         intent = "reschedule"
-    elif duration is not None or re.search(r"\b(xếp|xep|sắp xếp|sap xep)\b", lowered):
+    elif re.search(
+        r"\b(x蘯ｿp|xep|s蘯ｯp x蘯ｿp|sap x蘯ｿp|schedule|plan|安排)\b",
+        lowered,
+    ):
         intent = "schedule_task"
     elif re.search(
         r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|quy chế|quy định|tín chỉ|học vụ|schedule|what)\b",
@@ -399,6 +407,12 @@ def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, n
     if result.intent == "schedule_task" and result.duration_minutes is None:
         result.needs_clarification = True
         result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
+    if result.intent == "schedule_task" and not result.title:
+        result.needs_clarification = True
+        result.clarification_question = (
+            result.clarification_question
+            or "What activity would you like to schedule?"
+        )
     if result.priority is None:
         result.priority = rules.priority
     window_clock = parse_clock_window(prompt)
@@ -467,6 +481,23 @@ def understand_prompt(
                     retries += 1  # reject malformed output and retry once
                     continue
                 break
+            if (
+                not re.search(
+                    r"\b(schedule|plan|add|book|xep|sắp xếp|đặt lịch|lên lịch|"
+                    r"what|when|lich|lịch|co gi|có gì|khi nao|khi nào)\b",
+                    safe_prompt,
+                    re.IGNORECASE,
+                )
+                and re.fullmatch(r"\s*\d{1,2}\s*[-–—]\s*\d{1,2}\s*", safe_prompt)
+            ):
+                rules.intent = "unknown"
+                rules.title = None
+                rules.needs_clarification = True
+                rules.clarification_question = (
+                    "What would you like to do between "
+                    f"{rules.requested_start} and {rules.requested_end}?"
+                )
+                return rules
             if result.intent == "unknown" and rules.intent != "unknown":
                 category, reason = "SEMANTIC_FAILURE", "model failed to detect intent recognized by rules"
                 break
