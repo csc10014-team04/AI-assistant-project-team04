@@ -34,8 +34,8 @@ from services.parser import (  # noqa: E402
     _parse_and_validate_row,
     _split_line_into_cells,
     export_valid_rows_to_csv,
-    extract_raw_text_from_file,
     parse_timetable_content,
+    parse_timetable_file,
 )
 from services.security import get_current_user  # noqa: E402
 from services.validator import (  # noqa: E402
@@ -441,7 +441,12 @@ def _serialize_conflict_option(option: ParsedCsvRow | EventDomain) -> dict[str, 
     ),
 )
 async def parse_preview(
-    file: Optional[UploadFile] = File(default=None, description="Upload a .csv, .md, or .txt timetable file"),
+    file: Optional[UploadFile] = File(
+        default=None,
+        description=(
+            "Upload one .csv, .txt, .md, .pdf, .png, .jpg, .jpeg, .webp, .bmp, .tiff, or .tif timetable file"
+        ),
+    ),
     raw_content: Optional[str] = Form(default=None, description="Alternative: paste raw timetable text"),
 ) -> ParsePreviewResponse:
     # 1. Resolve content source: file upload takes priority over raw_content form field
@@ -457,16 +462,20 @@ async def parse_preview(
             )
 
         try:
-            content_str = extract_raw_text_from_file(file_bytes, filename)
+            batch_result = parse_timetable_file(file_bytes, filename)
         except ValueError as extraction_err:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=str(extraction_err),
             )
+        except ImportError as dependency_err:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(dependency_err),
+            )
 
     elif raw_content is not None and raw_content.strip():
-        content_str = raw_content
-        filename = ""
+        batch_result = parse_timetable_content(raw_content)
 
     else:
         raise HTTPException(
@@ -477,8 +486,18 @@ async def parse_preview(
             ),
         )
 
-    # 2. Run the parser — never raises exceptions, always returns ParseBatchResult
-    batch_result = parse_timetable_content(content_str, filename)
+    if (
+        not batch_result.valid_rows
+        and batch_result.invalid_rows
+        and all(row.error_code == "NO_TIMETABLE_DETECTED" for row in batch_result.invalid_rows)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "NO_TIMETABLE_DETECTED",
+                "message": batch_result.invalid_rows[0].error_message,
+            },
+        )
 
     # 3. Convert domain dataclasses to JSON-serializable Pydantic schemas
     valid_schemas = [_domain_to_schema(row) for row in batch_result.valid_rows]
