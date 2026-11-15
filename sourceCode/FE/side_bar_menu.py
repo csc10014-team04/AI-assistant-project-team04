@@ -15,11 +15,11 @@ from kivy.graphics import Color, RoundedRectangle
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.clock import Clock
+from kivy.uix.gridlayout import GridLayout
 
+import re
 import datetime
-from kivy.uix.popup import Popup
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.spinner import Spinner
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -87,62 +87,185 @@ class UserAccountWidget(ButtonBehavior, MDBoxLayout):
 
 
 # ==============================================================================
-# BỘ CHỌN GIỜ BẰNG KIVY THUẦN (Không dùng KivyMD)
+# BỘ CHỌN GIỜ BẰNG GRID 4 CỘT (00:00 - 23:45, Bước nhảy 15 phút)
 # ==============================================================================
-class SimpleTimePicker(Popup):
-    def __init__(self, mode, callback, **kwargs):
+class SimpleTimePicker(ModalView):
+    """
+    Bộ chọn giờ từ 00:00 đến 23:45 theo bước nhảy 15 phút (:00, :15, :30, :45) bằng Grid 4 cột.
+    Thay thế Spinner cũ theo yêu cầu người dùng:
+      - Cột 1: XX:00
+      - Cột 2: XX:15
+      - Cột 3: XX:30
+      - Cột 4: XX:45
+    """
+    def __init__(self, mode="start", current_time="23:30", title=None, callback=None, **kwargs):
         super().__init__(**kwargs)
-        self.title = "Chọn giờ"
-        self.size_hint = (0.8, 0.4)
+        is_mobile = (platform in ['android', 'ios']) or (Window.width < dp(600))
+        if is_mobile:
+            self.size_hint = (0.92, 0.8)
+        else:
+            self.size_hint = (None, 0.8)
+            self.width = min(dp(480), Window.width * 0.85)
+        self.auto_dismiss = True
         self.mode = mode
         self.callback = callback
 
-        # Layout chính của Popup
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        
-        # Khung chọn Giờ : Phút
-        time_layout = BoxLayout(orientation='horizontal', spacing=10)
-        
-        self.hour_spinner = Spinner(
-            text='12',
-            values=[f"{i:02d}" for i in range(24)],
-            size_hint=(0.5, 1)
-        )
-        self.minute_spinner = Spinner(
-            text='00',
-            values=[f"{i:02d}" for i in range(60)],
-            size_hint=(0.5, 1)
-        )
-        
-        time_layout.add_widget(self.hour_spinner)
-        time_layout.add_widget(Label(text=":", size_hint_x=None, width=dp(20)))
-        time_layout.add_widget(self.minute_spinner)
-        
-        layout.add_widget(time_layout)
-        
-        # Nút Lưu và Hủy
-        btn_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=dp(40))
-        btn_save = Button(text="Lưu", background_color=[0, 0.5, 1, 1])
-        btn_save.bind(on_release=self.save_time)
-        btn_cancel = Button(text="Hủy", background_color=[0.8, 0.2, 0.2, 1])
-        btn_cancel.bind(on_release=self.dismiss)
-        
-        btn_layout.add_widget(btn_save)
-        btn_layout.add_widget(btn_cancel)
-        
-        layout.add_widget(btn_layout)
-        self.content = layout
+        default_title = "Chọn giờ đi ngủ" if mode == "start" else "Chọn giờ thức dậy"
+        display_title = title or default_title
 
-    def save_time(self, instance):
-        # Lấy giá trị giờ, phút và tạo object thời gian
-        h = int(self.hour_spinner.text)
-        m = int(self.minute_spinner.text)
-        selected_time = datetime.time(hour=h, minute=m)
-        
-        # Gọi callback để truyền dữ liệu về màn hình chính
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
+            md_bg_color=WHITE_COLOR,
+            radius=[dp(12)]
+        )
+        layout.add_widget(MDLabel(
+            text=display_title,
+            bold=True,
+            font_style="Title",
+            role="medium",
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=4, spacing=dp(6), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
+
+        # Dải lựa chọn từ 00:00 đến 23:45 với 4 mốc: :00, :15, :30, :45
+        for h in range(24):
+            for m in (0, 15, 30, 45):
+                time_str = f"{h:02d}:{m:02d}"
+                is_curr = (time_str == current_time)
+                btn = Button(
+                    text=time_str,
+                    font_size=dp(13),
+                    bold=is_curr,
+                    background_normal='',
+                    background_color=BLUE_COLOR if is_curr else [0.93, 0.94, 0.97, 1],
+                    color=WHITE_COLOR if is_curr else [0.1, 0.1, 0.1, 1],
+                    size_hint_y=None,
+                    height=dp(36),
+                    on_release=lambda _, ts=time_str: self._choose(ts)
+                )
+                grid.add_widget(btn)
+
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
+            size_hint_y=None,
+            height=dp(38),
+            on_release=self.dismiss
+        )
+        layout.add_widget(btn_cancel)
+        self.add_widget(layout)
+
+    def _choose(self, time_str):
         if self.callback:
-            self.callback(selected_time, self.mode)
+            h, m = map(int, time_str.split(":"))
+            t_obj = datetime.time(hour=h, minute=m)
+            # Hỗ trợ truyền datetime.time object hoặc time string
+            try:
+                self.callback(t_obj, self.mode)
+            except Exception:
+                try:
+                    self.callback(time_str, self.mode)
+                except Exception:
+                    pass
         self.dismiss()
+
+
+# ==============================================================================
+# BỘ CHỌN THỜI LƯỢNG BẰNG GRID 5 CỘT (Scale 15 phút)
+# ==============================================================================
+class DurationGridPickerModal(ModalView):
+    """
+    Modal chọn thời lượng (phút) bằng Grid 5 cột tối ưu, siêu nhẹ:
+    - cols = 5
+    - Dải giá trị số phút từ start_min đến max_min theo bước nhảy step_min (15 phút)
+    - Tự động highlight nút đang chọn
+    - Hỗ trợ cuộn mượt mà bằng ScrollView
+    """
+    def __init__(self, title="Chọn thời lượng", current_val=30, start_min=0, max_min=120, step_min=15, on_select=None, **kwargs):
+        super().__init__(**kwargs)
+        is_mobile = (platform in ['android', 'ios']) or (Window.width < dp(600))
+        if is_mobile:
+            self.size_hint = (0.92, 0.8)
+        else:
+            self.size_hint = (None, 0.8)
+            self.width = min(dp(480), Window.width * 0.85)
+        self.auto_dismiss = True
+        self.on_select = on_select
+
+        layout = MDBoxLayout(
+            orientation='vertical',
+            padding=dp(14),
+            spacing=dp(8),
+            md_bg_color=WHITE_COLOR,
+            radius=[dp(12)]
+        )
+        layout.add_widget(MDLabel(
+            text=title,
+            bold=True,
+            font_style="Title",
+            role="medium",
+            adaptive_height=True,
+            halign="center"
+        ))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        grid = GridLayout(cols=5, spacing=dp(6), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
+
+        try:
+            curr_int = int(current_val)
+        except (ValueError, TypeError):
+            curr_int = start_min
+
+        for val in range(start_min, max_min + 1, step_min):
+            is_curr = (val == curr_int)
+            btn = Button(
+                text=str(val),
+                font_size=dp(13),
+                bold=is_curr,
+                background_normal='',
+                background_color=BLUE_COLOR if is_curr else [0.93, 0.94, 0.97, 1],
+                color=WHITE_COLOR if is_curr else [0.1, 0.1, 0.1, 1],
+                size_hint_y=None,
+                height=dp(38),
+                on_release=lambda _, v=val: self._choose(v)
+            )
+            grid.add_widget(btn)
+
+        scroll.add_widget(grid)
+        layout.add_widget(scroll)
+
+        btn_cancel = Button(
+            text="HỦY BỎ",
+            font_size=dp(13),
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1],
+            color=[0.3, 0.3, 0.3, 1],
+            size_hint_y=None,
+            height=dp(38),
+            on_release=self.dismiss
+        )
+        layout.add_widget(btn_cancel)
+        self.add_widget(layout)
+
+    def _choose(self, val):
+        if self.on_select:
+            self.on_select(val)
+        self.dismiss()
+
+
 # ==============================================================================
 # HỘP THOẠI TÙY CHỌN XẾP LỊCH
 # ==============================================================================
@@ -151,68 +274,155 @@ class SchedulePreferencesDialog(ModalView):
         super().__init__(**kwargs)
         self.size_hint = (0.9, 0.8)
         self.background_color = [0, 0, 0, 0.6]
-        
+
+        self.break_minutes = 30
+        self.max_continuous_minutes = 180
+
         layout = MDBoxLayout(orientation='vertical', padding=dp(20), spacing=dp(15), md_bg_color=WHITE_COLOR, radius=[dp(12)])
-        
         layout.add_widget(MDLabel(text="Tùy chọn xếp lịch", font_style="Title", role="large", bold=True, size_hint_y=None, height=dp(40)))
-        
+
         scroll = ScrollView(size_hint=(1, 1))
         content = MDBoxLayout(orientation='vertical', spacing=dp(20), adaptive_height=True)
-        
-        # 1. Giờ đi ngủ
+
+        # 1. Giờ đi ngủ & thức dậy (Grid 4 cột 15 phút)
         bedtime_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
-        self.btn_start_sleep = MDButton(MDButtonText(text="Ngủ: 23:30"), on_release=lambda x: self.show_time_picker("start"))
-        self.btn_end_sleep = MDButton(MDButtonText(text="Dậy: 06:30"), on_release=lambda x: self.show_time_picker("end"))
+        self.btn_start_sleep = MDButton(MDButtonText(text="Ngủ: 23:30"), style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("start"))
+        self.btn_end_sleep = MDButton(MDButtonText(text="Dậy: 06:30"), style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("end"))
         bedtime_box.add_widget(self.btn_start_sleep)
         bedtime_box.add_widget(self.btn_end_sleep)
         content.add_widget(bedtime_box)
-        
-        # 2. Thời gian nghỉ đệm
-        self.tf_break = MDTextField(MDTextFieldHintText(text="Nghỉ giữa ca (30 - 60 phút)"), text="30", mode="outlined")
-        content.add_widget(self.tf_break)
-        
-        # 3. Thời lượng tối đa
-        self.tf_max_duration = MDTextField(MDTextFieldHintText(text="Làm việc liên tục tối đa (phút)"), text="180", mode="outlined")
-        content.add_widget(self.tf_max_duration)
-        
+
+        # 2. Thời gian nghỉ giữa ca (Grid 5 cột: 0 - 120 phút)
+        self.btn_break = MDButton(
+            MDButtonText(text=f"Nghỉ giữa ca: {self.break_minutes} phút"),
+            style="outlined",
+            size_hint_x=1,
+            on_release=self.show_break_picker
+        )
+        content.add_widget(self.btn_break)
+
+        # 3. Thời lượng liên tục tối đa (Grid 5 cột: 30 - 720 phút)
+        self.btn_max_duration = MDButton(
+            MDButtonText(text=f"Liên tục tối đa: {self.max_continuous_minutes} phút"),
+            style="outlined",
+            size_hint_x=1,
+            on_release=self.show_max_duration_picker
+        )
+        content.add_widget(self.btn_max_duration)
+
         scroll.add_widget(content)
         layout.add_widget(scroll)
-        
-        # Nút lưu
+
+        # Nút lưu & hủy
         btn_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
         btn_save = MDButton(MDButtonText(text="LƯU TÙY CHỌN", text_color=WHITE_COLOR), style="filled", md_bg_color=BLUE_COLOR, size_hint_x=1, on_release=self.save_preferences)
         btn_cancel = MDButton(MDButtonText(text="HỦY"), style="outlined", size_hint_x=1, on_release=self.dismiss)
         btn_box.add_widget(btn_save)
         btn_box.add_widget(btn_cancel)
         layout.add_widget(btn_box)
-        
+
         self.add_widget(layout)
 
+    @property
+    def tf_break(self):
+        class _TfProxy:
+            def __init__(proxy_self, parent):
+                proxy_self.parent = parent
+            @property
+            def text(proxy_self):
+                return str(proxy_self.parent.break_minutes)
+            @text.setter
+            def text(proxy_self, val):
+                try:
+                    proxy_self.parent.break_minutes = int(val)
+                    if hasattr(proxy_self.parent, "btn_break") and proxy_self.parent.btn_break.children:
+                        proxy_self.parent.btn_break.children[0].text = f"Nghỉ giữa ca: {val} phút"
+                except Exception:
+                    pass
+        return _TfProxy(self)
+
+    @property
+    def tf_max_duration(self):
+        class _TfProxy:
+            def __init__(proxy_self, parent):
+                proxy_self.parent = parent
+            @property
+            def text(proxy_self):
+                return str(proxy_self.parent.max_continuous_minutes)
+            @text.setter
+            def text(proxy_self, val):
+                try:
+                    proxy_self.parent.max_continuous_minutes = int(val)
+                    if hasattr(proxy_self.parent, "btn_max_duration") and proxy_self.parent.btn_max_duration.children:
+                        proxy_self.parent.btn_max_duration.children[0].text = f"Liên tục tối đa: {val} phút"
+                except Exception:
+                    pass
+        return _TfProxy(self)
+
     def show_time_picker(self, mode):
-        # Dùng bộ chọn giờ Kivy thuần thay cho MDTimePicker
-        picker = SimpleTimePicker(mode=mode, callback=self.on_time_save)
+        btn = self.btn_start_sleep if mode == "start" else self.btn_end_sleep
+        btn_text = btn.children[0].text if btn.children else ""
+        match = re.search(r"(\d{1,2}:\d{2})", btn_text)
+        curr_time = match.group(1) if match else ("23:30" if mode == "start" else "06:30")
+        picker = SimpleTimePicker(
+            mode=mode,
+            current_time=curr_time,
+            title="Chọn giờ đi ngủ" if mode == "start" else "Chọn giờ thức dậy",
+            callback=self.on_time_save
+        )
         picker.open()
 
     def on_time_save(self, time_obj, mode):
+        time_str = time_obj.strftime("%H:%M") if hasattr(time_obj, "strftime") else str(time_obj)
         if mode == "start":
-            self.btn_start_sleep.children[0].text = f"Ngủ: {time_obj.strftime('%H:%M')}"
+            self.btn_start_sleep.children[0].text = f"Ngủ: {time_str}"
         else:
-            self.btn_end_sleep.children[0].text = f"Dậy: {time_obj.strftime('%H:%M')}"
+            self.btn_end_sleep.children[0].text = f"Dậy: {time_str}"
 
+    def show_break_picker(self, instance):
+        picker = DurationGridPickerModal(
+            title="Thời gian nghỉ giữa ca (phút)",
+            current_val=self.break_minutes,
+            start_min=0,
+            max_min=120,
+            step_min=15,
+            on_select=self.on_break_save
+        )
+        picker.open()
 
-    # Ghi chú: Kết nối phần này với backend cho chuẩn
+    def on_break_save(self, val):
+        self.break_minutes = int(val)
+        if hasattr(self, 'btn_break') and self.btn_break.children:
+            self.btn_break.children[0].text = f"Nghỉ giữa ca: {self.break_minutes} phút"
+
+    def show_max_duration_picker(self, instance):
+        picker = DurationGridPickerModal(
+            title="Thời lượng liên tục tối đa (phút)",
+            current_val=self.max_continuous_minutes,
+            start_min=30,
+            max_min=720,
+            step_min=15,
+            on_select=self.on_max_duration_save
+        )
+        picker.open()
+
+    def on_max_duration_save(self, val):
+        self.max_continuous_minutes = int(val)
+        if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
+            self.btn_max_duration.children[0].text = f"Liên tục tối đa: {self.max_continuous_minutes} phút"
+
     def save_preferences(self, instance):
+        start_txt = self.btn_start_sleep.children[0].text if self.btn_start_sleep.children else "Ngủ: 23:30"
+        end_txt = self.btn_end_sleep.children[0].text if self.btn_end_sleep.children else "Dậy: 06:30"
         payload = {
-            "sleep_schedule": f"{self.btn_start_sleep.children[0].text} - {self.btn_end_sleep.children[0].text}",
-            "min_break_minutes": self.tf_break.text,
-            "max_continuous_minutes": self.tf_max_duration.text,
+            "sleep_schedule": f"{start_txt} - {end_txt}",
+            "min_break_minutes": self.break_minutes,
+            "max_continuous_minutes": self.max_continuous_minutes,
         }
-        # Lưu vào local store dự phòng
         try:
             api.store.put("user_preferences", **payload)
         except Exception:
             pass
-        # Gọi API cập nhật user_preferences nếu server hỗ trợ
         api._request(
             "/api/v1/user/preferences",
             method="POST",
@@ -236,6 +446,10 @@ class SideBarMenu(ModalView):
         self.background = "" 
         self.background_color = [0, 0, 0, 0.5]
         self.size_hint = (1, 1) 
+        
+        # Giá trị mặc định cho cấu hình xếp lịch
+        self.break_minutes = 30
+        self.max_continuous_minutes = 180 
         
         is_mobile_mode = (platform in ['android', 'ios']) or (Window.width < dp(800))
         self.menu_width = Window.width * 0.8 if is_mobile_mode else Window.width * 0.25
@@ -364,41 +578,43 @@ class SideBarMenu(ModalView):
         bedtime_box.add_widget(self.btn_end_sleep)
         self.menu_list.add_widget(bedtime_box)
 
-        # 2. Thời gian nghỉ đệm
+        # 2. Thời gian nghỉ đệm (Grid 5 cột: 0 - 120 phút)
         self.menu_list.add_widget(MDLabel(
-            text="Thời gian nghỉ giữa ca (phút):",
+            text="Thời gian nghỉ giữa ca:",
             font_style="Body",
             role="small",
             theme_text_color="Hint",
             size_hint_y=None,
             height=dp(20)
         ))
-        self.tf_break = MDTextField(
-            MDTextFieldHintText(text="Nghỉ giữa ca (30 - 60 phút)"),
-            text="30",
-            mode="outlined",
+        self.btn_break = MDButton(
+            MDButtonText(text=f"{self.break_minutes} phút"),
+            style="outlined",
+            size_hint_x=1,
             size_hint_y=None,
-            height=dp(48)
+            height=dp(42),
+            on_release=self.show_break_picker
         )
-        self.menu_list.add_widget(self.tf_break)
+        self.menu_list.add_widget(self.btn_break)
 
-        # 3. Thời lượng liên tục tối đa
+        # 3. Thời lượng liên tục tối đa (Grid 5 cột: 30 - 720 phút)
         self.menu_list.add_widget(MDLabel(
-            text="Thời lượng liên tục tối đa (phút):",
+            text="Thời lượng liên tục tối đa:",
             font_style="Body",
             role="small",
             theme_text_color="Hint",
             size_hint_y=None,
             height=dp(20)
         ))
-        self.tf_max_duration = MDTextField(
-            MDTextFieldHintText(text="Làm việc liên tục tối đa (phút)"),
-            text="180",
-            mode="outlined",
+        self.btn_max_duration = MDButton(
+            MDButtonText(text=f"{self.max_continuous_minutes} phút"),
+            style="outlined",
+            size_hint_x=1,
             size_hint_y=None,
-            height=dp(48)
+            height=dp(42),
+            on_release=self.show_max_duration_picker
         )
-        self.menu_list.add_widget(self.tf_max_duration)
+        self.menu_list.add_widget(self.btn_max_duration)
 
         # Trạng thái lưu
         self.lbl_pref_status = MDLabel(
@@ -452,23 +668,110 @@ class SideBarMenu(ModalView):
         total_mins = max(1, h * 60 + m)
         set_snooze_interval(total_mins)
 
+    @property
+    def tf_break(self):
+        """Proxy thuộc tính để đảm bảo tương thích ngược nếu có code cũ gọi self.tf_break.text."""
+        class _TfProxy:
+            def __init__(proxy_self, parent):
+                proxy_self.parent = parent
+            @property
+            def text(proxy_self):
+                return str(proxy_self.parent.break_minutes)
+            @text.setter
+            def text(proxy_self, val):
+                try:
+                    proxy_self.parent.break_minutes = int(val)
+                    if hasattr(proxy_self.parent, "btn_break") and proxy_self.parent.btn_break.children:
+                        proxy_self.parent.btn_break.children[0].text = f"{val} phút"
+                except Exception:
+                    pass
+        return _TfProxy(self)
+
+    @property
+    def tf_max_duration(self):
+        """Proxy thuộc tính để đảm bảo tương thích ngược nếu có code cũ gọi self.tf_max_duration.text."""
+        class _TfProxy:
+            def __init__(proxy_self, parent):
+                proxy_self.parent = parent
+            @property
+            def text(proxy_self):
+                return str(proxy_self.parent.max_continuous_minutes)
+            @text.setter
+            def text(proxy_self, val):
+                try:
+                    proxy_self.parent.max_continuous_minutes = int(val)
+                    if hasattr(proxy_self.parent, "btn_max_duration") and proxy_self.parent.btn_max_duration.children:
+                        proxy_self.parent.btn_max_duration.children[0].text = f"{val} phút"
+                except Exception:
+                    pass
+        return _TfProxy(self)
+
     def show_time_picker(self, mode):
-        picker = SimpleTimePicker(mode=mode, callback=self.on_time_save)
+        """Mở modal chọn giờ (Grid 4 cột 15 phút: :00, :15, :30, :45)."""
+        btn = self.btn_start_sleep if mode == "start" else self.btn_end_sleep
+        btn_text = btn.children[0].text if btn.children else ""
+        match = re.search(r"(\d{1,2}:\d{2})", btn_text)
+        curr_time = match.group(1) if match else ("23:30" if mode == "start" else "06:30")
+        picker = SimpleTimePicker(
+            mode=mode,
+            current_time=curr_time,
+            title="Chọn giờ đi ngủ" if mode == "start" else "Chọn giờ thức dậy",
+            callback=self.on_time_save
+        )
         picker.open()
 
     def on_time_save(self, time_obj, mode):
+        """Cập nhật nhãn nút giờ ngủ / thức dậy sau khi người dùng chọn mốc thời gian."""
+        time_str = time_obj.strftime("%H:%M") if hasattr(time_obj, "strftime") else str(time_obj)
         if mode == "start":
-            self.btn_start_sleep.children[0].text = f"Ngủ: {time_obj.strftime('%H:%M')}"
+            self.btn_start_sleep.children[0].text = f"Ngủ: {time_str}"
         else:
-            self.btn_end_sleep.children[0].text = f"Dậy: {time_obj.strftime('%H:%M')}"
+            self.btn_end_sleep.children[0].text = f"Dậy: {time_str}"
+
+    def show_break_picker(self, *args):
+        """Mở modal chọn thời gian nghỉ giữa ca (Grid 5 cột: 0 - 120 phút, scale 15 phút)."""
+        picker = DurationGridPickerModal(
+            title="Thời gian nghỉ giữa ca (phút)",
+            current_val=self.break_minutes,
+            start_min=0,
+            max_min=120,
+            step_min=15,
+            on_select=self.on_break_save
+        )
+        picker.open()
+
+    def on_break_save(self, val):
+        """Lưu giá trị thời gian nghỉ giữa ca được chọn."""
+        self.break_minutes = int(val)
+        if hasattr(self, 'btn_break') and self.btn_break.children:
+            self.btn_break.children[0].text = f"{self.break_minutes} phút"
+
+    def show_max_duration_picker(self, *args):
+        """Mở modal chọn thời lượng liên tục tối đa (Grid 5 cột: 30 - 720 phút, scale 15 phút)."""
+        picker = DurationGridPickerModal(
+            title="Thời lượng liên tục tối đa (phút)",
+            current_val=self.max_continuous_minutes,
+            start_min=30,
+            max_min=720,
+            step_min=15,
+            on_select=self.on_max_duration_save
+        )
+        picker.open()
+
+    def on_max_duration_save(self, val):
+        """Lưu giá trị thời lượng liên tục tối đa được chọn."""
+        self.max_continuous_minutes = int(val)
+        if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
+            self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} phút"
 
     def save_preferences(self, instance):
+        """Lưu cấu hình xếp lịch vào Local Store và gửi cập nhật lên Backend Server."""
         start_txt = self.btn_start_sleep.children[0].text if self.btn_start_sleep.children else "Ngủ: 23:30"
         end_txt = self.btn_end_sleep.children[0].text if self.btn_end_sleep.children else "Dậy: 06:30"
         payload = {
             "sleep_schedule": f"{start_txt} - {end_txt}",
-            "min_break_minutes": self.tf_break.text,
-            "max_continuous_minutes": self.tf_max_duration.text,
+            "min_break_minutes": self.break_minutes,
+            "max_continuous_minutes": self.max_continuous_minutes,
         }
         try:
             api.store.put("user_preferences", **payload)
@@ -489,6 +792,7 @@ class SideBarMenu(ModalView):
         )
 
     def load_preferences(self):
+        """Tải cấu hình xếp lịch từ Local Store dự phòng và đồng bộ với Backend Server."""
         try:
             if api.store.exists("user_preferences"):
                 data = api.store.get("user_preferences")
@@ -498,12 +802,43 @@ class SideBarMenu(ModalView):
                     if len(parts) == 2 and self.btn_start_sleep.children and self.btn_end_sleep.children:
                         self.btn_start_sleep.children[0].text = parts[0]
                         self.btn_end_sleep.children[0].text = parts[1]
-                if data.get("min_break_minutes"):
-                    self.tf_break.text = str(data["min_break_minutes"])
-                if data.get("max_continuous_minutes"):
-                    self.tf_max_duration.text = str(data["max_continuous_minutes"])
+                if data.get("min_break_minutes") is not None:
+                    self.break_minutes = int(data["min_break_minutes"])
+                    if hasattr(self, 'btn_break') and self.btn_break.children:
+                        self.btn_break.children[0].text = f"{self.break_minutes} phút"
+                if data.get("max_continuous_minutes") is not None:
+                    self.max_continuous_minutes = int(data["max_continuous_minutes"])
+                    if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
+                        self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} phút"
         except Exception:
             pass
+
+        # Đồng bộ từ Backend Server nếu đã có token đăng nhập
+        def on_server_pref(req, res):
+            if isinstance(res, dict):
+                s_start = res.get("sleep_start", "23:30")
+                s_end = res.get("sleep_end", "06:30")
+                if self.btn_start_sleep.children:
+                    self.btn_start_sleep.children[0].text = f"Ngủ: {s_start}"
+                if self.btn_end_sleep.children:
+                    self.btn_end_sleep.children[0].text = f"Dậy: {s_end}"
+                if "min_break_minutes" in res and res["min_break_minutes"] is not None:
+                    self.break_minutes = int(res["min_break_minutes"])
+                    if hasattr(self, 'btn_break') and self.btn_break.children:
+                        self.btn_break.children[0].text = f"{self.break_minutes} phút"
+                if "max_block_minutes" in res and res["max_block_minutes"] is not None:
+                    self.max_continuous_minutes = int(res["max_block_minutes"])
+                    if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
+                        self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} phút"
+
+        if getattr(api, "token", None):
+            api._request(
+                "/api/v1/user/preferences",
+                method="GET",
+                on_success=on_server_pref,
+                on_failure=lambda req, res: None,
+                on_error=lambda req, err: None,
+            )
 
     def update_canvas(self, *args):
         self.bg_rect.pos = self.main_container.pos
