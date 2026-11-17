@@ -111,12 +111,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Error-Source", "X-Process-Time-Ms"],
 )
 
 
 @app.middleware("http")
 async def diagnostic_error_middleware(request: Request, call_next):
-    """capture 4xx/5xx http errors and unhandled exceptions for self-service fe/be/tester debugging."""
+    """capture 4xx/5xx http errors, exceptions, and process time header for fe/be/qa diagnostics."""
     request_id = uuid.uuid4().hex[:8]
     started = time.perf_counter()
     try:
@@ -152,12 +153,14 @@ async def diagnostic_error_middleware(request: Request, call_next):
             headers={
                 "X-Request-ID": request_id,
                 "X-Error-Source": error_source,
+                "X-Process-Time-Ms": str(duration_ms),
             },
         )
 
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = str(duration_ms)
     if response.status_code >= 400 and request.url.path != "/api/v1/debug/logs":
-        duration_ms = round((time.perf_counter() - started) * 1000, 2)
         body_chunks = [chunk async for chunk in response.body_iterator]
         body_bytes = b"".join(body_chunks)
         parsed_body: object = None
@@ -182,9 +185,14 @@ async def diagnostic_error_middleware(request: Request, call_next):
                 "duration_ms": duration_ms,
             }
         )
-        headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        headers = {
+            k: v
+            for k, v in response.headers.items()
+            if k.lower() not in {"content-length", "x-request-id", "x-error-source", "x-process-time-ms"}
+        }
         headers["X-Request-ID"] = request_id
         headers["X-Error-Source"] = error_source
+        headers["X-Process-Time-Ms"] = str(duration_ms)
         return Response(
             content=body_bytes,
             status_code=response.status_code,
