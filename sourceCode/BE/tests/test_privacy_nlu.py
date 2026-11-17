@@ -114,3 +114,11 @@ def test_private_endpoint_allowlist_and_tailscale(monkeypatch):
     monkeypatch.setenv("LLM_ALLOWED_HOSTS", "26.0.0.0/8")
     assert is_private_endpoint("http://26.9.9.9:8000/v1")
     assert not is_private_endpoint("http://8.8.8.8:8000/v1")
+
+
+def test_rules_explicit_duration_without_xep():
+    r = nlu.rule_based_understand("học bài 2h từ 7h đến 11h")
+    assert r.intent == "schedule_task" and r.duration_minutes == 120
+
+    bare = nlu.rule_based_understand("7h - 11h")
+    assert bare.intent == "unknown"
