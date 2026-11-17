@@ -294,12 +294,15 @@ def rule_based_understand(text: str) -> NluResult:
     )
     date_match = _DATE_HINT_RE.search(text_without_deadline)
 
+    stripped_clock = _strip_clock_times(text)
+    has_explicit_duration = bool(_HOURS_MINUTES_RE.search(stripped_clock) or _DURATION_RE.search(stripped_clock))
+
     if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
         intent: Intent = "delete_event"
     elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
         intent = "reschedule"
-    elif re.search(
-        r"\b(x蘯ｿp|xep|s蘯ｯp x蘯ｿp|sap x蘯ｿp|schedule|plan|安排)\b",
+    elif has_explicit_duration or re.search(
+        r"\b(xếp|xep|sắp xếp|sap xep|schedule|plan)\b",
         lowered,
     ):
         intent = "schedule_task"
@@ -365,12 +368,25 @@ def log_ai_error(
     db.flush()
 
 
-def _finalize(result: NluResult, rules: NluResult, prompt: str, now: datetime, norm_profanity: bool) -> NluResult:
+def _finalize(
+    result: NluResult,
+    rules: NluResult,
+    prompt: str,
+    now: datetime,
+    norm_profanity: bool,
+    *,
+    parent_title: str | None = None,
+    parent_duration: int | None = None,
+) -> NluResult:
     """shared post-processing: literal-text guards, deterministic date window, clarification, profanity flag."""
     if rules.duration_minutes is not None:
         result.duration_minutes = rules.duration_minutes  # literal text wins over the model
     elif not has_duration_phrase(prompt):
         result.duration_minutes = None  # model invented a duration
+    if result.duration_minutes is None and parent_duration is not None:
+        result.duration_minutes = parent_duration
+    if not result.title and parent_title is not None:
+        result.title = parent_title
     # literal text guard: arranging/scheduling words must never be treated as schedule query
     if result.intent == "query_schedule" and rules.intent == "schedule_task":
         result.intent = "schedule_task"
@@ -432,6 +448,8 @@ def understand_prompt(
     db: Session | None = None,
     user_id: int | None = None,
     client: httpx.Client | None = None,
+    parent_title: str | None = None,
+    parent_duration: int | None = None,
 ) -> NluResult:
     """
     input: prompt (str) raw user message, reference_now (aware datetime), optional db/user_id for error logs.
@@ -451,7 +469,15 @@ def understand_prompt(
         return NluResult(intent="unknown", fallback_mode=True, source="rules", profanity_found=normalized.profanity_found)
 
     base = rule_based_understand(safe_prompt)
-    rules = _finalize(base.model_copy(), base, safe_prompt, reference_now, normalized.profanity_found)
+    rules = _finalize(
+        base.model_copy(),
+        base,
+        safe_prompt,
+        reference_now,
+        normalized.profanity_found,
+        parent_title=parent_title,
+        parent_duration=parent_duration,
+    )
     # nlu extracts intent/entities/deadline_hint only; schedule queries & free slots run on live mysql events
     context: list[str] = []
     now_vn = reference_now.astimezone(VN_TZ)
@@ -483,7 +509,7 @@ def understand_prompt(
                 break
             if (
                 not re.search(
-                    r"\b(schedule|plan|add|book|xep|sắp xếp|đặt lịch|lên lịch|"
+                    r"\b(schedule|plan|add|book|xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|"
                     r"what|when|lich|lịch|co gi|có gì|khi nao|khi nào)\b",
                     safe_prompt,
                     re.IGNORECASE,
@@ -503,7 +529,15 @@ def understand_prompt(
                 break
             result.source, result.fallback_mode = "llm", False
             record_latency_ms((time.monotonic() - started) * 1000)
-            return _finalize(result, rules, safe_prompt, reference_now, normalized.profanity_found)
+            return _finalize(
+                result,
+                rules,
+                safe_prompt,
+                reference_now,
+                normalized.profanity_found,
+                parent_title=parent_title,
+                parent_duration=parent_duration,
+            )
     except (httpx.TimeoutException, QueueWaitTimeout) as exc:
         category, reason = "TIMEOUT", f"{type(exc).__name__}: {exc}"
     except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
