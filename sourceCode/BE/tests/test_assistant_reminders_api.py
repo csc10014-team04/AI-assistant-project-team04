@@ -268,3 +268,68 @@ def test_user_preferences_get_and_post(client):
     assert res_get_2.status_code == 200
     assert res_get_2.json()["sleep_start"] == "22:30"
     assert res_get_2.json()["sleep_end"] == "06:00"
+
+
+def test_x_process_time_ms_header(client):
+    ok_res = client.get("/health")
+    assert ok_res.status_code == 200
+    assert float(ok_res.headers["X-Process-Time-Ms"]) >= 0.0
+
+    not_found = client.get("/api/v1/nonexistent-endpoint")
+    assert not_found.status_code == 404
+    assert float(not_found.headers["X-Process-Time-Ms"]) >= 0.0
+
+    invalid = client.post("/api/v1/auth/register", json={"username": "ab"})
+    assert invalid.status_code == 422
+    assert float(invalid.headers["X-Process-Time-Ms"]) >= 0.0
+
+
+def test_reschedule_inherits_parent_duration_without_clarification(client, db_session, monkeypatch):
+    import json
+
+    class _FakeResp:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": json.dumps(self._payload)}}]}
+
+    monkeypatch.setattr(
+        nlu.httpx.Client,
+        "post",
+        lambda self, *args, **kwargs: _FakeResp(
+            {"intent": "schedule_task", "title": "run", "duration_minutes": 60, "date_hint": "ngày mai"}
+        ),
+    )
+
+    u = _register(client, "ai_user_resched")
+    task = Task(owner_id=u["id"], title="run", duration_minutes=60)
+    db_session.add(task)
+    db_session.flush()
+    start = to_db_utc(datetime.now(UTC_TZ) + timedelta(days=1))
+    parent = Proposal(
+        owner_id=u["id"],
+        task_id=task.id,
+        start_time=start,
+        end_time=start + timedelta(hours=1),
+        status=ProposalStatus.PROPOSED,
+    )
+    db_session.add(parent)
+    db_session.commit()
+
+    res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "dời sang ngày mai", "reschedule_proposal_id": parent.id},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["nlu"]["needs_clarification"] is False
+    assert body["nlu"]["duration_minutes"] == 60
+    assert body["proposal"] is not None
+    assert body["proposal"]["parent_id"] == parent.id
+    db_session.refresh(parent)
+    assert parent.status == ProposalStatus.RESCHEDULED

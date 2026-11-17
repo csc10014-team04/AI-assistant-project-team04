@@ -1,6 +1,7 @@
 # [pic: khoi] p1-7 conversational scheduling entry & cross-tab redirect (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import re
+import threading
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -17,6 +18,20 @@ from services.search_engine import find_user_free_slots
 from services.security import get_current_user
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
+_clarification_table_lock = threading.Lock()
+_clarification_table_ready = False
+
+
+def _ensure_clarification_table(db: Session) -> None:
+    """ensure pending_clarifications exists even on pre-initialized MySQL volumes."""
+    global _clarification_table_ready
+    if _clarification_table_ready:
+        return
+    with _clarification_table_lock:
+        if _clarification_table_ready:
+            return
+        PendingClarification.__table__.create(bind=db.get_bind(), checkfirst=True)
+        _clarification_table_ready = True
 
 
 class UnderstandRequest(BaseModel):
@@ -60,6 +75,7 @@ def understand(
     abandoned = 0
     now = datetime.now(UTC_TZ)
 
+    _ensure_clarification_table(db)
     pending = db.get(PendingClarification, current_user.id)
     context = None
 
@@ -148,6 +164,8 @@ def understand(
             now,
             db=db,
             user_id=current_user.id,
+            parent_title=parent.task.title if parent is not None else None,
+            parent_duration=parent.task.duration_minutes if parent is not None else None,
         )
 
     if is_cancel:
