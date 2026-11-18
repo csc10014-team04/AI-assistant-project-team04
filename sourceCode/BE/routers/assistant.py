@@ -13,7 +13,7 @@ from models import PendingClarification, ProposalStatus, User
 from routers.proposals import ProposalOut, proposal_out
 from services import proposals as proposal_svc
 from services import rag
-from services.nlu import NluResult, understand_prompt
+from services.nlu import _DATE_HINT_RE, NluResult, understand_prompt
 from services.search_engine import find_user_free_slots
 from services.security import get_current_user
 
@@ -101,18 +101,14 @@ def understand(
 
     is_new_topic = bool(
         re.search(
-            r"\b(schedule|plan|add|book|reschedule|move|delete|remove|"
-            r"what|when|show|find|check|lịch|xếp|đặt|thêm|xem|tra cứu|"
-            r"xóa|xoá)\b",
+            r"\b(delete|remove|what|when|show|find|check|"
+            r"xóa|xoá|xem|tra cứu|có lịch gì|lịch gì)\b|"
+            r"\b(xếp|xep|sắp xếp|sap xep|đặt|lên)\s+lịch\b",
             prompt_lower,
         )
     )
 
     if body.reschedule_proposal_id is not None:
-        if pending is not None:
-            db.delete(pending)
-            context = None
-
         try:
             parent = proposal_svc.get_proposal(
                 db, current_user.id, body.reschedule_proposal_id
@@ -123,40 +119,77 @@ def understand(
         if parent.status != ProposalStatus.PROPOSED:
             raise HTTPException(409, f"proposal is already {parent.status.value}")
 
-    elif is_cancel:
+        same_reschedule_ctx = (
+            context is not None
+            and context.get("reschedule_proposal_id") == body.reschedule_proposal_id
+            and not is_cancel
+            and not is_new_topic
+        )
+        if not same_reschedule_ctx:
+            if pending is not None:
+                db.delete(pending)
+            context = None
+
+    if is_cancel:
         if pending is not None:
             db.delete(pending)
         context = None
 
     elif context is not None and not is_new_topic:
+        if parent is None:
+            reschedule_pid = context.get("reschedule_proposal_id")
+            if reschedule_pid is not None:
+                try:
+                    cand_parent = proposal_svc.get_proposal(db, current_user.id, int(reschedule_pid))
+                    if cand_parent.status == ProposalStatus.PROPOSED:
+                        parent = cand_parent
+                except proposal_svc.ProposalError:
+                    parent = None
+
         original_prompt = context["original_prompt"]
-        combined_prompt = f"Schedule {body.prompt.strip()} {original_prompt}"
+        if context.get("requested_start") and context.get("requested_end") and not context.get("title"):
+            combined_prompt = f"Schedule {body.prompt.strip()} {original_prompt}"
+        else:
+            combined_prompt = f"{original_prompt} {body.prompt.strip()}".strip()
 
         result = understand_prompt(
             combined_prompt,
             now,
             db=db,
             user_id=current_user.id,
+            parent_title=(parent.task.title if parent is not None else context.get("title")),
+            parent_duration=(parent.task.duration_minutes if parent is not None else context.get("duration_minutes")),
         )
 
-        result.requested_start = context["requested_start"]
-        result.requested_end = context["requested_end"]
-        result.duration_minutes = context["duration_minutes"]
+        if result.requested_start is None and context.get("requested_start"):
+            result.requested_start = context["requested_start"]
+        if result.requested_end is None and context.get("requested_end"):
+            result.requested_end = context["requested_end"]
+        if result.duration_minutes is None and context.get("duration_minutes") is not None:
+            result.duration_minutes = context["duration_minutes"]
+        if not result.title and context.get("title"):
+            result.title = context["title"]
 
-        if context.get("window_start"):
+        if context.get("window_start") and (result.window_start is None or result.date_assumed):
             result.window_start = date.fromisoformat(context["window_start"])
+            if context.get("window_end"):
+                result.window_end = date.fromisoformat(context["window_end"])
+            result.date_assumed = False
 
-        if context.get("window_end"):
-            result.window_end = date.fromisoformat(context["window_end"])
+        if result.intent == "unknown" and (context.get("intent") in {"schedule_task", "reschedule"} or result.title):
+            ctx_intent = context.get("intent")
+            result.intent = ctx_intent if ctx_intent in {"schedule_task", "reschedule"} else "schedule_task"
 
-        if result.intent == "unknown" and result.title:
-            result.intent = "schedule_task"
+        if result.intent in {"schedule_task", "reschedule"} and result.duration_minutes is not None and (result.title or parent is not None) and not result.date_assumed:
+            result.needs_clarification = False
+            result.clarification_question = None
 
     else:
         if pending is not None:
             db.delete(pending)
 
-        abandoned = abandon_pending_proposals(db, current_user.id)
+        if parent is None:
+            abandoned = abandon_pending_proposals(db, current_user.id)
 
     if context is None and not is_cancel:
         result = understand_prompt(
@@ -183,24 +216,35 @@ def understand(
     else:
         message = None
 
-    if (
-        result.needs_clarification
-        and result.intent == "unknown"
-        and result.requested_start
-        and result.requested_end
-    ):
+    should_save_clarification = bool(
+        not is_cancel
+        and result.needs_clarification
+        and (
+            (result.intent == "unknown" and result.requested_start and result.requested_end)
+            or result.intent in {"schedule_task", "reschedule"}
+        )
+    )
+    if should_save_clarification:
+        base_prompt = context["original_prompt"] if context is not None else body.prompt
+        if result.date_assumed and result.clarification_question:
+            base_prompt = re.sub(r"\s+", " ", _DATE_HINT_RE.sub(" ", base_prompt)).strip()
         context_data = {
-            "original_prompt": (
-                context["original_prompt"] if context is not None else body.prompt
-            ),
+            "original_prompt": base_prompt,
+            "intent": result.intent,
+            "title": result.title,
             "requested_start": result.requested_start,
             "requested_end": result.requested_end,
             "duration_minutes": result.duration_minutes,
             "window_start": (
-                result.window_start.isoformat() if result.window_start else None
+                None if result.date_assumed else (result.window_start.isoformat() if result.window_start else None)
             ),
             "window_end": (
-                result.window_end.isoformat() if result.window_end else None
+                None if result.date_assumed else (result.window_end.isoformat() if result.window_end else None)
+            ),
+            "reschedule_proposal_id": (
+                body.reschedule_proposal_id
+                if body.reschedule_proposal_id is not None
+                else (context.get("reschedule_proposal_id") if context is not None else None)
             ),
         }
 
@@ -218,7 +262,8 @@ def understand(
 
     print("[DEBUG NLU]", result.model_dump())
     proposal = None
-    message = None
+    if not is_cancel:
+        message = None
     available_slots: list[FallbackSlotOut] = []
     if result.fallback_mode:
         message = "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp."
