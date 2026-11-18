@@ -171,6 +171,7 @@ _CLOCK_RANGE_RE = re.compile(
 )
 _CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
 _HOURS_MINUTES_RE = re.compile(r"(\d{1,2})\s*(?:h|giờ|gio|tiếng|tieng)\s*(\d{1,2})\s*(?:phút|phut|p|min)?\b", re.IGNORECASE)
+_HALF_HOURS_RE = re.compile(r"(\d{1,2})\s*(?:tiếng|tieng|giờ|gio|h)\s*(?:rưỡi|ruoi)\b", re.IGNORECASE)
 
 
 def _strip_clock_times(text: str) -> str:
@@ -226,12 +227,18 @@ def extract_duration_minutes(text: str) -> int | None:
     output: int minutes (15..720) from the first "<number> <unit>" phrase, else None.
     typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180; "1h30" -> 90; "từ 7h đến 18h" -> 660.
     """
-    hm = _HOURS_MINUTES_RE.search(_strip_clock_times(text))
+    stripped = _strip_clock_times(text)
+    hh = _HALF_HOURS_RE.search(stripped)
+    if hh:  # "2 tiếng rưỡi" -> hours plus 30 minutes
+        total = int(hh.group(1)) * 60 + 30
+        if 15 <= total <= 720:
+            return total
+    hm = _HOURS_MINUTES_RE.search(stripped)
     if hm:  # "1h30" / "2 tiếng 15 phút" -> hours plus minutes
         total = int(hm.group(1)) * 60 + int(hm.group(2))
         if 15 <= total <= 720:
             return total
-    match = _DURATION_RE.search(_strip_clock_times(text))
+    match = _DURATION_RE.search(stripped)
     if not match:
         return extract_time_range_minutes(text)  # no explicit length: a range such as "từ 7h đến 11h" gives one
     value = float(match.group(1).replace(",", "."))
@@ -259,6 +266,7 @@ def _time_of_day_flags(text: str) -> tuple[TimeOfDay | None, TimeOfDay | None]:
 def _extract_title(text: str) -> str | None:
     """strip request boilerplate, duration and date words; what remains is the activity name."""
     cleaned = _strip_clock_times(text)
+    cleaned = _HALF_HOURS_RE.sub(" ", cleaned)
     cleaned = _HOURS_MINUTES_RE.sub(" ", cleaned)
     cleaned = _DURATION_RE.sub(" ", cleaned)
     cleaned = re.sub(r"\b(?:xếp|xep|sắp xếp|sap xep)\s+lịch\b", " ", cleaned, flags=re.IGNORECASE)  # the request words, not the activity
@@ -266,6 +274,8 @@ def _extract_title(text: str) -> str | None:
     cleaned = re.sub(
         r"\b(xếp|xep|sắp xếp|sap xep|hãy|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|lịch|lich|"
         r"hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|là|trong|"
+        r"khoảng|khoang|tầm|cỡ|chừng|chắc|ước\s+chừng|đồng\s+hồ|rưỡi|ruoi|thôi|nữa|ạ|nhỉ|"
+        r"about|around|approximately|approx|roughly|maybe|"
         r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
         " ",
         cleaned,
@@ -295,17 +305,22 @@ def rule_based_understand(text: str) -> NluResult:
     date_match = _DATE_HINT_RE.search(text_without_deadline)
 
     stripped_clock = _strip_clock_times(text)
-    has_explicit_duration = bool(_HOURS_MINUTES_RE.search(stripped_clock) or _DURATION_RE.search(stripped_clock))
+    has_explicit_duration = bool(
+        _HALF_HOURS_RE.search(stripped_clock)
+        or _HOURS_MINUTES_RE.search(stripped_clock)
+        or _DURATION_RE.search(stripped_clock)
+    )
+    extracted_title = _extract_title(text_without_deadline)
+    has_sched_verb = bool(re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", lowered))
 
     if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
         intent: Intent = "delete_event"
     elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
         intent = "reschedule"
-    elif has_explicit_duration or re.search(
-        r"\b(xếp|xep|sắp xếp|sap xep|schedule|plan)\b",
-        lowered,
-    ):
+    elif has_sched_verb or (has_explicit_duration and extracted_title is not None):
         intent = "schedule_task"
+    elif has_explicit_duration and extracted_title is None:
+        intent = "schedule_task"  # bare duration ("2 tiếng", "5 tiếng") asks for activity without triggering busy fallback
     elif re.search(
         r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|quy chế|quy định|tín chỉ|học vụ|schedule|what)\b",
         lowered,
@@ -317,7 +332,7 @@ def rule_based_understand(text: str) -> NluResult:
     priority = 1 if any(re.search(rf"\b{w}\b", lowered) for w in _HIGH_PRIORITY) else None
     return NluResult(
         intent=intent,
-        title=_extract_title(text_without_deadline) if intent == "schedule_task" else None,
+        title=extracted_title if intent == "schedule_task" else None,
         duration_minutes=duration,
         priority=priority,
         preferred_time_of_day=preferred,
@@ -524,9 +539,21 @@ def understand_prompt(
                     f"{rules.requested_start} and {rules.requested_end}?"
                 )
                 return rules
-            if result.intent == "unknown" and rules.intent != "unknown":
-                category, reason = "SEMANTIC_FAILURE", "model failed to detect intent recognized by rules"
-                break
+            # Never treat a healthy LLM "unknown" reply (e.g. bare duration or chitchat) as AI busy/down
+            if result.intent == "unknown":
+                stripped_clock = _strip_clock_times(safe_prompt)
+                bare_duration = bool(
+                    _HALF_HOURS_RE.search(stripped_clock)
+                    or _HOURS_MINUTES_RE.search(stripped_clock)
+                    or _DURATION_RE.search(stripped_clock)
+                ) and not _extract_title(safe_prompt)
+                has_explicit_sched = bool(
+                    re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", safe_prompt, re.IGNORECASE)
+                ) and (rules.title is not None or rules.duration_minutes is not None)
+                if bare_duration or has_explicit_sched:
+                    result.intent = "schedule_task"
+                    if not result.title:
+                        result.title = rules.title
             result.source, result.fallback_mode = "llm", False
             record_latency_ms((time.monotonic() - started) * 1000)
             return _finalize(
