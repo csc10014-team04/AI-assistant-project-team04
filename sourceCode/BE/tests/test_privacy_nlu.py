@@ -122,3 +122,21 @@ def test_rules_explicit_duration_without_xep():
 
     bare = nlu.rule_based_understand("7h - 11h")
     assert bare.intent == "unknown"
+
+
+def test_healthy_llm_unknown_never_triggers_busy_fallback():
+    unknown_client = _client(lambda req: _llm_reply({"intent": "unknown"}))
+
+    for bare in ("2 tiếng", "5 tiếng", "khoảng 2 tiếng", "2 tiếng rưỡi"):
+        r = nlu.understand_prompt(bare, NOW, client=unknown_client)
+        assert not r.fallback_mode and r.source == "llm"
+        assert r.needs_clarification and r.duration_minutes is not None and r.title is None
+
+    for chitchat in ("đợi 2 tiếng rồi", "đổi ý rồi", "hủy kèo đi chơi", "có gì đâu", "lịch sự quá"):
+        r = nlu.understand_prompt(chitchat, NOW, client=unknown_client)
+        assert not r.fallback_mode and r.source == "llm" and r.intent == "unknown"
+
+
+def test_half_hour_ruoi_duration_and_title():
+    r = nlu.rule_based_understand("2 tiếng rưỡi")
+    assert r.duration_minutes == 150 and r.title is None
