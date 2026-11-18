@@ -172,11 +172,32 @@ _CLOCK_RANGE_RE = re.compile(
 _CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
 _HOURS_MINUTES_RE = re.compile(r"(\d{1,2})\s*(?:h|giờ|gio|tiếng|tieng)\s*(\d{1,2})\s*(?:phút|phut|p|min)?\b", re.IGNORECASE)
 _HALF_HOURS_RE = re.compile(r"(\d{1,2})\s*(?:tiếng|tieng|giờ|gio|h)\s*(?:rưỡi|ruoi)\b", re.IGNORECASE)
+_DURATION_RANGE_RE = re.compile(
+    r"(?:(?:trong|khoảng|khoang|tầm|cỡ|kéo\s+dài|mất|for|about|around)\s+(?:từ\s+|tu\s+)?|\b(?:từ|tu)?\s*)"
+    r"(\d{1,2}(?:[.,]\d+)?)\s*(?:h|giờ|gio|tiếng|tieng|hours?|hrs?)?\s*"
+    r"(?:đến|den|tới|toi|to|-|–)\s*(\d{1,2}(?:[.,]\d+)?)\s*(tiếng|tieng|hours?|hrs?)\b"
+    r"|(?:trong|khoảng|khoang|tầm|cỡ|kéo\s+dài|mất|for|about|around)\s+"
+    r"(\d{1,2}(?:[.,]\d+)?)\s*(?:h|giờ|gio)?\s*(?:đến|den|tới|toi|to|-|–)\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:h|giờ|gio)\b",
+    re.IGNORECASE,
+)
 
 
 def _strip_clock_times(text: str) -> str:
-    """remove time ranges and clock moments so that their numbers are not read as durations."""
-    return _CLOCK_POINT_RE.sub(" ", _CLOCK_RANGE_RE.sub(" ", text))
+    """remove clock time ranges and moments so their numbers are not read as durations."""
+    masked = _DURATION_RANGE_RE.sub(" ", text)
+    return _CLOCK_POINT_RE.sub(" ", _CLOCK_RANGE_RE.sub(" ", masked))
+
+
+def _has_explicit_duration(text: str) -> bool:
+    """true when the prompt contains an explicit length phrase or duration range."""
+    if _DURATION_RANGE_RE.search(text):
+        return True
+    stripped = _strip_clock_times(text)
+    return bool(
+        _HALF_HOURS_RE.search(stripped)
+        or _HOURS_MINUTES_RE.search(stripped)
+        or _DURATION_RE.search(stripped)
+    )
 
 
 def _hour24(hour: int, period: str | None) -> int:
@@ -198,12 +219,19 @@ def parse_clock_window(text: str) -> tuple[int, int] | None:
     A bare end hour that would not be after the start ("từ 11h sáng đến 5h") is read as the afternoon.
     None when there is no range, an hour is out of range, or the length is not 15..720 minutes.
     """
-    m = _CLOCK_RANGE_RE.search(text)
+    cleaned_for_clock = _DURATION_RANGE_RE.sub(" ", text)
+    m = _CLOCK_RANGE_RE.search(cleaned_for_clock)
     if not m or int(m.group(1)) > 23 or int(m.group(4)) > 23:
         return None
     start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
-    if not m.group(3) and not m.group(6) and 1 <= start_h <= 5 and end_h <= 11:
-        start_h, end_h = start_h + 12, end_h + 12  # "từ 3h đến 5h" without a period: nobody studies at 3 a.m.
+    if (
+        not m.group(3)
+        and not m.group(6)
+        and 1 <= start_h <= 5
+        and end_h <= 11
+        and not re.search(r"\b(sáng|sang|morning)\b", text, re.IGNORECASE)
+    ):
+        start_h, end_h = start_h + 12, end_h + 12  # "từ 3h đến 5h" without morning cue shifts to afternoon
     start, end = start_h * 60 + int(m.group(2) or 0), end_h * 60 + int(m.group(5) or 0)
     if end <= start and not m.group(6) and start_h < 12 and end_h < 12:
         end += 12 * 60
@@ -218,7 +246,7 @@ def extract_time_range_minutes(text: str) -> int | None:
 
 def has_duration_phrase(text: str) -> bool:
     """true when the text states a length ("2 tiếng", "1h30", "45 phút") or a time range ("từ 7h đến 11h")."""
-    return bool(_DURATION_RE.search(_strip_clock_times(text)) or extract_time_range_minutes(text))
+    return bool(_has_explicit_duration(text) or extract_time_range_minutes(text))
 
 
 def extract_duration_minutes(text: str) -> int | None:
@@ -227,6 +255,12 @@ def extract_duration_minutes(text: str) -> int | None:
     output: int minutes (15..720) from the first "<number> <unit>" phrase, else None.
     typical flow: "1,5 tiếng" -> 90; "45 phút" -> 45; "3h" -> 180; "1h30" -> 90; "từ 7h đến 18h" -> 660.
     """
+    dr = _DURATION_RANGE_RE.search(text)
+    if dr:  # "5 đến 6 tiếng" / "khoảng 5 đến 6 giờ" -> upper bound hours
+        raw_upper = dr.group(2) or dr.group(5)
+        minutes = round(float(raw_upper.replace(",", ".")) * 60)
+        if 15 <= minutes <= 720:
+            return minutes
     stripped = _strip_clock_times(text)
     hh = _HALF_HOURS_RE.search(stripped)
     if hh:  # "2 tiếng rưỡi" -> hours plus 30 minutes
@@ -305,11 +339,7 @@ def rule_based_understand(text: str) -> NluResult:
     date_match = _DATE_HINT_RE.search(text_without_deadline)
 
     stripped_clock = _strip_clock_times(text)
-    has_explicit_duration = bool(
-        _HALF_HOURS_RE.search(stripped_clock)
-        or _HOURS_MINUTES_RE.search(stripped_clock)
-        or _DURATION_RE.search(stripped_clock)
-    )
+    has_explicit_duration = _has_explicit_duration(text)
     extracted_title = _extract_title(text_without_deadline)
     has_sched_verb = bool(re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", lowered))
 
@@ -541,12 +571,7 @@ def understand_prompt(
                 return rules
             # Never treat a healthy LLM "unknown" reply (e.g. bare duration or chitchat) as AI busy/down
             if result.intent == "unknown":
-                stripped_clock = _strip_clock_times(safe_prompt)
-                bare_duration = bool(
-                    _HALF_HOURS_RE.search(stripped_clock)
-                    or _HOURS_MINUTES_RE.search(stripped_clock)
-                    or _DURATION_RE.search(stripped_clock)
-                ) and not _extract_title(safe_prompt)
+                bare_duration = _has_explicit_duration(safe_prompt) and not _extract_title(safe_prompt)
                 has_explicit_sched = bool(
                     re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", safe_prompt, re.IGNORECASE)
                 ) and (rules.title is not None or rules.duration_minutes is not None)
