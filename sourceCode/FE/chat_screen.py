@@ -24,7 +24,7 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 
 # Import module API Client kết nối với máy chủ
 from api_client import api
-from fallback import clip_slot_to_window, is_timeout, parse_request
+from fallback import clip_slot_to_window, is_timeout, parse_request, slice_slots_to_duration
 from notifier import ReminderScheduler
 from event_store import store
 
@@ -315,16 +315,26 @@ class ManualFallbackModal(ModalView):
                 break
                 
         if selected_slot:
-            # Server dat cong viec o dau khung gio da chon (khong lay ca khung trong)
+            # Server places the task within the selected slot trimmed to requested_window and duration
             slot_start, slot_end = clip_slot_to_window(
-                selected_slot.get("start_time"), selected_slot.get("end_time"), self.requested_window)
-            
+                selected_slot.get("start_time"),
+                selected_slot.get("end_time"),
+                self.requested_window,
+                int(self.duration),
+            )
+
             def _on_success(req, res):
                 reminder_scheduler.schedule_from_confirm(res)
                 store.refresh(api)
                 self.dismiss()
                 if self.on_scheduled:
-                    self.on_scheduled(selected_slot)
+                    events = res.get("events") if isinstance(res, dict) else None
+                    confirmed_slot = (
+                        events[0]
+                        if events and isinstance(events[0], dict) and events[0].get("start_time")
+                        else {"start_time": slot_start, "end_time": slot_end, "duration_minutes": int(self.duration)}
+                    )
+                    self.on_scheduled(confirmed_slot)
 
             api.create_manual_event(
                 self.task_title, int(self.duration), slot_start, slot_end,
@@ -704,6 +714,7 @@ class ChatAssistantScreen(MDScreen):
             return str(slot)
 
     def _trigger_fallback_ui(self, title, duration, slots, busy=True, window=None):
+        slots = slice_slots_to_duration(slots or [], int(duration or 60), requested_window=window)
         # 1. Bong bóng thông báo chuyển chế độ
         self.append_ai_message("AI Assistant is busy. Please select a free slot from the table below!")
 
@@ -799,9 +810,14 @@ class ChatAssistantScreen(MDScreen):
                 self.cancel_reschedule()
             task_title = nlu.get("title") or "New activity"
             duration = int(nlu.get("duration_minutes") or 60)
+            window = (
+                (nlu["requested_start"], nlu["requested_end"])
+                if nlu.get("requested_start") and nlu.get("requested_end")
+                else None
+            )
             precomputed_slots = result.get("available_slots") or []
             if precomputed_slots:
-                self._trigger_fallback_ui(task_title, duration, precomputed_slots, busy=True)
+                self._trigger_fallback_ui(task_title, duration, precomputed_slots, busy=True, window=window)
             else:
                 self._open_manual_picker(nlu)
             return
