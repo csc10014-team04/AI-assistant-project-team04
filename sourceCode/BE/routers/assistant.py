@@ -45,6 +45,57 @@ class FallbackSlotOut(BaseModel):
     duration_minutes: int
 
 
+def _slice_fallback_slots(
+    raw_slots,
+    duration_minutes: int,
+    requested_start: str | None = None,
+    requested_end: str | None = None,
+    limit: int = 20,
+) -> list[FallbackSlotOut]:
+    """slice whole-day free gaps into concrete blocks matching requested duration (and optional clock window)."""
+    dur = max(15, int(duration_minutes or 60))
+    dur_td = timedelta(minutes=dur)
+    out: list[FallbackSlotOut] = []
+
+    if requested_start and requested_end:
+        try:
+            sh, sm = map(int, requested_start.split(":"))
+            eh, em = map(int, requested_end.split(":"))
+            for slot in raw_slots:
+                gs, ge = from_db_to_vn(slot.start), from_db_to_vn(slot.end)
+                ws = gs.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                we = gs.replace(hour=eh, minute=em, second=0, microsecond=0)
+                if we <= ws:
+                    we += timedelta(days=1)
+                cur, bound = max(gs, ws), min(ge, we)
+                while cur + dur_td <= bound and len(out) < limit:
+                    out.append(
+                        FallbackSlotOut(
+                            start_time=cur.isoformat(),
+                            end_time=(cur + dur_td).isoformat(),
+                            duration_minutes=dur,
+                        )
+                    )
+                    cur += dur_td
+        except (ValueError, TypeError):
+            out = []
+        if out:
+            return out
+
+    for slot in raw_slots:
+        cur, ge = from_db_to_vn(slot.start), from_db_to_vn(slot.end)
+        while cur + dur_td <= ge and len(out) < limit:
+            out.append(
+                FallbackSlotOut(
+                    start_time=cur.isoformat(),
+                    end_time=(cur + dur_td).isoformat(),
+                    duration_minutes=dur,
+                )
+            )
+            cur += dur_td
+    return out
+
+
 class UnderstandResponse(BaseModel):
     nlu: NluResult
     abandoned_proposals: int
@@ -285,14 +336,13 @@ def understand(
                     duration_minutes=dur,
                     respect_preferences=True,
                 )
-                available_slots = [
-                    FallbackSlotOut(
-                        start_time=from_db_to_vn(slot.start).isoformat(),
-                        end_time=from_db_to_vn(slot.end).isoformat(),
-                        duration_minutes=slot.duration_minutes(),
-                    )
-                    for slot in raw_slots[:20]
-                ]
+                available_slots = _slice_fallback_slots(
+                    raw_slots,
+                    dur,
+                    requested_start=result.requested_start,
+                    requested_end=result.requested_end,
+                    limit=20,
+                )
     elif not result.needs_clarification and (result.intent == "schedule_task" or (parent and result.intent != "unknown")):
         created = proposal_svc.create_proposal(db, current_user.id, result, body.prompt, now, parent)
         print("[DEBUG PROPOSAL]", None if created is None else {
