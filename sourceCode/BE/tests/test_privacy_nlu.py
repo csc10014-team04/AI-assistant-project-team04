@@ -140,3 +140,24 @@ def test_healthy_llm_unknown_never_triggers_busy_fallback():
 def test_half_hour_ruoi_duration_and_title():
     r = nlu.rule_based_understand("2 tiếng rưỡi")
     assert r.duration_minutes == 150 and r.title is None
+
+
+def test_clock_range_vs_duration_range_disambiguation():
+    clock_prompt = "Tôi muốn xếp lịch cho thứ 2 tuần sau, học môn mạng máy tính, từ 5 giờ đến 6 giờ"
+    r_clock = nlu.rule_based_understand(clock_prompt)
+    assert r_clock.intent == "schedule_task"
+    assert r_clock.duration_minutes == 60
+    assert nlu.parse_clock_window(clock_prompt) == (17 * 60, 18 * 60)
+
+    r_morning = nlu.rule_based_understand("xếp lịch buổi sáng từ 5 giờ đến 6 giờ")
+    assert r_morning.duration_minutes == 60
+    assert nlu.parse_clock_window("xếp lịch buổi sáng từ 5 giờ đến 6 giờ") == (5 * 60, 6 * 60)
+
+    for dur_prompt in (
+        "Tôi muốn xếp lịch học mạng máy tính khoảng 5 đến 6 giờ",
+        "xếp lịch học 5 đến 6 tiếng",
+    ):
+        r_dur = nlu.rule_based_understand(dur_prompt)
+        assert r_dur.intent == "schedule_task"
+        assert r_dur.duration_minutes == 360
+        assert nlu.parse_clock_window(dur_prompt) is None
