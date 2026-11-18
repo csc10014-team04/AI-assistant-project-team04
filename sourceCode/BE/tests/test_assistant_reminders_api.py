@@ -425,3 +425,43 @@ def test_split_task_and_batch_respect_min_break_between_max_blocks(client, db_se
     s1_end = from_db_to_vn(batch.proposals[0].end_time)
     s2_start = from_db_to_vn(batch.proposals[1].start_time)
     assert s2_start - s1_end >= timedelta(minutes=30)
+
+
+def test_fallback_available_slots_match_requested_duration(client):
+    u = _register(client, "fallback_dur_u")
+    res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "xếp 3 tiếng làm đồ án ngày mai"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["nlu"]["fallback_mode"] is True
+    assert body["nlu"]["duration_minutes"] == 180
+    slots = body["available_slots"]
+    assert len(slots) >= 1
+    for slot in slots:
+        assert slot["duration_minutes"] == 180
+        delta = datetime.fromisoformat(slot["end_time"]) - datetime.fromisoformat(slot["start_time"])
+        assert delta == timedelta(minutes=180)
+
+
+def test_fe_fallback_slot_slicing_and_clip_duration():
+    import sys
+    from pathlib import Path
+
+    fe_dir = Path(__file__).resolve().parents[2] / "FE"
+    if str(fe_dir) not in sys.path:
+        sys.path.insert(0, str(fe_dir))
+    import fallback  # noqa: E402
+
+    raw_gaps = [{"start_time": "2026-11-20T06:30:00+07:00", "end_time": "2026-11-20T14:30:00+07:00", "duration_minutes": 480}]
+    sliced = fallback.slice_slots_to_duration(raw_gaps, 180)
+    assert len(sliced) == 2
+    assert sliced[0]["start_time"].endswith("06:30:00+07:00") and sliced[0]["end_time"].endswith("09:30:00+07:00")
+    assert sliced[1]["start_time"].endswith("09:30:00+07:00") and sliced[1]["end_time"].endswith("12:30:00+07:00")
+
+    cs, ce = fallback.clip_slot_to_window(
+        "2026-11-20T11:45:00+07:00", "2026-11-20T23:30:00+07:00", None, duration_minutes=180
+    )
+    assert cs.endswith("11:45:00+07:00") and ce.endswith("14:45:00+07:00")
