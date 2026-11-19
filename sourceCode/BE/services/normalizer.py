@@ -12,7 +12,7 @@ TEENCODE: dict[str, str] = {
     "hnay": "hôm nay", "hqua": "hôm qua",
     "t2": "thứ 2", "t3": "thứ 3", "t4": "thứ 4", "t5": "thứ 5", "t6": "thứ 6", "t7": "thứ 7",
     "cn": "chủ nhật", "dl": "deadline", "pls": "please", "plz": "please",
-    "mk": "mình", "trc": "trước",
+    "mk": "mình", "trc": "trước", "bt": "bài tập",
 }
 
 # non-diacritic phrase -> diacritic phrase (longest keys applied first)
@@ -21,19 +21,21 @@ RESTORE_PHRASES: dict[str, str] = {
     "lich": "lịch", "tieng": "tiếng", "gio": "giờ", "phut": "phút",
     "do an": "đồ án", "bai tap": "bài tập", "hoc bai": "học bài", "on thi": "ôn thi",
     "lam": "làm", "bai": "bài", "hoc": "học", "doc sach": "đọc sách", "hom nay": "hôm nay", "ngay mai": "ngày mai", "ngay kia": "ngày kia",
+    "sang mai": "sáng ngày mai", "sáng mai": "sáng ngày mai",
     "tuan nay": "tuần này", "tuan sau": "tuần sau", "cuoi tuan": "cuối tuần",
     "thang sau": "tháng sau", "cuoi thang": "cuối tháng", "chu nhat": "chủ nhật",
     "thu hai": "thứ hai", "thu ba": "thứ ba", "thu tu": "thứ tư", "thu nam": "thứ năm",
     "thu sau": "thứ sáu", "thu bay": "thứ bảy",
     "buoi sang": "buổi sáng", "buoi chieu": "buổi chiều", "buoi toi": "buổi tối",
     "nhe": "nhé", "giup": "giúp", "minh": "mình", "xoa": "xóa", "huy": "hủy",
+    "giup m": "giúp mình", "cho m": "cho mình", "vao": "vào",
     "doi": "dời", "chuyen": "chuyển", "quan trong": "quan trọng", "gap": "gấp",
     "nop": "nộp", "hop": "họp",
 }
 
 PROFANITY = {"dm", "đm", "dmm", "đmm", "vcl", "vl", "cc", "clm", "đéo", "deo", "cút", "đụ", "lồn", "cặc", "shit", "fuck"}
 
-_ALLOWED = re.compile(r"[^\w\s.,:;!?/()%+\-–']", re.UNICODE)
+_ALLOWED = re.compile(r"[^\w\s.,:;!?/()%+\-–'\[\]]", re.UNICODE)
 _EMOJI_SYMBOLS = re.compile("[\U0001F000-\U0001FAFF☀-➿️]")
 _REPEAT = re.compile(r"(.)\1{2,}")  # "xếpppp" -> "xếpp"
 
