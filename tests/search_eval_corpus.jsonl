@@ -1,0 +1,44 @@
+{"corpus": "A", "id": "T01", "text": "CSC10001 Nhập môn lập trình (CLASS): Thứ 2 07:30-09:30, phòng B11.02, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T02", "text": "CSC10002 Kỹ thuật lập trình (CLASS): Thứ 3 09:45-11:45, phòng B11.05, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T03", "text": "CSC10003 Cấu trúc dữ liệu và giải thuật (CLASS): Thứ 4 13:00-15:00, phòng E203, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T04", "text": "CSC10004 Mạng máy tính (CLASS): Thứ 5 07:30-09:30, phòng F105, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T05", "text": "CSC10005 Cơ sở dữ liệu (CLASS): Thứ 6 15:15-17:15, phòng B12.01, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T06", "text": "MTH10001 Giải tích 1 (CLASS): Thứ 2 09:45-11:45, phòng E101, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T07", "text": "MTH10002 Đại số tuyến tính (CLASS): Thứ 3 13:00-15:00, phòng E102, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T08", "text": "MTH10003 Xác suất thống kê (CLASS): Thứ 4 07:30-09:30, phòng E103, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T09", "text": "MTH10004 Toán rời rạc (CLASS): Thứ 5 09:45-11:45, phòng E104, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T10", "text": "PHY10001 Vật lý đại cương (CLASS): Thứ 6 07:30-09:30, phòng F201, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T11", "text": "PHY10002 Thực hành vật lý (CLASS): Thứ 7 07:30-11:30, phòng Lab F1, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T12", "text": "ENG10001 Tiếng Anh học thuật 1 (CLASS): Thứ 2 13:00-15:00, phòng C301, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T13", "text": "ENG10002 Tiếng Anh học thuật 2 (CLASS): Thứ 4 15:15-17:15, phòng C302, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T14", "text": "PE10001 Giáo dục thể chất 1 (CLASS): Thứ 7 13:00-15:00, phòng Sân thể thao, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T15", "text": "POL10001 Triết học Mác-Lênin (CLASS): Thứ 3 15:15-17:15, phòng D101, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T16", "text": "POL10002 Kinh tế chính trị (CLASS): Thứ 5 13:00-15:00, phòng D102, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T17", "text": "ART10001 Mỹ thuật cơ bản (CLASS): Thứ 6 09:45-11:45, phòng G105, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T18", "text": "BIO10001 Sinh học đại cương (CLASS): Thứ 4 09:45-11:45, phòng H201, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T19", "text": "CHE10001 Hóa học đại cương (CLASS): Thứ 2 15:15-17:15, phòng H202, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T20", "text": "CSC20001 Trí tuệ nhân tạo (CLASS): Thứ 3 07:30-09:30, phòng B21.01, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T21", "text": "CSC20002 Học máy (CLASS): Thứ 5 15:15-17:15, phòng B21.02, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T22", "text": "CSC20003 Công nghệ phần mềm (CLASS): Thứ 6 13:00-15:00, phòng B21.03, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T23", "text": "CSC20004 Hệ điều hành (CLASS): Thứ 7 09:45-11:45, phòng B21.04, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "A", "id": "T24", "text": "CSC20005 An toàn thông tin (CLASS): Thứ 4 15:15-17:15, phòng B21.05, từ 2026-09-07 đến 2026-12-14"}
+{"corpus": "B", "id": "R01", "text": "Điều kiện tốt nghiệp: sinh viên cần tích lũy đủ 120 tín chỉ, điểm trung bình tích lũy từ 2.0 trở lên và đạt chuẩn đầu ra ngoại ngữ."}
+{"corpus": "B", "id": "R02", "text": "Học phí được tính theo số tín chỉ đăng ký; mức thu mỗi tín chỉ do nhà trường công bố vào đầu mỗi năm học."}
+{"corpus": "B", "id": "R03", "text": "Đăng ký học phần: sinh viên đăng ký trực tuyến trong thời gian quy định; mỗi học kỳ đăng ký từ 14 đến 25 tín chỉ."}
+{"corpus": "B", "id": "R04", "text": "Rút học phần: sinh viên được rút trong 2 tuần đầu của học kỳ mà không bị điểm F; rút sau thời hạn sẽ nhận điểm F."}
+{"corpus": "B", "id": "R05", "text": "Học lại: sinh viên có học phần điểm F phải đăng ký học lại; học phần bắt buộc phải học lại, học phần tự chọn có thể đổi sang môn khác."}
+{"corpus": "B", "id": "R06", "text": "Cảnh báo học vụ: sinh viên bị cảnh báo khi điểm trung bình học kỳ dưới 1.0 hoặc nợ quá 24 tín chỉ."}
+{"corpus": "B", "id": "R07", "text": "Phúc khảo: sinh viên nộp đơn phúc khảo trong 5 ngày làm việc kể từ ngày công bố điểm thi; lệ phí theo quy định."}
+{"corpus": "B", "id": "R08", "text": "Bảo lưu: sinh viên được bảo lưu kết quả học tập tối đa 2 học kỳ liên tiếp khi có lý do chính đáng như bệnh nặng hoặc nghĩa vụ quân sự."}
+{"corpus": "B", "id": "R09", "text": "Thôi học: sinh viên muốn thôi học nộp đơn có xác nhận phụ huynh, hoàn tất thanh toán học phí và trả thẻ thư viện."}
+{"corpus": "B", "id": "R10", "text": "Chuyển ngành: sinh viên có điểm trung bình tích lũy từ 7.0 trở lên được xét chuyển ngành vào đầu học kỳ 3 nếu còn chỉ tiêu."}
+{"corpus": "B", "id": "R11", "text": "Học bổng khuyến khích học tập xét mỗi học kỳ cho sinh viên có điểm trung bình từ 8.0 và điểm rèn luyện loại tốt."}
+{"corpus": "B", "id": "R12", "text": "Thư viện mở cửa từ 7 giờ đến 21 giờ các ngày trong tuần; sinh viên mượn tối đa 5 cuốn sách trong 14 ngày."}
+{"corpus": "B", "id": "R13", "text": "Ký túc xá: sinh viên nộp hồ sơ đăng ký trước ngày 15 tháng 8; ưu tiên sinh viên ở xa và hoàn cảnh khó khăn."}
+{"corpus": "B", "id": "R14", "text": "Đồ án tốt nghiệp được thực hiện trong học kỳ cuối, có giảng viên hướng dẫn và bảo vệ trước hội đồng."}
+{"corpus": "B", "id": "R15", "text": "Thực tập doanh nghiệp kéo dài 8 tuần; sinh viên nộp báo cáo thực tập và nhận xét của đơn vị tiếp nhận."}
+{"corpus": "B", "id": "R16", "text": "Chuẩn đầu ra tiếng Anh yêu cầu chứng chỉ IELTS 5.5 hoặc tương đương trước khi xét tốt nghiệp."}
+{"corpus": "B", "id": "R17", "text": "Kỷ luật: gian lận trong thi cử bị đình chỉ thi và nhận điểm 0 cho học phần; vi phạm nghiêm trọng có thể bị buộc thôi học."}
+{"corpus": "B", "id": "R18", "text": "Thẻ sinh viên: sinh viên làm mất thẻ đến phòng công tác sinh viên để cấp lại, lệ phí 50.000 đồng."}
+{"corpus": "B", "id": "R19", "text": "Nghỉ học có phép: nộp giấy xin phép trước buổi học; vắng quá 20% số buổi sẽ không được dự thi cuối kỳ."}
+{"corpus": "B", "id": "R20", "text": "Trao đổi sinh viên quốc tế dành cho sinh viên năm 3 trở lên có điểm trung bình từ 7.5 và chứng chỉ ngoại ngữ."}

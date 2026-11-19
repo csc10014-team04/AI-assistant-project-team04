@@ -1,0 +1,84 @@
+{"id": "Q001", "corpus": "A", "group": "exact", "query": "Nhập môn lập trình học khi nào", "relevant": ["T01"], "in_scope": true}
+{"id": "Q002", "corpus": "A", "group": "exact", "query": "Giải tích 1 ở phòng nào", "relevant": ["T06"], "in_scope": true}
+{"id": "Q003", "corpus": "A", "group": "exact", "query": "lịch môn Mạng máy tính", "relevant": ["T04"], "in_scope": true}
+{"id": "Q004", "corpus": "A", "group": "exact", "query": "Cơ sở dữ liệu học phòng nào", "relevant": ["T05"], "in_scope": true}
+{"id": "Q005", "corpus": "A", "group": "exact", "query": "Hóa học đại cương", "relevant": ["T19"], "in_scope": true}
+{"id": "Q006", "corpus": "A", "group": "exact", "query": "Trí tuệ nhân tạo học giờ nào", "relevant": ["T20"], "in_scope": true}
+{"id": "Q007", "corpus": "A", "group": "exact", "query": "Học máy", "relevant": ["T21"], "in_scope": true}
+{"id": "Q008", "corpus": "A", "group": "exact", "query": "Hệ điều hành", "relevant": ["T23"], "in_scope": true}
+{"id": "Q009", "corpus": "A", "group": "exact", "query": "An toàn thông tin", "relevant": ["T24"], "in_scope": true}
+{"id": "Q010", "corpus": "A", "group": "exact", "query": "Thực hành vật lý", "relevant": ["T11"], "in_scope": true}
+{"id": "Q011", "corpus": "A", "group": "exact", "query": "Giáo dục thể chất", "relevant": ["T14"], "in_scope": true}
+{"id": "Q012", "corpus": "A", "group": "exact", "query": "Triết học Mác-Lênin", "relevant": ["T15"], "in_scope": true}
+{"id": "Q013", "corpus": "A", "group": "code", "query": "CSC10003", "relevant": ["T03"], "in_scope": true}
+{"id": "Q014", "corpus": "A", "group": "code", "query": "mã môn MTH10004", "relevant": ["T09"], "in_scope": true}
+{"id": "Q015", "corpus": "A", "group": "code", "query": "ENG10002", "relevant": ["T13"], "in_scope": true}
+{"id": "Q016", "corpus": "A", "group": "code", "query": "PHY10001", "relevant": ["T10"], "in_scope": true}
+{"id": "Q017", "corpus": "A", "group": "room", "query": "phòng E203", "relevant": ["T03"], "in_scope": true}
+{"id": "Q018", "corpus": "A", "group": "room", "query": "phòng F105", "relevant": ["T04"], "in_scope": true}
+{"id": "Q019", "corpus": "A", "group": "room", "query": "lab F1", "relevant": ["T11"], "in_scope": true}
+{"id": "Q020", "corpus": "A", "group": "room", "query": "phòng B21.02", "relevant": ["T21"], "in_scope": true}
+{"id": "Q021", "corpus": "A", "group": "room", "query": "sân thể thao", "relevant": ["T14"], "in_scope": true}
+{"id": "Q022", "corpus": "A", "group": "noaccent", "query": "ctdl hoc khi nao", "relevant": ["T03"], "in_scope": true}
+{"id": "Q023", "corpus": "A", "group": "noaccent", "query": "xstk", "relevant": ["T08"], "in_scope": true}
+{"id": "Q024", "corpus": "A", "group": "noaccent", "query": "gdtc", "relevant": ["T14"], "in_scope": true}
+{"id": "Q025", "corpus": "A", "group": "noaccent", "query": "toan roi rac", "relevant": ["T09"], "in_scope": true}
+{"id": "Q026", "corpus": "A", "group": "noaccent", "query": "tieng anh hoc thuat 1", "relevant": ["T12"], "in_scope": true}
+{"id": "Q027", "corpus": "A", "group": "noaccent", "query": "dai so tuyen tinh", "relevant": ["T07"], "in_scope": true}
+{"id": "Q028", "corpus": "A", "group": "weekday", "query": "môn học thứ 7 buổi sáng", "relevant": ["T11", "T23"], "in_scope": true}
+{"id": "Q029", "corpus": "A", "group": "weekday", "query": "lịch học thứ 2", "relevant": ["T01", "T06", "T12", "T19"], "in_scope": true}
+{"id": "Q030", "corpus": "A", "group": "paraphrase", "query": "môn về mạng", "relevant": ["T04"], "in_scope": true}
+{"id": "Q031", "corpus": "A", "group": "paraphrase", "query": "học về trí tuệ nhân tạo và máy học", "relevant": ["T20", "T21"], "in_scope": true}
+{"id": "Q032", "corpus": "A", "group": "paraphrase", "query": "môn tiếng Anh", "relevant": ["T12", "T13"], "in_scope": true}
+{"id": "Q033", "corpus": "A", "group": "paraphrase", "query": "môn lập trình", "relevant": ["T01", "T02"], "in_scope": true}
+{"id": "Q034", "corpus": "B", "group": "exact", "query": "điều kiện tốt nghiệp là gì", "relevant": ["R01"], "in_scope": true}
+{"id": "Q035", "corpus": "B", "group": "exact", "query": "học phí tính như thế nào", "relevant": ["R02"], "in_scope": true}
+{"id": "Q036", "corpus": "B", "group": "exact", "query": "đăng ký học phần bao nhiêu tín chỉ", "relevant": ["R03"], "in_scope": true}
+{"id": "Q037", "corpus": "B", "group": "exact", "query": "rút học phần khi nào", "relevant": ["R04"], "in_scope": true}
+{"id": "Q038", "corpus": "B", "group": "exact", "query": "học lại môn bị điểm F", "relevant": ["R05"], "in_scope": true}
+{"id": "Q039", "corpus": "B", "group": "exact", "query": "khi nào bị cảnh báo học vụ", "relevant": ["R06"], "in_scope": true}
+{"id": "Q040", "corpus": "B", "group": "exact", "query": "phúc khảo điểm thi trong bao lâu", "relevant": ["R07"], "in_scope": true}
+{"id": "Q041", "corpus": "B", "group": "exact", "query": "bảo lưu kết quả tối đa mấy học kỳ", "relevant": ["R08"], "in_scope": true}
+{"id": "Q042", "corpus": "B", "group": "exact", "query": "thủ tục thôi học", "relevant": ["R09"], "in_scope": true}
+{"id": "Q043", "corpus": "B", "group": "exact", "query": "chuyển ngành cần điểm bao nhiêu", "relevant": ["R10"], "in_scope": true}
+{"id": "Q044", "corpus": "B", "group": "exact", "query": "học bổng khuyến khích học tập", "relevant": ["R11"], "in_scope": true}
+{"id": "Q045", "corpus": "B", "group": "exact", "query": "thư viện mở cửa mấy giờ", "relevant": ["R12"], "in_scope": true}
+{"id": "Q046", "corpus": "B", "group": "exact", "query": "đăng ký ký túc xá hạn nào", "relevant": ["R13"], "in_scope": true}
+{"id": "Q047", "corpus": "B", "group": "exact", "query": "đồ án tốt nghiệp bảo vệ ra sao", "relevant": ["R14"], "in_scope": true}
+{"id": "Q048", "corpus": "B", "group": "exact", "query": "thực tập doanh nghiệp bao lâu", "relevant": ["R15"], "in_scope": true}
+{"id": "Q049", "corpus": "B", "group": "exact", "query": "chuẩn đầu ra IELTS", "relevant": ["R16"], "in_scope": true}
+{"id": "Q050", "corpus": "B", "group": "exact", "query": "gian lận thi bị xử lý thế nào", "relevant": ["R17"], "in_scope": true}
+{"id": "Q051", "corpus": "B", "group": "exact", "query": "mất thẻ sinh viên", "relevant": ["R18"], "in_scope": true}
+{"id": "Q052", "corpus": "B", "group": "exact", "query": "nghỉ học có phép", "relevant": ["R19"], "in_scope": true}
+{"id": "Q053", "corpus": "B", "group": "exact", "query": "trao đổi sinh viên quốc tế", "relevant": ["R20"], "in_scope": true}
+{"id": "Q054", "corpus": "B", "group": "noaccent", "query": "dieu kien tot nghiep", "relevant": ["R01"], "in_scope": true}
+{"id": "Q055", "corpus": "B", "group": "noaccent", "query": "hoc phi", "relevant": ["R02"], "in_scope": true}
+{"id": "Q056", "corpus": "B", "group": "paraphrase", "query": "tôi muốn dừng học thì làm sao", "relevant": ["R09"], "in_scope": true}
+{"id": "Q057", "corpus": "B", "group": "paraphrase", "query": "bao nhiêu tiền để làm lại thẻ", "relevant": ["R18"], "in_scope": true}
+{"id": "Q058", "corpus": "B", "group": "paraphrase", "query": "chép bài bạn trong phòng thi", "relevant": ["R17"], "in_scope": true}
+{"id": "Q059", "corpus": "A", "group": "weekday", "query": "thứ 4 có môn gì", "relevant": ["T03", "T08", "T13", "T18", "T24"], "in_scope": true}
+{"id": "Q060", "corpus": "A", "group": "weekday", "query": "thứ 6 học gì", "relevant": ["T05", "T10", "T17", "T22"], "in_scope": true}
+{"id": "Q061", "corpus": "A", "group": "weekday", "query": "thứ 3 buổi chiều", "relevant": ["T07", "T15"], "in_scope": true}
+{"id": "Q062", "corpus": "A", "group": "weekday", "query": "thứ 5 buổi sáng", "relevant": ["T04", "T09"], "in_scope": true}
+{"id": "Q063", "corpus": "A", "group": "noaccent", "query": "tri tue nhan tao", "relevant": ["T20"], "in_scope": true}
+{"id": "Q064", "corpus": "A", "group": "noaccent", "query": "co so du lieu", "relevant": ["T05"], "in_scope": true}
+{"id": "Q065", "corpus": "A", "group": "noaccent", "query": "an toan thong tin", "relevant": ["T24"], "in_scope": true}
+{"id": "Q066", "corpus": "A", "group": "room", "query": "phòng B11.05", "relevant": ["T02"], "in_scope": true}
+{"id": "Q067", "corpus": "A", "group": "code", "query": "mã CSC20003", "relevant": ["T22"], "in_scope": true}
+{"id": "Q068", "corpus": "A", "group": "exact", "query": "Kinh tế chính trị học khi nào", "relevant": ["T16"], "in_scope": true}
+{"id": "Q069", "corpus": "B", "group": "noaccent", "query": "thu tuc thoi hoc", "relevant": ["R09"], "in_scope": true}
+{"id": "Q070", "corpus": "B", "group": "noaccent", "query": "hoc bong khuyen khich", "relevant": ["R11"], "in_scope": true}
+{"id": "Q071", "corpus": "B", "group": "paraphrase", "query": "làm sao để được miễn học phí", "relevant": ["R11"], "in_scope": true}
+{"id": "Q072", "corpus": "B", "group": "paraphrase", "query": "đi học trễ bị xử lý ra sao", "relevant": ["R19"], "in_scope": true}
+{"id": "Q073", "corpus": "ALL", "group": "out_of_scope", "query": "thời tiết hôm nay thế nào", "relevant": [], "in_scope": false}
+{"id": "Q074", "corpus": "ALL", "group": "out_of_scope", "query": "cách nấu phở bò", "relevant": [], "in_scope": false}
+{"id": "Q075", "corpus": "ALL", "group": "out_of_scope", "query": "giá bitcoin hiện tại", "relevant": [], "in_scope": false}
+{"id": "Q076", "corpus": "ALL", "group": "out_of_scope", "query": "ai thắng World Cup 2022", "relevant": [], "in_scope": false}
+{"id": "Q077", "corpus": "ALL", "group": "out_of_scope", "query": "viết giúp mình bài thơ", "relevant": [], "in_scope": false}
+{"id": "Q078", "corpus": "ALL", "group": "out_of_scope", "query": "đặt vé máy bay đi Đà Nẵng", "relevant": [], "in_scope": false}
+{"id": "Q079", "corpus": "ALL", "group": "out_of_scope", "query": "công thức tính đạo hàm", "relevant": [], "in_scope": false}
+{"id": "Q080", "corpus": "ALL", "group": "out_of_scope", "query": "xe buýt số 10 chạy lúc mấy giờ", "relevant": [], "in_scope": false}
+{"id": "Q081", "corpus": "ALL", "group": "out_of_scope", "query": "cách tải phim lậu", "relevant": [], "in_scope": false}
+{"id": "Q082", "corpus": "ALL", "group": "out_of_scope", "query": "sửa lỗi máy in", "relevant": [], "in_scope": false}
+{"id": "Q083", "corpus": "ALL", "group": "out_of_scope", "query": "lương lập trình viên ở Mỹ", "relevant": [], "in_scope": false}
+{"id": "Q084", "corpus": "ALL", "group": "out_of_scope", "query": "kể chuyện cười", "relevant": [], "in_scope": false}
