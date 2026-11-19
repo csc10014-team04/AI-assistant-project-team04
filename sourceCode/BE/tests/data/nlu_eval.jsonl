@@ -28,3 +28,173 @@
 {"prompt": "xếp 2 tiếng đọc sách dạo này", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
 {"prompt": "xếp lịch học bài", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
 {"prompt": "xếp 25 tiếng học", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp 2 giờ ôn bài thứ hai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ hai"}
+{"prompt": "xếp 3h học nhóm ngày mai", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "ngày mai"}
+{"prompt": "xep 2h lam bai tap hom nay", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "hôm nay"}
+{"prompt": "xếp 1 tiếng đọc báo cáo thứ ba", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "thứ ba"}
+{"prompt": "xếp 30 phút chạy bộ ngày mai", "intent": "schedule_task", "duration_minutes": 30, "date_hint": "ngày mai"}
+{"prompt": "sắp xếp 45p ôn từ vựng hôm nay", "intent": "schedule_task", "duration_minutes": 45, "date_hint": "hôm nay"}
+{"prompt": "xếp 15 phút ghi chú cuối tuần", "intent": "schedule_task", "duration_minutes": 15, "date_hint": "cuối tuần"}
+{"prompt": "xếp 720 phút làm đồ án chủ nhật", "intent": "schedule_task", "duration_minutes": 720, "date_hint": "chủ nhật"}
+{"prompt": "xếp 12 tiếng làm project tuần này", "intent": "schedule_task", "duration_minutes": 720, "date_hint": "tuần này"}
+{"prompt": "xếp 721 phút làm đồ án tuần này", "intent": "schedule_task", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "xếp 14 phút đọc tin hôm nay", "intent": "schedule_task", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "xếp 13 tiếng học tuần sau", "intent": "schedule_task", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "xếp 5 phút nghỉ ngơi hôm nay", "intent": "schedule_task", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "xếp 1h30 ôn thi thứ năm", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "thứ năm"}
+{"prompt": "xếp 2 tiếng 15 phút làm lab thứ tư", "intent": "schedule_task", "duration_minutes": 135, "date_hint": "thứ tư"}
+{"prompt": "xếp 1.5h học Toán ngày mai", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "ngày mai"}
+{"prompt": "xếp 2,5 tiếng làm báo cáo tuần này", "intent": "schedule_task", "duration_minutes": 150, "date_hint": "tuần này"}
+{"prompt": "xếp 0,5 tiếng đọc sách hôm nay", "intent": "schedule_task", "duration_minutes": 30, "date_hint": "hôm nay"}
+{"prompt": "xếp 3 tiếng 30 phút làm đồ án cuối tuần", "intent": "schedule_task", "duration_minutes": 210, "date_hint": "cuối tuần"}
+{"prompt": "xếp từ 7h đến 11h học bài thứ bảy", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "thứ bảy"}
+{"prompt": "xếp từ 13h đến 15h họp nhóm thứ hai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ hai"}
+{"prompt": "xếp từ 8h sáng đến 11h sáng làm đồ án ngày mai", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "ngày mai"}
+{"prompt": "xếp từ 2h chiều đến 5h chiều ôn thi thứ sáu", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "thứ sáu"}
+{"prompt": "xếp 2 tiếng học nhóm lúc 9h thứ tư", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ tư"}
+{"prompt": "xếp 1 tiếng ôn bài trước 5h chiều hôm nay", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "hôm nay"}
+{"prompt": "xếp 2tiếng học bài ngày mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "xếp 20 phút đọc email hôm nay", "intent": "schedule_task", "duration_minutes": 20, "date_hint": "hôm nay"}
+{"prompt": "xếp 50 phút luyện nghe tiếng Anh ngày mai", "intent": "schedule_task", "duration_minutes": 50, "date_hint": "ngày mai"}
+{"prompt": "xếp 100 phút làm bài tập lớn thứ bảy", "intent": "schedule_task", "duration_minutes": 100, "date_hint": "thứ bảy"}
+{"prompt": "xếp 90 phút ôn Giải tích tuần này", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "tuần này"}
+{"prompt": "xếp 4 tiếng viết báo cáo thực tập tuần sau", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "tuần sau"}
+{"prompt": "xếp 6 tiếng làm đồ án cuối tuần", "intent": "schedule_task", "duration_minutes": 360, "date_hint": "cuối tuần"}
+{"prompt": "xếp 1 giờ chạy bộ ngày mai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "ngày mai"}
+{"prompt": "xếp 8 tiếng làm đồ án chủ nhật", "intent": "schedule_task", "duration_minutes": 480, "date_hint": "chủ nhật"}
+{"prompt": "xếp 1 tiếng họp nhóm thứ ba", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "thứ ba"}
+{"prompt": "xếp 2 tiếng thực hành lab thứ năm", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ năm"}
+{"prompt": "xếp 2 tiếng học bài buổi sáng thứ hai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ hai"}
+{"prompt": "xếp 2 tiếng học bài sáng mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "xếp 90 phút tập gym tối nay", "intent": "schedule_task", "duration_minutes": 90, "date_hint": null}
+{"prompt": "xếp 2 tiếng làm đồ án, không làm buổi sáng, thứ năm", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ năm"}
+{"prompt": "xếp 3 tiếng ôn thi tuần này tránh buổi tối", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần này"}
+{"prompt": "xếp 1 tiếng đọc sách vào buổi chiều thứ ba", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "thứ ba"}
+{"prompt": "xếp 2 tiếng học vào buổi tối thứ sáu", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ sáu"}
+{"prompt": "xếp 2 tiếng ôn thi gấp ngày mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "xếp 3 tiếng làm đồ án quan trọng tuần này", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần này"}
+{"prompt": "xếp 1 tiếng nộp bài urgent hôm nay", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "hôm nay"}
+{"prompt": "xếp 2 tiếng học asap ngày mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "xếp 2 tiếng học bài 25/11", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "25/11"}
+{"prompt": "xếp 3 tiếng làm đồ án 30/11/2026", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "30/11/2026"}
+{"prompt": "xếp 1 tiếng đọc sách 5/12", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "5/12"}
+{"prompt": "xếp 2 tiếng ôn thi ngày 20/12", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "20/12"}
+{"prompt": "schedule 2 hours of study tomorrow", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tomorrow"}
+{"prompt": "plan 90 minutes for reading today", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "today"}
+{"prompt": "schedule 1.5 hours for project next week", "intent": "schedule_task", "duration_minutes": 90, "date_hint": "next week"}
+{"prompt": "please schedule 3 hours of coding this week", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "this week"}
+{"prompt": "xếp lịch học bài ngày mai", "intent": "schedule_task", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "xếp lịch ôn thi tuần sau", "intent": "schedule_task", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "sắp xếp thời gian làm đồ án thứ sáu", "intent": "schedule_task", "duration_minutes": null, "date_hint": "thứ sáu"}
+{"prompt": "xếp giúp mình buổi học nhóm cuối tuần", "intent": "schedule_task", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "xep lich lam bai tap", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+{"prompt": "xếp cho mình thời gian đọc sách", "intent": "schedule_task", "duration_minutes": null, "date_hint": null}
+{"prompt": "làm ơn xếp 2 tiếng học bài ngày mai nhé", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "ngày mai"}
+{"prompt": "xếp giúp mình 1 tiếng ôn từ vựng hôm nay nha", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "hôm nay"}
+{"prompt": "hãy xếp 3 tiếng làm đồ án tuần sau", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "tuần sau"}
+{"prompt": "xep giup minh 2 tieng on thi thu bay", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ bảy"}
+{"prompt": "mình muốn xếp 1 tiếng đọc sách ngày mai", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "ngày mai"}
+{"prompt": "cần xếp 4 tiếng làm project cuối tuần", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "cuối tuần"}
+{"prompt": "tuần sau xếp cho mình 2 tiếng làm đồ án", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần sau"}
+{"prompt": "ngày mai xếp 1 tiếng đọc sách", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "ngày mai"}
+{"prompt": "cuối tuần xếp 3 tiếng ôn thi giúp mình", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "cuối tuần"}
+{"prompt": "thứ sáu xếp 2 tiếng làm báo cáo", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "thứ sáu"}
+{"prompt": "hôm nay xếp 45 phút tập thể dục", "intent": "schedule_task", "duration_minutes": 45, "date_hint": "hôm nay"}
+{"prompt": "xep 2 tieng hoc bai tuan nay", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần này"}
+{"prompt": "xep 1 tieng ly thuyet chu nhat", "intent": "schedule_task", "duration_minutes": 60, "date_hint": "chủ nhật"}
+{"prompt": "xếp 2h học bài hôm nay 😀", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "hôm nay"}
+{"prompt": "xếp 3 tiếng làm đồ án đm hôm nay", "intent": "schedule_task", "duration_minutes": 180, "date_hint": "hôm nay"}
+{"prompt": "xếp 2 tiếng học bài vl tuần này", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần này"}
+{"prompt": "hạn nộp bài tập CTDL là thứ sáu, xếp cho mình 2 tiếng làm bài trong tuần này", "intent": "schedule_task", "duration_minutes": 120, "date_hint": "tuần này"}
+{"prompt": "xếp 3 tiếng làm đồ án, deadline 25/11", "intent": "schedule_task", "duration_minutes": 180, "date_hint": null}
+{"prompt": "xếp 2 tiếng làm báo cáo, nộp trước thứ sáu", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "xếp 2 tiếng ôn thi hạn chót ngày mai", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "deadline thứ hai, xếp 4 tiếng làm đồ án tuần này", "intent": "schedule_task", "duration_minutes": 240, "date_hint": "tuần này"}
+{"prompt": "xếp 2 tiếng làm bài, hoàn thành trước 30/11", "intent": "schedule_task", "duration_minutes": 120, "date_hint": null}
+{"prompt": "xóa buổi họp thứ ba", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ ba"}
+{"prompt": "hủy lịch học nhóm ngày mai", "intent": "delete_event", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "xoá buổi gym hôm nay", "intent": "delete_event", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "xoa buoi hoc thu hai", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ hai"}
+{"prompt": "huy buoi on thi ngay mai", "intent": "delete_event", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "delete the meeting tomorrow", "intent": "delete_event", "duration_minutes": null, "date_hint": "tomorrow"}
+{"prompt": "cancel my study session today", "intent": "delete_event", "duration_minutes": null, "date_hint": "today"}
+{"prompt": "hủy buổi họp 25/11", "intent": "delete_event", "duration_minutes": null, "date_hint": "25/11"}
+{"prompt": "xóa lịch đồ án tuần này", "intent": "delete_event", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "xóa buổi đọc sách cuối tuần", "intent": "delete_event", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "hủy buổi ôn thi thứ sáu", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ sáu"}
+{"prompt": "xóa task làm báo cáo", "intent": "delete_event", "duration_minutes": null, "date_hint": null}
+{"prompt": "hủy buổi học nhóm", "intent": "delete_event", "duration_minutes": null, "date_hint": null}
+{"prompt": "xóa hết lịch tuần sau", "intent": "delete_event", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "xóa buổi tập gym chủ nhật", "intent": "delete_event", "duration_minutes": null, "date_hint": "chủ nhật"}
+{"prompt": "huy lich hop ngay kia", "intent": "delete_event", "duration_minutes": null, "date_hint": "ngày kia"}
+{"prompt": "xóa giúp mình buổi họp thứ tư nhé", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ tư"}
+{"prompt": "hủy lịch học bù thứ bảy", "intent": "delete_event", "duration_minutes": null, "date_hint": "thứ bảy"}
+{"prompt": "cancel the gym session next week", "intent": "delete_event", "duration_minutes": null, "date_hint": "next week"}
+{"prompt": "xóa buổi học thêm tháng sau", "intent": "delete_event", "duration_minutes": null, "date_hint": "tháng sau"}
+{"prompt": "dời buổi họp sang thứ tư", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ tư"}
+{"prompt": "đổi lịch học nhóm sang ngày mai", "intent": "reschedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "chuyển buổi gym sang cuối tuần", "intent": "reschedule", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "doi buoi on thi sang thu bay", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ bảy"}
+{"prompt": "chuyen lich hop sang tuan sau", "intent": "reschedule", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "dời đồ án sang thứ hai", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ hai"}
+{"prompt": "đổi buổi học sang hôm nay", "intent": "reschedule", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "reschedule the meeting to tomorrow", "intent": "reschedule", "duration_minutes": null, "date_hint": "tomorrow"}
+{"prompt": "move my study session to next week", "intent": "reschedule", "duration_minutes": null, "date_hint": "next week"}
+{"prompt": "dời buổi họp sang 28/11", "intent": "reschedule", "duration_minutes": null, "date_hint": "28/11"}
+{"prompt": "chuyển buổi ôn thi sang chủ nhật", "intent": "reschedule", "duration_minutes": null, "date_hint": "chủ nhật"}
+{"prompt": "đổi lịch gym sang thứ năm", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ năm"}
+{"prompt": "dời lịch đồ án sang tháng sau", "intent": "reschedule", "duration_minutes": null, "date_hint": "tháng sau"}
+{"prompt": "dời buổi học nhóm sang ngày kia", "intent": "reschedule", "duration_minutes": null, "date_hint": "ngày kia"}
+{"prompt": "chuyển buổi họp sang thứ ba", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ ba"}
+{"prompt": "dời buổi họp sang sáng mai", "intent": "reschedule", "duration_minutes": null, "date_hint": null}
+{"prompt": "dời buổi ôn thi sang tuần này", "intent": "reschedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "đổi buổi học sang thứ 5", "intent": "reschedule", "duration_minutes": null, "date_hint": "thứ 5"}
+{"prompt": "doi lich hop sang ngay mai", "intent": "reschedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "chuyển đồ án sang cuối tuần", "intent": "reschedule", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "ngày mai mình có lịch gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "hôm nay có lịch gì không", "intent": "query_schedule", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "thứ hai mình có lịch gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "thứ hai"}
+{"prompt": "tuần sau có lịch gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "xem lịch tuần này", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "cho mình xem lịch ngày mai", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "lich thu ba co gi", "intent": "query_schedule", "duration_minutes": null, "date_hint": "thứ ba"}
+{"prompt": "cuối tuần mình có gì", "intent": "query_schedule", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "khi nào mình rảnh tuần này", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "mấy giờ mình học thứ năm", "intent": "query_schedule", "duration_minutes": null, "date_hint": "thứ năm"}
+{"prompt": "what do I have tomorrow", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tomorrow"}
+{"prompt": "what is on my schedule today", "intent": "query_schedule", "duration_minutes": null, "date_hint": "today"}
+{"prompt": "lịch học ngày 25/11 thế nào", "intent": "query_schedule", "duration_minutes": null, "date_hint": "25/11"}
+{"prompt": "ngày kia có lịch gì không", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày kia"}
+{"prompt": "lịch tháng sau", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tháng sau"}
+{"prompt": "tuần này có buổi nào trùng lịch không", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần này"}
+{"prompt": "thứ sáu có lịch thi không", "intent": "query_schedule", "duration_minutes": null, "date_hint": "thứ sáu"}
+{"prompt": "mình có lịch gì hôm nay", "intent": "query_schedule", "duration_minutes": null, "date_hint": "hôm nay"}
+{"prompt": "lịch cuối tuần của mình", "intent": "query_schedule", "duration_minutes": null, "date_hint": "cuối tuần"}
+{"prompt": "ngay mai co lich hoc khong", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "tuan sau minh co lich gi", "intent": "query_schedule", "duration_minutes": null, "date_hint": "tuần sau"}
+{"prompt": "xem lịch thứ 4", "intent": "query_schedule", "duration_minutes": null, "date_hint": "thứ 4"}
+{"prompt": "khi nào mình rảnh ngày mai", "intent": "query_schedule", "duration_minutes": null, "date_hint": "ngày mai"}
+{"prompt": "chào bạn", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "cảm ơn nhé", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "bạn tên gì", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "hôm nay trời mưa quá", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "tôi đói rồi", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "haha", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "ok", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "123456", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "...", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "😀😀", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "kể chuyện cười đi", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "bạn khỏe không", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "mình buồn quá", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "hello", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "good morning", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "thank you", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "tuần này thật mệt", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "ngày mai là sinh nhật bạn mình", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "qwerty uiop", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "bạn là ai", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "giải giúp mình phương trình bậc hai", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "dịch giúp mình câu này sang tiếng Anh", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "mình muốn đi ngủ", "intent": "unknown", "duration_minutes": null, "date_hint": null}
+{"prompt": "mình mệt quá", "intent": "unknown", "duration_minutes": null, "date_hint": null}

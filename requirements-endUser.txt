@@ -1,0 +1,44 @@
+# ==============================================================================
+# University Life Assistant - UI-ONLY requirements
+# For regular users who only run the desktop app (sourceCode/FE/main.py) and
+# connect to an already-hosted backend. No database, model or backend packages.
+#
+# Runtime: Python 3.12 or 3.13 on Windows (Kivy 2.3.1 wheels exist up to cp313)
+# Install: py -3.12 -m pip install -r requirements-endUser.txt
+# ==============================================================================
+
+# --- Kivy & KivyMD UI framework ---
+Kivy==2.3.1
+kivymd==2.0.0                # Material Design 3 components
+materialyoucolor==3.0.4
+materialshapes==0.3
+
+# --- Kivy Windows graphics & backend providers ---
+kivy_deps.sdl2==0.8.1        # windowing, input and audio
+kivy_deps.glew==0.3.2        # OpenGL extension wrangler
+kivy-deps.angle==0.4.0       # DirectX to OpenGL translation layer
+Kivy-Garden==0.1.5
+pycairo==1.29.2
+
+# --- async inside the Kivy event loop ---
+asyncgui==0.6.3
+asynckivy==0.6.4
+
+# --- HTTP client for the backend API ---
+requests>=2.31.0
+urllib3>=2.0.0
+idna>=3.7
+certifi>=2024.0.0
+charset-normalizer>=3.3.0
+
+# --- native device features ---
+plyer>=2.1.0                 # local alarms/notifications
+
+# --- Windows platform support ---
+pywin32>=306
+pypiwin32>=223
+
+# --- UI helpers ---
+filetype>=1.2.0              # MIME detection for timetable uploads
+docutils>=0.20
+Pygments>=2.17.0

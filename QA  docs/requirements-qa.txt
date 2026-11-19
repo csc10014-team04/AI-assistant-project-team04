@@ -1,0 +1,11 @@
+# QA tools (not needed to run the application).
+# install, from the repo root with the project venv activated:
+#   python -m pip install -r "QA  docs/requirements-qa.txt"
+beautifulsoup4>=4.12      # tests/test_kb_crawler.py and tests/test_kb_structured.py are SKIPPED without it
+pytest>=8
+pyflakes>=3               # tests/test_project_health.py has one check that is SKIPPED without it
+pytest-cov>=5             # coverage
+ruff>=0.5                 # lint
+mypy>=1.10                # type check
+bandit>=1.7               # security scan
+radon>=6                  # cyclomatic complexity / maintainability index
