@@ -10,6 +10,10 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from services.llm_config import load_be_dotenv
+
+load_be_dotenv()  # load LLM_ALLOWED_HOSTS and DATA_ENCRYPTION_KEY when running outside docker
+
 MAX_PROMPT_CHARS = 500  # keeps system+user prompt inside the 2048-token vllm context window
 
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")

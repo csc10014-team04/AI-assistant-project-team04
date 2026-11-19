@@ -122,3 +122,42 @@ def test_rules_explicit_duration_without_xep():
 
     bare = nlu.rule_based_understand("7h - 11h")
     assert bare.intent == "unknown"
+
+
+def test_healthy_llm_unknown_never_triggers_busy_fallback():
+    unknown_client = _client(lambda req: _llm_reply({"intent": "unknown"}))
+
+    for bare in ("2 tiếng", "5 tiếng", "khoảng 2 tiếng", "2 tiếng rưỡi"):
+        r = nlu.understand_prompt(bare, NOW, client=unknown_client)
+        assert not r.fallback_mode and r.source == "llm"
+        assert r.needs_clarification and r.duration_minutes is not None and r.title is None
+
+    for chitchat in ("đợi 2 tiếng rồi", "đổi ý rồi", "hủy kèo đi chơi", "có gì đâu", "lịch sự quá"):
+        r = nlu.understand_prompt(chitchat, NOW, client=unknown_client)
+        assert not r.fallback_mode and r.source == "llm" and r.intent == "unknown"
+
+
+def test_half_hour_ruoi_duration_and_title():
+    r = nlu.rule_based_understand("2 tiếng rưỡi")
+    assert r.duration_minutes == 150 and r.title is None
+
+
+def test_clock_range_vs_duration_range_disambiguation():
+    clock_prompt = "Tôi muốn xếp lịch cho thứ 2 tuần sau, học môn mạng máy tính, từ 5 giờ đến 6 giờ"
+    r_clock = nlu.rule_based_understand(clock_prompt)
+    assert r_clock.intent == "schedule_task"
+    assert r_clock.duration_minutes == 60
+    assert nlu.parse_clock_window(clock_prompt) == (17 * 60, 18 * 60)
+
+    r_morning = nlu.rule_based_understand("xếp lịch buổi sáng từ 5 giờ đến 6 giờ")
+    assert r_morning.duration_minutes == 60
+    assert nlu.parse_clock_window("xếp lịch buổi sáng từ 5 giờ đến 6 giờ") == (5 * 60, 6 * 60)
+
+    for dur_prompt in (
+        "Tôi muốn xếp lịch học mạng máy tính khoảng 5 đến 6 giờ",
+        "xếp lịch học 5 đến 6 tiếng",
+    ):
+        r_dur = nlu.rule_based_understand(dur_prompt)
+        assert r_dur.intent == "schedule_task"
+        assert r_dur.duration_minutes == 360
+        assert nlu.parse_clock_window(dur_prompt) is None

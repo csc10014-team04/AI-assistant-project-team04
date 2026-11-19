@@ -333,3 +333,135 @@ def test_reschedule_inherits_parent_duration_without_clarification(client, db_se
     assert body["proposal"]["parent_id"] == parent.id
     db_session.refresh(parent)
     assert parent.status == ProposalStatus.RESCHEDULED
+
+
+def test_clarification_duration_reply_keeps_task_and_no_busy_fallback(client, monkeypatch):
+    import json
+
+    class _FakeResp:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": json.dumps(self._payload)}}]}
+
+    def fake_post(self, *args, **kwargs):
+        sent = kwargs["json"]["messages"][-1]["content"]
+        if "2 tiếng" in sent or "5 tiếng" in sent:
+            return _FakeResp({"intent": "schedule_task", "title": "học bài", "duration_minutes": 120})
+        return _FakeResp({"intent": "schedule_task", "title": "học bài", "duration_minutes": None})
+
+    monkeypatch.setattr(nlu.httpx.Client, "post", fake_post)
+    u = _register(client, "ai_user_clarif_dur")
+
+    turn1 = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "xếp lịch học bài"},
+    )
+    assert turn1.status_code == 200, turn1.text
+    b1 = turn1.json()
+    assert b1["nlu"]["needs_clarification"] is True and b1["nlu"]["fallback_mode"] is False
+
+    turn2 = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "khoảng 2 tiếng"},
+    )
+    assert turn2.status_code == 200, turn2.text
+    b2 = turn2.json()
+    assert b2["nlu"]["fallback_mode"] is False
+    assert b2["nlu"]["needs_clarification"] is False
+    assert b2["nlu"]["duration_minutes"] == 120
+    assert b2["proposal"] is not None
+    assert "học bài" in b2["proposal"]["task_title"]
+
+
+def test_split_task_and_batch_respect_min_break_between_max_blocks(client, db_session):
+    from sqlalchemy import select
+    from database import VN_TZ, from_db_to_vn
+    from models import TimeSlot, UserPreference
+    from services.nlu import NluResult
+    from services.proposals import create_proposal, schedule_pending_tasks, split_task
+
+    base = datetime(2026, 11, 20, 8, 0, tzinfo=VN_TZ)
+    exact_6h = [TimeSlot(base, base + timedelta(minutes=360))]
+    # 360 min task with cap=180 and min_break=30 cannot fit inside an exact 360 min gap
+    assert split_task(exact_6h, 360, 180, min_break=30) is None
+
+    gap_6h30 = [TimeSlot(base, base + timedelta(minutes=390))]
+    pieces = split_task(gap_6h30, 360, 180, min_break=30)
+    assert pieces is not None and len(pieces) == 2
+    assert pieces[0].duration_minutes() == 180 and pieces[1].duration_minutes() == 180
+    assert pieces[1].start - pieces[0].end == timedelta(minutes=30)
+
+    # create_proposal splits 6h task with 30m break between 3h max blocks
+    u = _register(client, "break_batch_u")
+    pref = db_session.scalar(select(UserPreference).where(UserPreference.user_id == u["id"]))
+    pref.min_break_minutes = 30
+    pref.max_block_minutes = 180
+    db_session.flush()
+
+    nlu_6h = NluResult(
+        intent="schedule_task", title="deep work", duration_minutes=360,
+        window_start=base.date(), window_end=base.date(),
+    )
+    prop = create_proposal(db_session, u["id"], nlu_6h, "6h deep work", base - timedelta(hours=1))
+    assert prop is not None and prop.extra_slots_json and len(prop.extra_slots_json) == 1
+    first_end = from_db_to_vn(prop.end_time)
+    second_start = datetime.fromisoformat(prop.extra_slots_json[0]["start_time"])
+    assert second_start - first_end >= timedelta(minutes=30)
+
+    # Batch queue also inserts min_break between consecutive scheduled tasks
+    db_session.add(Task(owner_id=u["id"], title="t1", duration_minutes=60, priority=1))
+    db_session.add(Task(owner_id=u["id"], title="t2", duration_minutes=60, priority=2))
+    db_session.commit()
+
+    batch = schedule_pending_tasks(db_session, u["id"], base - timedelta(hours=1), base.date(), base.date())
+    assert len(batch.proposals) == 2
+    s1_end = from_db_to_vn(batch.proposals[0].end_time)
+    s2_start = from_db_to_vn(batch.proposals[1].start_time)
+    assert s2_start - s1_end >= timedelta(minutes=30)
+
+
+def test_fallback_available_slots_match_requested_duration(client):
+    u = _register(client, "fallback_dur_u")
+    res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "xếp 3 tiếng làm đồ án ngày mai"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["nlu"]["fallback_mode"] is True
+    assert body["nlu"]["duration_minutes"] == 180
+    slots = body["available_slots"]
+    assert len(slots) >= 1
+    for slot in slots:
+        assert slot["duration_minutes"] == 180
+        delta = datetime.fromisoformat(slot["end_time"]) - datetime.fromisoformat(slot["start_time"])
+        assert delta == timedelta(minutes=180)
+
+
+def test_fe_fallback_slot_slicing_and_clip_duration():
+    import sys
+    from pathlib import Path
+
+    fe_dir = Path(__file__).resolve().parents[2] / "FE"
+    if str(fe_dir) not in sys.path:
+        sys.path.insert(0, str(fe_dir))
+    import fallback  # noqa: E402
+
+    raw_gaps = [{"start_time": "2026-11-20T06:30:00+07:00", "end_time": "2026-11-20T14:30:00+07:00", "duration_minutes": 480}]
+    sliced = fallback.slice_slots_to_duration(raw_gaps, 180)
+    assert len(sliced) == 2
+    assert sliced[0]["start_time"].endswith("06:30:00+07:00") and sliced[0]["end_time"].endswith("09:30:00+07:00")
+    assert sliced[1]["start_time"].endswith("09:30:00+07:00") and sliced[1]["end_time"].endswith("12:30:00+07:00")
+
+    cs, ce = fallback.clip_slot_to_window(
+        "2026-11-20T11:45:00+07:00", "2026-11-20T23:30:00+07:00", None, duration_minutes=180
+    )
+    assert cs.endswith("11:45:00+07:00") and ce.endswith("14:45:00+07:00")

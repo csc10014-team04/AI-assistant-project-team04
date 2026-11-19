@@ -63,25 +63,97 @@ def _range_minutes(text: str) -> int | None:
     return window[1] - window[0] if window else None
 
 
-def clip_slot_to_window(slot_start: str, slot_end: str, window: tuple[str, str] | None) -> tuple[str, str]:
+def clip_slot_to_window(
+    slot_start: str,
+    slot_end: str,
+    window: tuple[str, str] | None,
+    duration_minutes: int | None = None,
+) -> tuple[str, str]:
     """
-    place the task inside the chosen free gap at the user's requested clock window ("11:00".."17:00").
-    The gap is returned unchanged when there is no window or the window does not fit entirely inside the gap.
+    place the task inside the chosen free gap at the user's requested clock window ("11:00".."17:00"),
+    and cap its end time to `start + duration_minutes` so the booked slot matches the stated duration.
     """
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
-    if not window:
-        return slot_start, slot_end
     try:
         gs, ge = datetime.fromisoformat(slot_start), datetime.fromisoformat(slot_end)
-        sh, sm = map(int, window[0].split(":"))
-        eh, em = map(int, window[1].split(":"))
-        ws, we = gs.replace(hour=sh, minute=sm, second=0, microsecond=0), gs.replace(hour=eh, minute=em, second=0, microsecond=0)
     except (ValueError, TypeError):
         return slot_start, slot_end
-    if gs <= ws < we <= ge:
-        return ws.isoformat(), we.isoformat()
-    return slot_start, slot_end
+
+    if window:
+        try:
+            sh, sm = map(int, window[0].split(":"))
+            eh, em = map(int, window[1].split(":"))
+            ws = gs.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            we = gs.replace(hour=eh, minute=em, second=0, microsecond=0)
+            if gs <= ws < we <= ge:
+                gs, ge = ws, we
+        except (ValueError, TypeError):
+            pass
+
+    if duration_minutes is not None and duration_minutes > 0:
+        target_end = gs + timedelta(minutes=int(duration_minutes))
+        if target_end <= ge:
+            return gs.isoformat(), target_end.isoformat()
+
+    return gs.isoformat(), ge.isoformat()
+
+
+def slice_slots_to_duration(
+    slots: list[dict],
+    duration_minutes: int,
+    requested_window: tuple[str, str] | None = None,
+    max_slots: int = 12,
+) -> list[dict]:
+    """expand wide free gaps into duration-sized blocks matching the scheduled duration."""
+    from datetime import datetime, timedelta
+
+    dur = max(15, int(duration_minutes or 60))
+    dur_td = timedelta(minutes=dur)
+
+    if requested_window and len(requested_window) == 2 and requested_window[0] and requested_window[1]:
+        try:
+            sh, sm = map(int, requested_window[0].split(":"))
+            eh, em = map(int, requested_window[1].split(":"))
+            windowed: list[dict] = []
+            for s in slots:
+                try:
+                    gs = datetime.fromisoformat(s["start_time"])
+                    ge = datetime.fromisoformat(s["end_time"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                ws = gs.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                we = gs.replace(hour=eh, minute=em, second=0, microsecond=0)
+                if we <= ws:
+                    we += timedelta(days=1)
+                cur, bound = max(gs, ws), min(ge, we)
+                while cur + dur_td <= bound and len(windowed) < max_slots:
+                    windowed.append({
+                        "start_time": cur.isoformat(),
+                        "end_time": (cur + dur_td).isoformat(),
+                        "duration_minutes": dur,
+                    })
+                    cur += dur_td
+            if windowed:
+                return windowed
+        except (ValueError, TypeError):
+            pass
+
+    out: list[dict] = []
+    for s in slots:
+        try:
+            cur = datetime.fromisoformat(s["start_time"])
+            ge = datetime.fromisoformat(s["end_time"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        while cur + dur_td <= ge and len(out) < max_slots:
+            out.append({
+                "start_time": cur.isoformat(),
+                "end_time": (cur + dur_td).isoformat(),
+                "duration_minutes": dur,
+            })
+            cur += dur_td
+    return out
 
 
 def is_timeout(error) -> bool:
