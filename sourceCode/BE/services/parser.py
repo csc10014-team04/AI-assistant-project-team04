@@ -845,29 +845,66 @@ def _parse_timetable_table_rows(
     )
 
 
-def _table_rows_from_text(raw_content: str) -> list[list[str]]:
+def _table_rows_from_text(raw_content: str) -> Optional[list[list[str]]]:
     """Split text or Markdown into table rows for aliased-header detection.
 
     Input: raw_content, decoded timetable text.
-    Output: non-empty rows parsed by the existing CSV/Markdown cell splitter.
-    Edge Cases Handled: Markdown divider rows, empty lines, malformed lines, and mixed text.
+    Output: parsed rows, or None when malformed syntax needs the legacy line error path.
+    Edge Cases Handled: Quoted CSV fields, Markdown divider rows, empty files, and malformed lines.
     """
-    has_markdown_rows = any(line.strip().startswith("|") for line in raw_content.splitlines())
+    has_markdown_rows = re.search(r"(?m)^\s*\|", raw_content) is not None
     if not has_markdown_rows:
         delimited_rows = _read_delimited_table(raw_content)
-        for candidate_row in delimited_rows[:6]:
-            if _table_header_is_supported(_map_table_headers(candidate_row)):
-                return delimited_rows
+        if delimited_rows or not raw_content.strip():
+            return delimited_rows
+        return None
 
     rows: list[list[str]] = []
     for line in raw_content.splitlines():
         try:
             cells = _split_line_into_cells(line)
         except ValueError:
-            continue
+            return None
         if cells is not None:
             rows.append(cells)
     return rows
+
+
+def _parse_positional_table_rows(
+    table_rows: list[list[str]],
+    import_batch_id: str,
+) -> ParseBatchResult:
+    """Validate already-parsed rows using the locked nine-column field order.
+
+    Input: table_rows from one CSV/Markdown read and an import batch ID.
+    Output: ParseBatchResult with the same row validation used by the legacy parser.
+    Edge Cases Handled: Headered/headerless canonical rows, malformed column counts, and empty rows.
+    """
+    valid_rows: list[ParsedCsvRow] = []
+    invalid_rows: list[InvalidCsvRow] = []
+
+    for row_number, cells in enumerate(table_rows, start=1):
+        if not any(cell.strip() for cell in cells):
+            continue
+        if _is_header_row(cells):
+            continue
+
+        raw_text = _table_rows_to_csv([cells]).rstrip("\r\n")
+        valid_row, invalid_row = _parse_and_validate_row(
+            row_number,
+            raw_text,
+            cells,
+        )
+        if valid_row is not None:
+            valid_rows.append(valid_row)
+        elif invalid_row is not None:
+            invalid_rows.append(invalid_row)
+
+    return ParseBatchResult(
+        import_batch_id=import_batch_id,
+        valid_rows=valid_rows,
+        invalid_rows=invalid_rows,
+    )
 
 
 def _parse_headered_text_table(
@@ -881,13 +918,19 @@ def _parse_headered_text_table(
     Edge Cases Handled: Vietnamese headings, extra columns, and multi-session schedule cells.
     """
     table_rows = _table_rows_from_text(raw_content)
+    if table_rows is None:
+        return None
+
     for candidate_row in table_rows[:6]:
         if _is_canonical_nine_column_header(candidate_row):
-            # Preserve the mature line parser for the locked nine-column schema,
-            # including EXAM/EVENT/DEADLINE rows that do not need a weekday.
-            return None
-        candidate_map = _map_table_headers(candidate_row)
-    return _parse_timetable_table_rows(table_rows, import_batch_id)
+            # Keep legacy semantics while reusing cells already read by csv.reader.
+            return _parse_positional_table_rows(table_rows, import_batch_id)
+
+    structured_result = _parse_timetable_table_rows(table_rows, import_batch_id)
+    if structured_result is not None:
+        return structured_result
+
+    return _parse_positional_table_rows(table_rows, import_batch_id)
 
 
 def parse_timetable_content(raw_content: str, filename: str = "") -> ParseBatchResult:
@@ -1332,9 +1375,10 @@ def _read_delimited_table(raw_content: str) -> list[list[str]]:
         dialect = csv.excel
 
     try:
-        reader = csv.reader(io.StringIO(raw_content), dialect)
+        reader = csv.reader(io.StringIO(raw_content), dialect, strict=True)
         return [[cell.strip().lstrip("\ufeff") for cell in row] for row in reader]
     except csv.Error:
+        # Let the established line parser isolate malformed quote syntax by source line.
         return []
 
 
@@ -1468,8 +1512,9 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                     if parsed_table is not None:
                         page_results.append(parsed_table)
                     else:
-                        table_csv = _table_rows_to_csv(table_rows)
-                        page_results.append(parse_timetable_content(table_csv, filename))
+                        page_results.append(
+                            _parse_positional_table_rows(table_rows, import_batch_id)
+                        )
 
                 if page_had_table:
                     continue
@@ -1507,8 +1552,10 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                         if parsed_table is not None:
                             page_results.append(parsed_table)
                             continue
-                        table_csv = _table_rows_to_csv(table_rows)
-                        table_result = parse_timetable_content(table_csv, filename)
+                        table_result = _parse_positional_table_rows(
+                            table_rows,
+                            import_batch_id,
+                        )
                         if _result_has_rows(table_result):
                             page_results.append(table_result)
                             continue
@@ -1595,10 +1642,7 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
             )
             if structured_result is not None:
                 return structured_result
-            table_result = parse_timetable_content(
-                _table_rows_to_csv(table_rows),
-                filename,
-            )
+            table_result = _parse_positional_table_rows(table_rows, import_batch_id)
             if table_result.valid_rows:
                 return table_result
             if any(row.error_code != "INVALID_COLUMN_COUNT" for row in table_result.invalid_rows):
@@ -1618,10 +1662,4 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
         return _no_timetable_result(import_batch_id, filename)
 
     extracted_text = extract_raw_text_from_file(file_bytes, filename)
-    if extension == ".csv":
-        table_rows = _read_delimited_table(extracted_text)
-        structured_result = _parse_timetable_table_rows(table_rows, import_batch_id)
-        if structured_result is not None:
-            return structured_result
-
     return parse_timetable_content(extracted_text, filename)
