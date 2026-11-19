@@ -16,6 +16,7 @@ from services import rag
 from services.nlu import _DATE_HINT_RE, NluResult, understand_prompt
 from services.search_engine import find_user_free_slots
 from services.security import get_current_user
+from services.temporal import resolve_date_hint
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
 _clarification_table_lock = threading.Lock()
@@ -154,7 +155,8 @@ def understand(
         re.search(
             r"\b(delete|remove|what|when|show|find|check|"
             r"xóa|xoá|xem|tra cứu|có lịch gì|lịch gì)\b|"
-            r"\b(xếp|xep|sắp xếp|sap xep|đặt|lên)\s+lịch\b",
+            r"\b(xếp|xep|sắp xếp|sap xep|đặt|dat|lên|len)\s+"
+            r"(?:lịch|lich|(?:giúp|giup|cho)\s+(?:mình|minh|tôi|toi))\b",
             prompt_lower,
         )
     )
@@ -179,11 +181,15 @@ def understand(
         if not same_reschedule_ctx:
             if pending is not None:
                 db.delete(pending)
+                db.flush()
+                pending = None
             context = None
 
     if is_cancel:
         if pending is not None:
             db.delete(pending)
+            db.flush()
+            pending = None
         context = None
 
     elif context is not None and not is_new_topic:
@@ -238,6 +244,9 @@ def understand(
     else:
         if pending is not None:
             db.delete(pending)
+            db.flush()
+            pending = None
+        context = None
 
         if parent is None:
             abandoned = abandon_pending_proposals(db, current_user.id)
@@ -310,6 +319,30 @@ def understand(
 
     elif pending is not None:
         db.delete(pending)
+        pending = None
+
+    if (
+        parent is not None
+        and not is_cancel
+        and not result.fallback_mode
+        and result.intent == "unknown"
+    ):
+        has_date_cue = result.date_hint is not None or bool(_DATE_HINT_RE.search(body.prompt))
+        if (
+            result.preferred_time_of_day is not None
+            or result.avoid_time_of_day is not None
+            or result.requested_start is not None
+            or has_date_cue
+        ):
+            result.intent = "reschedule"
+            if result.date_hint is None:
+                m = _DATE_HINT_RE.search(body.prompt)
+                if m:
+                    result.date_hint = m.group(0)
+            if result.window_start is None and result.date_hint is not None:
+                win = resolve_date_hint(result.date_hint, now)
+                result.window_start, result.window_end = win.start, win.end
+                result.date_assumed = win.assumed
 
     print("[DEBUG NLU]", result.model_dump())
     proposal = None
