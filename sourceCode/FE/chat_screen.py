@@ -24,7 +24,7 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 
 # Import module API Client kết nối với máy chủ
 from api_client import api
-from fallback import clip_slot_to_window, is_timeout, parse_request
+from fallback import clip_slot_to_window, is_timeout, parse_request, slice_slots_to_duration
 from notifier import ReminderScheduler
 from event_store import store
 
@@ -315,16 +315,26 @@ class ManualFallbackModal(ModalView):
                 break
                 
         if selected_slot:
-            # Server dat cong viec o dau khung gio da chon (khong lay ca khung trong)
+            # Server places the task within the selected slot trimmed to requested_window and duration
             slot_start, slot_end = clip_slot_to_window(
-                selected_slot.get("start_time"), selected_slot.get("end_time"), self.requested_window)
-            
+                selected_slot.get("start_time"),
+                selected_slot.get("end_time"),
+                self.requested_window,
+                int(self.duration),
+            )
+
             def _on_success(req, res):
                 reminder_scheduler.schedule_from_confirm(res)
                 store.refresh(api)
                 self.dismiss()
                 if self.on_scheduled:
-                    self.on_scheduled(selected_slot)
+                    events = res.get("events") if isinstance(res, dict) else None
+                    confirmed_slot = (
+                        events[0]
+                        if events and isinstance(events[0], dict) and events[0].get("start_time")
+                        else {"start_time": slot_start, "end_time": slot_end, "duration_minutes": int(self.duration)}
+                    )
+                    self.on_scheduled(confirmed_slot)
 
             api.create_manual_event(
                 self.task_title, int(self.duration), slot_start, slot_end,
@@ -417,23 +427,34 @@ class ProposalCard(MDBoxLayout):
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(8)]
 
     def on_confirm(self, instance):
-        # POST /proposals/{id}/confirm: server kiem tra lai xung dot roi moi tao su kien
+        # POST /proposals/{id}/confirm: server re-validates conflicts before creating events
         pid = self.proposal.get("id")
         api.confirm_proposal(
             pid,
             on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api),
                                          self.disable_card("Confirmed and added to calendar")),
-            on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
-            on_error=lambda req, err: self.disable_card("Server connection error"),
+            on_failure=self._handle_action_failure,
+            on_error=lambda req, err: self.show_status("Server connection error. Please try again."),
         )
 
     def on_reject(self, instance):
         api.reject_proposal(
             self.proposal.get("id"),
             on_success=lambda req, res: self.disable_card("Rejected"),
-            on_failure=lambda req, res: self.disable_card(self._failure_text(res)),
-            on_error=lambda req, err: self.disable_card("Server connection error"),
+            on_failure=self._handle_action_failure,
+            on_error=lambda req, err: self.show_status("Server connection error. Please try again."),
         )
+
+    def _handle_action_failure(self, req, res):
+        code = getattr(req, "resp_status", None)
+        detail = (res.get("detail") if isinstance(res, dict) else "") or ""
+        if code == 404 or (code == 409 and detail.lower().startswith("proposal is already")):
+            self.disable_card(self._failure_text(res))
+            return
+        if code == 401:
+            self.show_status("Session expired. Please log in again, then retry.")
+            return
+        self.show_status(f"{self._failure_text(res)}. You can Reschedule or Reject.")
 
     @staticmethod
     def _failure_text(res):
@@ -442,6 +463,11 @@ class ProposalCard(MDBoxLayout):
 
     def on_reschedule(self, instance):
         self.chat_screen.trigger_reschedule_mode(self)
+
+    def show_status(self, status_msg):
+        """show feedback without permanently disabling proposal actions."""
+        self.status_lbl.text = status_msg
+        self.status_lbl.opacity = 1
 
     def disable_card(self, status_msg):
         self.btn_layout.opacity = 0
@@ -460,6 +486,7 @@ class ChatAssistantScreen(MDScreen):
         super().__init__(**kwargs)
         self.md_bg_color = WHITE_COLOR
         self.active_reschedule_proposal = None
+        self._pending_reschedule_card = None
         self.active_cards = []
         
         # c. Quản lý trạng thái chat và lưu dữ liệu vào database cục bộ JsonStore
@@ -649,12 +676,15 @@ class ChatAssistantScreen(MDScreen):
         self.txt_input.focus = True
         Clock.schedule_once(self.scroll_to_bottom, 0.1)
 
-        # 1. Trích xuất reschedule_id TRƯỚC KHI cancel_reschedule
+        # 1. Keep reschedule card alive until server returns a replacement proposal
         reschedule_id = None
+        self._pending_reschedule_card = None
         if self.active_reschedule_proposal:
-            reschedule_id = self.active_reschedule_proposal.proposal.get("id")
-            self.active_reschedule_proposal.disable_card("Reschedule requested")
-            self.cancel_reschedule()
+            self._pending_reschedule_card = self.active_reschedule_proposal
+            reschedule_id = self._pending_reschedule_card.proposal.get("id")
+            self._pending_reschedule_card.show_status("Requesting reschedule...")
+            self.reschedule_banner.height = 0
+            self.reschedule_banner.opacity = 0
         else:
             for card in self.active_cards[:]:
                 card.disable_card("Canceled due to topic change")
@@ -684,6 +714,7 @@ class ChatAssistantScreen(MDScreen):
             return str(slot)
 
     def _trigger_fallback_ui(self, title, duration, slots, busy=True, window=None):
+        slots = slice_slots_to_duration(slots or [], int(duration or 60), requested_window=window)
         # 1. Bong bóng thông báo chuyển chế độ
         self.append_ai_message("AI Assistant is busy. Please select a free slot from the table below!")
 
@@ -750,7 +781,12 @@ class ChatAssistantScreen(MDScreen):
 
         proposal = result.get("proposal")
         print("[DEBUG FRONTEND PROPOSAL]", repr(proposal))
+        pending_resched = getattr(self, "_pending_reschedule_card", None)
         if proposal:  # server found a free slot -> show the Accept / Reject / Reschedule card
+            if pending_resched is not None:
+                pending_resched.disable_card("Rescheduled")
+                self._pending_reschedule_card = None
+                self.cancel_reschedule()
             self.append_ai_message(result.get("message") or "I propose this time slot:")
             new_card = ProposalCard(proposal_data=proposal, chat_screen=self)
             self.chat_history.add_widget(new_card)
@@ -759,20 +795,37 @@ class ChatAssistantScreen(MDScreen):
             return
 
         if nlu.get("needs_clarification") and nlu.get("clarification_question"):
+            if pending_resched is not None:
+                pending_resched.show_status("Awaiting clarification for reschedule...")
+                self.trigger_reschedule_mode(pending_resched)
+                self._pending_reschedule_card = None
             self.append_ai_message(nlu["clarification_question"])
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
             return
 
         if nlu.get("fallback_mode"):
+            if pending_resched is not None:
+                pending_resched.show_status("AI busy; you can still Confirm, Reject, or Reschedule.")
+                self._pending_reschedule_card = None
+                self.cancel_reschedule()
             task_title = nlu.get("title") or "New activity"
             duration = int(nlu.get("duration_minutes") or 60)
+            window = (
+                (nlu["requested_start"], nlu["requested_end"])
+                if nlu.get("requested_start") and nlu.get("requested_end")
+                else None
+            )
             precomputed_slots = result.get("available_slots") or []
             if precomputed_slots:
-                self._trigger_fallback_ui(task_title, duration, precomputed_slots, busy=True)
+                self._trigger_fallback_ui(task_title, duration, precomputed_slots, busy=True, window=window)
             else:
                 self._open_manual_picker(nlu)
             return
 
+        if pending_resched is not None:
+            pending_resched.show_status("No replacement slot found. You can Confirm, Reject, or Reschedule again.")
+            self._pending_reschedule_card = None
+            self.cancel_reschedule()
         self.append_ai_message(result.get("message") or nlu.get("clarification_question")
                                or "I could not fully understand your request. Could you please specify more details?")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
@@ -799,6 +852,15 @@ class ChatAssistantScreen(MDScreen):
 
     def on_api_failure(self, req, result):
         code = getattr(req, "resp_status", "?")
+        pending_resched = getattr(self, "_pending_reschedule_card", None)
+        if pending_resched is not None:
+            detail = (result.get("detail") if isinstance(result, dict) else "") or ""
+            if code == 404 or (code == 409 and detail.lower().startswith("proposal is already")):
+                pending_resched.disable_card(pending_resched._failure_text(result))
+                self.cancel_reschedule()
+            else:
+                pending_resched.show_status("Reschedule failed. You can still Confirm, Reject, or retry.")
+            self._pending_reschedule_card = None
         text = f"Sorry, the request was rejected by the server (Status: {code})."
         if code == 401:
             text += " Session expired, please log in again."
@@ -811,6 +873,10 @@ class ChatAssistantScreen(MDScreen):
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def on_api_error(self, req, error):
+        pending_resched = getattr(self, "_pending_reschedule_card", None)
+        if pending_resched is not None:
+            pending_resched.show_status("Connection error during reschedule. Buttons remain active.")
+            self._pending_reschedule_card = None
         if is_timeout(error) and getattr(self, "_last_text", None):
             # P1-9: the AI request timed out -> go straight to the manual form with offline-parsed values
             self._open_manual_picker(parse_request(self._last_text))

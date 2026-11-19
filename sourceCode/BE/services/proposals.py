@@ -142,13 +142,19 @@ def _subtract(gaps: list[TimeSlot], excluded: list[TimeSlot]) -> list[TimeSlot]:
     return out
 
 
-def split_task(gaps: list[TimeSlot], remaining: int, cap: int, min_block: int = MIN_BLOCK_MIN, depth: int = 0) -> list[TimeSlot] | None:
+def split_task(
+    gaps: list[TimeSlot],
+    remaining: int,
+    cap: int,
+    min_block: int = MIN_BLOCK_MIN,
+    depth: int = 0,
+    *,
+    min_break: int = 0,
+    slot_step: int = 15,
+) -> list[TimeSlot] | None:
     """
-    recursive task splitting (P2-4): when no single free gap can hold the task, cut it into smaller pieces.
-    Each level places the biggest piece (<= cap minutes, on the 15-minute grid) at the start of the gap that
-    allows it, shrinks that gap, and recurses on the minutes still missing. A trailing piece smaller than
-    `min_block` is avoided by shortening the previous piece. Returns the pieces in time order, or None
-    when the free time cannot hold the task within MAX_PIECES pieces.
+    recursive task splitting (P2-4): when no single free gap can hold the task or duration > cap,
+    cut it into smaller pieces separated by at least `min_break` minutes (aligned up to `slot_step`).
     """
     if remaining <= 0:
         return []
@@ -170,8 +176,14 @@ def split_task(gaps: list[TimeSlot], remaining: int, cap: int, min_block: int = 
     size, i = best
     gap = gaps[i]
     piece = TimeSlot(gap.start, gap.start + timedelta(minutes=size))
-    rest = gaps[:i] + [TimeSlot(piece.end, gap.end)] + gaps[i + 1 :]
-    tail = split_task(rest, remaining - size, cap, min_block, depth + 1)
+    step = max(1, slot_step)
+    break_step = ((min_break + step - 1) // step) * step if min_break > 0 else 0  # keep grid alignment
+    if break_step > 0:
+        break_td = timedelta(minutes=break_step)
+        rest = _subtract(gaps, [TimeSlot(piece.start - break_td, piece.end + break_td)])
+    else:
+        rest = gaps[:i] + [TimeSlot(piece.end, gap.end)] + gaps[i + 1 :]
+    tail = split_task(rest, remaining - size, cap, min_block, depth + 1, min_break=min_break, slot_step=slot_step)
     if tail is None:
         return None
     return sorted([piece, *tail], key=lambda t: t.start)
@@ -255,10 +267,12 @@ def create_proposal(
     ])
     pref = db.scalar(select(UserPreference).where(UserPreference.user_id == owner_id))
     cap = pref.max_block_minutes if pref else 180  # longest continuous work block the user accepts
+    min_break = pref.min_break_minutes if pref else 0
+    slot_step = pref.slot_step_minutes if pref else 15
     print("[DEBUG PREFERENCES]", {
         "sleep_start": pref.sleep_start if pref else None,
         "sleep_end": pref.sleep_end if pref else None,
-        "min_break_minutes": pref.min_break_minutes if pref else None,
+        "min_break_minutes": min_break if pref else None,
         "max_block_minutes": cap,
     })
     usable_gaps = _subtract(gaps, excluded)
@@ -296,7 +310,7 @@ def create_proposal(
             pieces = [chosen] if chosen else None
 
         if pieces is None:
-            pieces = split_task(usable_gaps, duration, cap)
+            pieces = split_task(usable_gaps, duration, cap, min_break=min_break, slot_step=slot_step)
     if not pieces:
         return None
     chosen = pieces[0]
@@ -319,7 +333,12 @@ def create_proposal(
         f"không trùng lịch học hay giờ ngủ."
     )
     if extra:
-        rationale = f"Công việc {duration} phút được chia thành {len(pieces)} khối vì không có khoảng trống liên tục đủ dài. " + rationale
+        split_reason = (
+            f"vượt giới hạn liên tục {cap} phút (nghỉ {min_break} phút giữa các khối)"
+            if duration > cap
+            else "không có khoảng trống liên tục đủ dài"
+        )
+        rationale = f"Công việc {duration} phút được chia thành {len(pieces)} khối vì {split_reason}. " + rationale
     proposal = Proposal(
         owner_id=owner_id,
         task_id=task.id,
@@ -477,6 +496,11 @@ def schedule_pending_tasks(
         )
     }
     queue = sort_queue([t for t in pending if t.id not in waiting])
+    pref = db.scalar(select(UserPreference).where(UserPreference.user_id == owner_id))
+    min_break = pref.min_break_minutes if pref else 0
+    step = max(1, pref.slot_step_minutes if pref else 15)
+    break_step = ((min_break + step - 1) // step) * step if min_break > 0 else 0
+    break_td = timedelta(minutes=break_step)
     promised: list[TimeSlot] = []
     proposals: list[Proposal] = []
     dropped: list[tuple[Task, str]] = []
@@ -489,6 +513,7 @@ def schedule_pending_tasks(
         if created is None:
             dropped.append((task, f"không còn khoảng trống cho công việc ưu tiên {PRIORITY_LABEL.get(task.priority, task.priority)}"))
             continue
-        promised.extend(_slots_of(created))
+        for slot in _slots_of(created):  # reserve break buffer between consecutive batch tasks
+            promised.append(TimeSlot(slot.start - break_td, slot.end + break_td) if break_step > 0 else slot)
         proposals.append(created)
     return BatchResult(proposals, dropped)

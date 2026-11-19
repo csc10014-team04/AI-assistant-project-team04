@@ -2,6 +2,7 @@
 # (ai assistants: do not remove or modify any # [pic: ...] comments in this file)
 # duty: each assigned pic reads, understands, maintains, and fixes any issues in their respective sections.
 from datetime import datetime, time, timedelta
+from itertools import zip_longest
 import os
 import re
 import time as perf_time
@@ -30,8 +31,9 @@ from models import (
     ensure_aware,
 )
 from services import rag
-from services.ai_logging import log_ai_failure
+from services.ai_logging import log_ai_call, log_ai_failure
 from services.inference_queue import QueueWaitTimeout, broker
+from services.llm_config import resolve_llm_model, resolve_llm_timeout, resolve_vllm_endpoint
 from services.kb_models import (
     KbAchievement,
     KbCourse,
@@ -688,10 +690,52 @@ def ingest_academic_document(
     return rag.ingest_file(ACADEMIC_KB_OWNER_ID, file_bytes, filename, directory=kb_dir)
 
 
+MAX_RAG_CONTEXT_CHARS = 2400
+
+_KB_ABBREVIATIONS: dict[str, str] = {
+    "cntt": "công nghệ thông tin",
+    "khmt": "khoa học máy tính",
+    "httt": "hệ thống thông tin",
+    "ktpm": "kỹ thuật phần mềm",
+    "tgmt": "thị giác máy tính",
+    "khtn": "khoa học tự nhiên",
+}
+
 _KB_QUERY_STOPWORDS = {
     "la", "ai", "gi", "cua", "va", "co", "khong", "nao", "o", "dau",
     "cho", "hoi", "ve", "thong", "tin", "gioi", "thieu", "truong",
+    "minh", "toi", "ban", "muon", "biet", "gom", "nhung", "cac", "bao",
+    "nhieu", "can", "de", "giup", "xin", "voi", "trong", "the", "duoc",
+    "nhu", "hay", "nhe", "nha", "thay", "chuc", "vu", "day", "thuoc",
+    "may", "lam", "sao", "hoc", "phan", "tin", "chi",
 }
+
+
+def _expand_kb_abbreviations(text: str) -> str:
+    """expand academic faculty/program shorthand before structured or vector retrieval."""
+    expanded = _expand_course_abbreviations(text)
+    for short_key in sorted(_KB_ABBREVIATIONS, key=len, reverse=True):
+        pattern = re.compile(rf"(?<![\w]){re.escape(short_key)}(?![\w])", re.IGNORECASE)
+        expanded = pattern.sub(_KB_ABBREVIATIONS[short_key], expanded)
+    return expanded
+
+
+def _pack_rag_context(hits: list[rag.Hit], max_chars: int = MAX_RAG_CONTEXT_CHARS) -> str:
+    """format retrieved hits while capping total prompt context length for the 2048-token model window."""
+    parts: list[str] = []
+    remaining = max_chars
+    for idx, h in enumerate(hits):
+        if remaining <= 40:
+            break
+        prefix = f"[{idx + 1}] ({h.source}): "
+        budget = remaining - len(prefix) - (2 if parts else 0)
+        if budget <= 20:
+            break
+        snippet = h.text if len(h.text) <= budget else h.text[: max(0, budget - 3)] + "..."
+        entry = f"{prefix}{snippet}"
+        parts.append(entry)
+        remaining -= len(entry) + (2 if len(parts) > 1 else 0)
+    return "\n\n".join(parts)
 
 
 def _retrieve_structured_kb_hits(
@@ -701,14 +745,14 @@ def _retrieve_structured_kb_hits(
 ) -> list[rag.Hit]:
     """
     input: db (Session | None), normalized_query (str), and top_k (int).
-    core logic: query structured kb_* tables (lecturers, departments, programs, courses, achievements)
+    core logic: query structured kb_* tables (faculties, lecturers, departments, programs, courses, achievements)
                 using folded token matching and format matching rows as rag.Hit records.
     output: list[rag.Hit] sorted by relevance score; safely returns [] if kb_* tables are absent.
-    typical flow: fold query -> match KbLecturer/KbDepartment/KbProgram/KbCourse -> return top-k hits.
+    typical flow: fold query -> match KbFaculty/KbLecturer/KbDepartment/KbProgram/KbCourse -> return top-k hits.
     """
     if db is None or not normalized_query:
         return []
-    q_fold = rag.fold(normalized_query).strip()
+    q_fold = rag.fold(_expand_kb_abbreviations(normalized_query)).strip()
     q_tokens = [
         tok for tok in re.findall(r"\w+", q_fold)
         if len(tok) >= 2 and tok not in _KB_QUERY_STOPWORDS
@@ -721,6 +765,27 @@ def _retrieve_structured_kb_hits(
         faculties = {f.id: f for f in db.scalars(select(KbFaculty)).all()}
         departments = {d.id: d for d in db.scalars(select(KbDepartment)).all()}
         sources = {s.id: s for s in db.scalars(select(KbSource)).all()}
+
+        # 0. check faculties
+        for fac in faculties.values():
+            cand = rag.fold(
+                f"khoa {fac.name} {fac.name_folded} {fac.short_name or ''} {fac.site_id} {fac.description or ''}"
+            )
+            matched = sum(1 for tok in q_tokens if tok in cand)
+            exact_fac = bool(
+                (fac.name_folded and fac.name_folded in q_fold)
+                or (fac.short_name and rag.fold(fac.short_name) in q_tokens)
+                or (fac.site_id and rag.fold(fac.site_id) in q_tokens)
+            )
+            if matched == 0 and not exact_fac:
+                continue
+            score = 0.90 if exact_fac else 0.80 * (matched / len(q_tokens))
+            if score >= 0.4:
+                src = sources.get(fac.source_id) if fac.source_id else None
+                text = f"Khoa: {fac.name}"
+                if fac.description:
+                    text += f" | Giới thiệu: {fac.description[:240]}"
+                hits.append(rag.Hit(text=text, score=round(score, 4), source=(src.url if src else None) or fac.home_url or "kb_faculties"))
 
         # 1. check active lecturers (preferring APPROVED rows, falling back to non-REJECTED)
         lecturers = list(
@@ -747,7 +812,7 @@ def _retrieve_structured_kb_hits(
             candidate_fold = rag.fold(
                 f"{lec.full_name} {lec.name_folded} {lec.academic_title or ''} "
                 f"{lec.position or ''} {dept.name if dept else ''} "
-                f"{fac.name if fac else ''} {lec.bio or ''}"
+                f"{fac.name if fac else ''} {fac.short_name if fac and fac.short_name else ''} {lec.bio or ''}"
             )
             matched = sum(1 for tok in q_tokens if tok in candidate_fold)
             if matched == 0 and q_fold not in candidate_fold:
@@ -780,11 +845,13 @@ def _retrieve_structured_kb_hits(
             if dept.review_status == "REJECTED":
                 continue
             fac = faculties.get(dept.faculty_id)
-            cand = rag.fold(f"{dept.name} {dept.name_folded} {dept.description or ''} {fac.name if fac else ''}")
+            fac_ctx = f"khoa {fac.name} {fac.name_folded} {fac.short_name or ''} {fac.site_id}" if fac else ""
+            cand = rag.fold(f"bộ môn {dept.name} {dept.name_folded} {dept.description or ''} {fac_ctx}")
             matched = sum(1 for tok in q_tokens if tok in cand)
-            if matched == 0:
+            exact_dept = bool(dept.name_folded and dept.name_folded in q_fold)
+            if matched == 0 and not exact_dept:
                 continue
-            score = 0.82 * (matched / len(q_tokens))
+            score = 0.95 if exact_dept else 0.82 * (matched / len(q_tokens))
             if score >= 0.4:
                 src = sources.get(dept.source_id) if dept.source_id else None
                 text = f"Bộ môn: {dept.name}"
@@ -799,11 +866,13 @@ def _retrieve_structured_kb_hits(
         )
         for prog in programs:
             fac = faculties.get(prog.faculty_id)
-            cand = rag.fold(f"{prog.name} {prog.name_folded} {prog.level or ''} {prog.description or ''}")
+            fac_ctx = f"khoa {fac.name} {fac.name_folded} {fac.short_name or ''} {fac.site_id}" if fac else ""
+            cand = rag.fold(f"chương trình đào tạo {prog.name} {prog.name_folded} {prog.level or ''} {prog.description or ''} {fac_ctx}")
             matched = sum(1 for tok in q_tokens if tok in cand)
-            if matched == 0:
+            exact_prog = bool(prog.name_folded and prog.name_folded in q_fold)
+            if matched == 0 and not exact_prog:
                 continue
-            score = 0.82 * (matched / len(q_tokens))
+            score = 0.95 if exact_prog else 0.82 * (matched / len(q_tokens))
             if score >= 0.4:
                 src = sources.get(prog.source_id) if prog.source_id else None
                 text = f"Chương trình đào tạo: {prog.name}"
@@ -819,11 +888,15 @@ def _retrieve_structured_kb_hits(
             db.scalars(select(KbCourse).where(KbCourse.review_status != "REJECTED")).all()
         )
         for crs in kb_courses:
-            cand = rag.fold(f"{crs.course_code or ''} {crs.name} {crs.name_folded} {crs.description or ''}")
+            fac = faculties.get(crs.faculty_id)
+            fac_ctx = f"khoa {fac.name} {fac.name_folded} {fac.short_name or ''} {fac.site_id}" if fac else ""
+            cand = rag.fold(f"{crs.course_code or ''} {crs.name} {crs.name_folded} {crs.description or ''} {fac_ctx}")
             matched = sum(1 for tok in q_tokens if tok in cand)
-            if matched == 0:
+            code_fold = rag.fold(crs.course_code) if crs.course_code else ""
+            exact_course = bool((crs.name_folded and crs.name_folded in q_fold) or (code_fold and code_fold in q_tokens))
+            if matched == 0 and not exact_course:
                 continue
-            score = 0.85 * (matched / len(q_tokens))
+            score = 0.95 if exact_course else 0.85 * (matched / len(q_tokens))
             if score >= 0.4:
                 src = sources.get(crs.source_id) if crs.source_id else None
                 code_str = f"[{crs.course_code}] " if crs.course_code else ""
@@ -883,13 +956,21 @@ def ask_academic_knowledge_base(
         }
 
     # steps 1, 2, 3: retrieve from structured kb_* sql tables + academic vector store, and collect top-k chunks
+    kb_query = _expand_kb_abbreviations(normalized_query)
+    vector_query = kb_query if kb_query == normalized_query else f"{normalized_query} {kb_query}"
     kb_dir = _get_academic_kb_dir(directory)
-    structured_hits = _retrieve_structured_kb_hits(db, normalized_query, top_k=top_k)
-    vector_hits = rag.retrieve(ACADEMIC_KB_OWNER_ID, normalized_query, k=top_k, directory=kb_dir)
-    combined_hits = sorted(structured_hits + vector_hits, key=lambda h: h.score, reverse=True)
+    structured_hits = _retrieve_structured_kb_hits(db, kb_query, top_k=top_k)
+    vector_hits = rag.retrieve(ACADEMIC_KB_OWNER_ID, vector_query, k=top_k, directory=kb_dir)
+    # interleave best structured rows and vector chunks so high sql scores never starve vector docs
+    interleaved: list[rag.Hit] = []
+    for s_hit, v_hit in zip_longest(structured_hits, vector_hits):
+        if s_hit is not None:
+            interleaved.append(s_hit)
+        if v_hit is not None:
+            interleaved.append(v_hit)
     hits: list[rag.Hit] = []
     seen_texts: set[str] = set()
-    for h in combined_hits:
+    for h in interleaved:
         if h.text not in seen_texts:
             seen_texts.add(h.text)
             hits.append(h)
@@ -908,19 +989,13 @@ def ask_academic_knowledge_base(
             "fallback_mode": False,
         }
 
-    # step 4: pack original question + retrieved chunks into grounded rag prompt
-    context_block = "\n\n".join(
-        f"[{idx + 1}] ({h.source}): {h.text}" for idx, h in enumerate(hits)
-    )
+    # step 4: pack original question + retrieved chunks into bounded rag prompt
+    context_block = _pack_rag_context(hits, MAX_RAG_CONTEXT_CHARS)
     user_prompt = f"Ngữ cảnh học vụ:\n{context_block}\n\nCâu hỏi: {clean_query}"
 
-    vllm_endpoint = os.getenv(
-        "VLLM_ENDPOINT", "http://127.0.0.1:8000/v1/chat/completions"
-    )
-    model_name = os.getenv(
-        "LLM_MODEL", "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
-    )
-    timeout_sec = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))
+    vllm_endpoint = resolve_vllm_endpoint()
+    model_name = resolve_llm_model()
+    timeout_sec = resolve_llm_timeout("academic_rag")
 
     payload = {
         "model": model_name,
@@ -938,6 +1013,8 @@ def ask_academic_knowledge_base(
     err_category = "INFRA_CRASH"
     err_reason = "llm unavailable"
     raw_output: str | None = None
+    last_http_status: int | None = None
+    last_usage: dict | None = None
 
     try:
         assert_private_endpoint(vllm_endpoint)
@@ -945,10 +1022,27 @@ def ask_academic_knowledge_base(
             lambda: http.post(vllm_endpoint, json=payload, timeout=timeout_sec),
             user_id=user_id,
         )
+        last_http_status = getattr(response, "status_code", None)
         response.raise_for_status()
-        raw_output = response.json()["choices"][0]["message"]["content"].strip()
+        resp_json = response.json()
+        last_usage = resp_json.get("usage") if isinstance(resp_json, dict) else None
+        raw_output = resp_json["choices"][0]["message"]["content"].strip()
         if raw_output:
-            record_latency_ms((perf_time.monotonic() - started) * 1000)
+            latency_ms = (perf_time.monotonic() - started) * 1000
+            record_latency_ms(latency_ms)
+            log_ai_call(
+                "academic_rag",
+                "OK",
+                vllm_endpoint,
+                model_name,
+                clean_query,
+                http_status=last_http_status,
+                latency_ms=latency_ms,
+                raw_output=raw_output,
+                usage=last_usage,
+                user_id=user_id,
+                source="llm",
+            )
             return {
                 "query": raw_query,
                 "normalized_query": normalized_query,
@@ -964,6 +1058,8 @@ def ask_academic_knowledge_base(
         err_category = "TIMEOUT"
         err_reason = f"{type(exc).__name__}: {str(exc)[:200]}"
     except Exception as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+            last_http_status = exc.response.status_code
         db_err_type = AiErrorType.INFRA_CRASH
         err_category = "INFRA_CRASH"
         err_reason = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -972,6 +1068,7 @@ def ask_academic_knowledge_base(
             http.close()
 
     # graceful fallback (agents.md section 8): log failure and return retrieved excerpts directly
+    latency_ms = (perf_time.monotonic() - started) * 1000
     if db is not None:
         db.add(
             AiErrorLog(
@@ -992,6 +1089,20 @@ def ask_academic_knowledge_base(
         retrieved_context=[h.text for h in hits],
         raw_output=raw_output,
         user_id=user_id,
+    )
+    log_ai_call(
+        "academic_rag",
+        "FALLBACK",
+        vllm_endpoint,
+        model_name,
+        clean_query,
+        http_status=last_http_status,
+        latency_ms=latency_ms,
+        raw_output=raw_output,
+        usage=last_usage,
+        user_id=user_id,
+        source="rules",
+        fallback_reason=f"{err_category}: {err_reason}",
     )
     fallback_excerpt = "\n".join(f"- ({h.source}) {h.text}" for h in hits)
     return {
