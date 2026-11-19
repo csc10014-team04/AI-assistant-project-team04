@@ -13,32 +13,25 @@ from sqlalchemy.orm import Session
 
 from database import VN_TZ
 from models import AiErrorLog, AiErrorType
-from services.ai_logging import log_ai_failure
+from services.ai_logging import log_ai_call, log_ai_failure
 from services.inference_queue import QueueWaitTimeout, broker
+from services.llm_config import (
+    normalize_chat_completions_url,
+    resolve_llm_model,
+    resolve_llm_timeout,
+    resolve_vllm_endpoint,
+)
 from services.normalizer import normalize_text
 from services.privacy import assert_private_endpoint, sanitize_prompt
 from services.telemetry import record_latency_ms
 from services.temporal import resolve_date_hint
 
-def _detect_default_vllm_endpoint() -> str:
-    env_val = os.getenv("VLLM_ENDPOINT")
-    if env_val:
-        return env_val
-    try:
-        import socket
-        for port in (8000, 11434):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.1)
-                if s.connect_ex(("127.0.0.1", port)) == 0:
-                    return f"http://127.0.0.1:{port}/v1/chat/completions"
-    except Exception:
-        pass
-    return "http://127.0.0.1:8000/v1/chat/completions"
-
-
-VLLM_ENDPOINT = _detect_default_vllm_endpoint()
-MODEL_NAME = os.getenv("LLM_MODEL", "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4")
-LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "3.0"))  # architecture A1: fallback < 1s after 3s
+_INITIAL_VLLM_ENDPOINT = resolve_vllm_endpoint()
+VLLM_ENDPOINT = _INITIAL_VLLM_ENDPOINT
+_INITIAL_MODEL_NAME = resolve_llm_model()
+MODEL_NAME = _INITIAL_MODEL_NAME
+_INITIAL_LLM_TIMEOUT = resolve_llm_timeout("nlu")
+LLM_TIMEOUT_SECONDS = _INITIAL_LLM_TIMEOUT  # architecture A1: fallback < 1s after 3s
 MAX_SCHEMA_RETRIES = 1
 
 Intent = Literal["schedule_task", "query_schedule", "delete_event", "reschedule", "unknown"]
@@ -135,10 +128,11 @@ _DURATION_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_HINT_RE = re.compile(
-    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
+    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|"
+    r"(?:thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật)(?:\s+(?:tuần\s+này|tuan\s+nay|tuần\s+sau|tuan\s+sau))?|"
     r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
-    r"\d{1,2}(?:st|nd|rd|th)|"
-    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow|this week|next week|"
+    r"tuần này|tuan nay|tuần sau|tuan sau|"
+    r"\d{1,2}(?:st|nd|rd|th)|today|tomorrow|this week|next week|"
     # vague phrases (P2-3): captured so temporal.resolve_date_hint can ask a clarifying question
     r"sớm|som|lúc nào đó|luc nao do|sắp tới|sap toi|dạo này|dao nay|khi nào rảnh|khi nao ranh|"
     r"một lúc nào|mot luc nao|vài hôm nữa|vai hom nua|soon|sometime|whenever)",
@@ -158,7 +152,7 @@ _TIME_OF_DAY = {
     "evening": ("tối", "toi", "evening", "night"),
 }
 _NEGATION = ("không", "khong", "ko", "đừng", "dung", "tránh", "tranh", "not", "avoid", "no")
-_HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap", "deadline", "thi", "exam")
+_HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap", "deadline", "hạn nộp", "hạn chót", "thi", "exam")
 
 
 # clock times are NOT durations: "từ 7h đến 18h" is a time range, "lúc 9h" is a moment. Reading "7h" in them as
@@ -476,6 +470,18 @@ def _finalize(
         )
     if result.priority is None:
         result.priority = rules.priority
+    if (
+        result.preferred_time_of_day is None
+        and rules.preferred_time_of_day is not None
+        and result.avoid_time_of_day != rules.preferred_time_of_day
+    ):
+        result.preferred_time_of_day = rules.preferred_time_of_day
+    if (
+        result.avoid_time_of_day is None
+        and rules.avoid_time_of_day is not None
+        and result.preferred_time_of_day != rules.avoid_time_of_day
+    ):
+        result.avoid_time_of_day = rules.avoid_time_of_day
     window_clock = parse_clock_window(prompt)
     if window_clock:
         result.requested_start = f"{window_clock[0] // 60:02d}:{window_clock[0] % 60:02d}"
@@ -525,25 +531,39 @@ def understand_prompt(
     )
     # nlu extracts intent/entities/deadline_hint only; schedule queries & free slots run on live mysql events
     context: list[str] = []
+    # resolve runtime config while honoring test monkeypatches on module globals
+    endpoint = (
+        normalize_chat_completions_url(VLLM_ENDPOINT)
+        if VLLM_ENDPOINT != _INITIAL_VLLM_ENDPOINT
+        else resolve_vllm_endpoint()
+    )
+    model_name = MODEL_NAME if MODEL_NAME != _INITIAL_MODEL_NAME else resolve_llm_model()
+    timeout_sec = LLM_TIMEOUT_SECONDS if LLM_TIMEOUT_SECONDS != _INITIAL_LLM_TIMEOUT else resolve_llm_timeout("nlu")
+
     now_vn = reference_now.astimezone(VN_TZ)
     system = f"{SYSTEM_PROMPT} Now: {now_vn:%Y-%m-%d %A %H:%M} (+07:00)."
     messages = [{"role": "system", "content": system}, *FEW_SHOT, {"role": "user", "content": safe_prompt}]
-    payload = {"model": MODEL_NAME, "messages": messages, "max_tokens": 200, "temperature": 0.0}
+    payload = {"model": model_name, "messages": messages, "max_tokens": 200, "temperature": 0.0}
 
-    http = client or httpx.Client(timeout=LLM_TIMEOUT_SECONDS)
+    http = client or httpx.Client(timeout=timeout_sec)
     raw_output: str | None = None
+    last_http_status: int | None = None
+    last_usage: dict | None = None
     retries = 0
     category = "SEMANTIC_FAILURE"
     reason = "unresolvable intent"
     try:
-        assert_private_endpoint(VLLM_ENDPOINT)
+        assert_private_endpoint(endpoint)
         while True:
             try:
                 response = broker.run(
-                    lambda: http.post(VLLM_ENDPOINT, json=payload, timeout=LLM_TIMEOUT_SECONDS), user_id=user_id
+                    lambda: http.post(endpoint, json=payload, timeout=timeout_sec), user_id=user_id
                 )
+                last_http_status = getattr(response, "status_code", None)
                 response.raise_for_status()
-                raw_output = response.json()["choices"][0]["message"]["content"]
+                resp_json = response.json()
+                last_usage = resp_json.get("usage") if isinstance(resp_json, dict) else None
+                raw_output = resp_json["choices"][0]["message"]["content"]
                 result = NluResult.model_validate(_extract_json_object(raw_output))
             except (ValueError, ValidationError, KeyError, IndexError) as exc:
                 category = "SCHEMA_VALIDATION" if isinstance(exc, ValidationError) else "JSON_PARSE"
@@ -559,7 +579,17 @@ def understand_prompt(
                     safe_prompt,
                     re.IGNORECASE,
                 )
-                and re.fullmatch(r"\s*\d{1,2}\s*[-–—]\s*\d{1,2}\s*", safe_prompt)
+                and rules.requested_start
+                and rules.requested_end
+                and re.fullmatch(
+                    r"\s*(?:từ|tu|from)?\s*\d{1,2}(?:\s*(?:h|giờ|gio|:)\s*\d{0,2})?\s*"
+                    r"(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi|am|pm)?\s*"
+                    r"(?:đến|den|tới|toi|to|until|[-–—])\s*"
+                    r"\d{1,2}(?:\s*(?:h|giờ|gio|:)\s*\d{0,2})?\s*"
+                    r"(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi|am|pm)?\s*",
+                    safe_prompt,
+                    re.IGNORECASE,
+                )
             ):
                 rules.intent = "unknown"
                 rules.title = None
@@ -567,6 +597,22 @@ def understand_prompt(
                 rules.clarification_question = (
                     "What would you like to do between "
                     f"{rules.requested_start} and {rules.requested_end}?"
+                )
+                rules.source, rules.fallback_mode = "llm", False
+                latency_ms = (time.monotonic() - started) * 1000
+                record_latency_ms(latency_ms)
+                log_ai_call(
+                    "scheduling_nlu",
+                    "OK",
+                    endpoint,
+                    model_name,
+                    safe_prompt,
+                    http_status=last_http_status,
+                    latency_ms=latency_ms,
+                    raw_output=raw_output,
+                    usage=last_usage,
+                    user_id=user_id,
+                    source="llm",
                 )
                 return rules
             # Never treat a healthy LLM "unknown" reply (e.g. bare duration or chitchat) as AI busy/down
@@ -580,7 +626,21 @@ def understand_prompt(
                     if not result.title:
                         result.title = rules.title
             result.source, result.fallback_mode = "llm", False
-            record_latency_ms((time.monotonic() - started) * 1000)
+            latency_ms = (time.monotonic() - started) * 1000
+            record_latency_ms(latency_ms)
+            log_ai_call(
+                "scheduling_nlu",
+                "OK",
+                endpoint,
+                model_name,
+                safe_prompt,
+                http_status=last_http_status,
+                latency_ms=latency_ms,
+                raw_output=raw_output,
+                usage=last_usage,
+                user_id=user_id,
+                source="llm",
+            )
             return _finalize(
                 result,
                 rules,
@@ -593,15 +653,32 @@ def understand_prompt(
     except (httpx.TimeoutException, QueueWaitTimeout) as exc:
         category, reason = "TIMEOUT", f"{type(exc).__name__}: {exc}"
     except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+            last_http_status = exc.response.status_code
         category, reason = "INFRA_CRASH", f"{type(exc).__name__}: {str(exc)[:200]}"
     finally:
         if client is None:
             http.close()
 
+    latency_ms = (time.monotonic() - started) * 1000
     record = log_ai_failure(category, safe_prompt, reason, retrieved_context=context, raw_output=raw_output,
                             user_id=user_id, retry_count=retries)
     log_ai_error(db, user_id, safe_prompt, raw_output, AiErrorType(record["db_error_type"]), retries)
-    record_latency_ms((time.monotonic() - started) * 1000)
+    log_ai_call(
+        "scheduling_nlu",
+        "FALLBACK",
+        endpoint,
+        model_name,
+        safe_prompt,
+        http_status=last_http_status,
+        latency_ms=latency_ms,
+        raw_output=raw_output,
+        usage=last_usage,
+        user_id=user_id,
+        source="rules",
+        fallback_reason=f"{category}: {reason}",
+    )
+    record_latency_ms(latency_ms)
     rules.fallback_mode = True
     rules.fallback_reason = f"{category}: {reason}"[:300]
     return rules
