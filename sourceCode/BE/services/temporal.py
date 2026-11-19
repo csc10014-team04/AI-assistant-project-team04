@@ -136,7 +136,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
     if next_week and not wd and not sunday and not is_weekend:
         mon = _week_monday(today) + timedelta(days=7)
         return ResolvedWindow(mon, mon + timedelta(days=6))
-    if "tuần này" in h or "this week" in h:
+    if ("tuần này" in h or "this week" in h) and not wd and not sunday and not is_weekend:
         return ResolvedWindow(today, _week_monday(today) + timedelta(days=6))
     if is_weekend:
         sat = _week_monday(today) + timedelta(days=5)
