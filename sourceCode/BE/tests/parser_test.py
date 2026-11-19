@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # make `services` importable
+from services import parser as parser_module
 from services.parser import *  # noqa: F401,F403  (bare `import parser` hit the stdlib module Python 3.10 removed)
 # ============================================================================
 # SELF-VERIFICATION SUITE (run: python tests/parser_test.py)
@@ -36,6 +37,49 @@ if __name__ == "__main__":
     check("Test 1a: valid_rows count == 2", len(result1.valid_rows) == 2)
     check("Test 1b: no invalid rows", len(result1.invalid_rows) == 0)
     check("Test 1c: batch_id generated", len(result1.import_batch_id) == 16)
+
+    # Confirm the uploaded CSV table is read once and then sent to the same validator.
+    original_table_reader = parser_module._read_delimited_table
+    table_read_count = {"count": 0}
+
+    def counted_table_reader(raw_content: str) -> list[list[str]]:
+        """Count calls to the parser's CSV table reader during one file upload.
+
+        Input: one decoded source string.
+        Output: parsed rows from the original CSV reader.
+        Edge Cases Handled: The original reader is restored in the surrounding finally block.
+        """
+        table_read_count["count"] += 1
+        return original_table_reader(raw_content)
+
+    parser_module._read_delimited_table = counted_table_reader
+    try:
+        uploaded_result = parse_timetable_file(sample_csv.encode("utf-8"), "test.csv")
+    finally:
+        parser_module._read_delimited_table = original_table_reader
+    check("Test 1d: uploaded CSV table read exactly once", table_read_count["count"] == 1)
+    check("Test 1e: uploaded CSV still validates both rows", len(uploaded_result.valid_rows) == 2)
+
+    # csv.reader must keep quoted commas and newlines inside one title cell.
+    multiline_csv = (
+        "course_code,title,weekday,start_time,end_time,room,first_date,last_date,kind\n"
+        'CSC103,"Algorithms,\n'
+        'and Data Structures",TUE,09:00,11:00,B101,2024-01-09,2024-05-07,CLASS\n'
+    )
+    multiline_result = parse_timetable_content(multiline_csv, "multiline.csv")
+    check("Test 1f: quoted multiline record becomes one valid row",
+          len(multiline_result.valid_rows) == 1
+          and multiline_result.valid_rows[0].title == "Algorithms,\nand Data Structures")
+
+    # Reordered alias headers still map into the established nine-column model.
+    reordered_csv = (
+        "Tên MH,Học kỳ,Mã MH,Lịch LT,Ngày bắt đầu,Ngày kết thúc,Phòng,Loại\n"
+        "Đại số,2024-2025,MATH101,T2 08:00-10:00,2024-01-08,2024-05-06,A101,CLASS\n"
+    )
+    reordered_result = parse_timetable_content(reordered_csv, "reordered.csv")
+    check("Test 1g: reordered headers still map and validate",
+          len(reordered_result.valid_rows) == 1
+          and reordered_result.valid_rows[0].course_code == "MATH101")
 
     # ------------------------------------------------------------------
     # Test 2: Optional course_code (empty string is allowed)
