@@ -18,9 +18,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, get_db
+from services.llm_config import describe_runtime_ai_config, load_be_dotenv
+
+load_be_dotenv()  # load .env values before router/telemetry/privacy modules read env vars
+
 from routers import assistant, auth, events, ingestion, oauth, proposals, reminders, search, tasks
-from services.ai_logging import LOG_PATH as AI_ERROR_LOG_PATH
+from services import ai_logging
+from services.ai_logging import read_recent_ai_calls
 from services.telemetry import collector
+
+AI_ERROR_LOG_PATH = ai_logging.LOG_PATH
 
 _DEBUG_RING_BUFFER: deque[dict] = deque(maxlen=100)  # in-memory buffer for recent http errors
 _DEBUG_LOCK = threading.Lock()
@@ -59,10 +66,11 @@ def _record_be_error(entry: dict) -> None:
 
 def _read_recent_ai_errors(limit: int) -> list[dict]:
     """read up to `limit` newest ai failure records from ai_errors.jsonl."""
-    if not AI_ERROR_LOG_PATH.exists():
+    err_path = ai_logging.LOG_PATH
+    if not err_path.exists():
         return []
     try:
-        lines = AI_ERROR_LOG_PATH.read_text(encoding="utf-8").splitlines()
+        lines = err_path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     parsed: list[dict] = []
@@ -238,6 +246,7 @@ def get_diagnostic_logs(
         recent_http = list(_DEBUG_RING_BUFFER)[-limit:]
     recent_http.reverse()
     recent_ai = _read_recent_ai_errors(limit)
+    recent_ai_calls = read_recent_ai_calls(limit)
     return {
         "summary": (
             "Cach doc nhanh: "
@@ -246,8 +255,11 @@ def get_diagnostic_logs(
             "BE_BUSINESS_RULE_REJECTION = BE tu choi theo logic nghiep vu; "
             "BE_UNHANDLED_EXCEPTION = loi ben trong code BE (xem truong origin va traceback)."
         ),
+        "ai_runtime_config": describe_runtime_ai_config(),
         "http_error_count": len(recent_http),
         "ai_error_count": len(recent_ai),
+        "ai_call_count": len(recent_ai_calls),
         "recent_http_errors": recent_http,
         "recent_ai_errors": recent_ai,
+        "recent_ai_calls": recent_ai_calls,
     }
