@@ -263,6 +263,29 @@ def _is_header_row(cells: list[str]) -> bool:
     return False
 
 
+def _parse_time_cell(value: str) -> time:
+    """Parse an HH:MM cell, accepting and discarding an ISO timezone suffix.
+
+    Input: a time cell such as '08:00', '8:00Z', or '08:00+07:00'.
+    Output: a naive time preserving the displayed wall-clock hour and minute.
+    Edge Cases Handled: Invalid offsets still fail; the legacy no-suffix format stays unchanged.
+    """
+    timezone_match = re.fullmatch(
+        r"(\d{1,2}:\d{2})(Z|[+-]\d{2}:\d{2})",
+        value.strip(),
+        flags=re.IGNORECASE,
+    )
+    if timezone_match is None:
+        return time.fromisoformat(value)
+
+    clock_text, timezone_suffix = timezone_match.groups()
+    hour_text, minute_text = clock_text.split(":", maxsplit=1)
+    normalized_clock = f"{int(hour_text):02d}:{minute_text}"
+    iso_offset = "+00:00" if timezone_suffix.upper() == "Z" else timezone_suffix
+    parsed_time = time.fromisoformat(f"{normalized_clock}{iso_offset}")
+    return parsed_time.replace(tzinfo=None)
+
+
 def _parse_and_validate_row(
     line_number: int,
     raw_text: str,
@@ -384,7 +407,7 @@ def _parse_and_validate_row(
 
     # Parse 24-hour HH:MM time
     try:
-        parsed_start_time = time.fromisoformat(start_time_raw)
+        parsed_start_time = _parse_time_cell(start_time_raw)
     except ValueError:
         return None, InvalidCsvRow(
             line_number=line_number,
@@ -394,7 +417,7 @@ def _parse_and_validate_row(
         )
 
     try:
-        parsed_end_time = time.fromisoformat(end_time_raw)
+        parsed_end_time = _parse_time_cell(end_time_raw)
     except ValueError:
         return None, InvalidCsvRow(
             line_number=line_number,
