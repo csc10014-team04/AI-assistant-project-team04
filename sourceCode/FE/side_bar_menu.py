@@ -10,7 +10,7 @@ from kivy.utils import platform
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.animation import Animation
-from kivy.graphics import Color, RoundedRectangle
+from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.clock import Clock
@@ -21,7 +21,8 @@ import datetime
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.spinner import Spinner
+from kivy.uix.spinner import Spinner, SpinnerOption
+from kivy.uix.dropdown import DropDown
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 from kivymd.app import MDApp
@@ -35,7 +36,7 @@ from event_store import store
 WHITE_COLOR = [1, 1, 1, 1]
 BLUE_COLOR = [0, 51/255, 204/255, 1]
 LIGHT_GRAY = [0.95, 0.95, 0.95, 1]
-
+BLACK_COLOR = [0,0,0,1]
 # ==============================================================================
 # WIDGET THÔNG TIN TÀI KHOẢN (CỐ ĐỊNH DƯỚI CÙNG)
 # ==============================================================================
@@ -188,6 +189,43 @@ class SimpleTimePicker(ModalView):
 # ==============================================================================
 # BỘ CHỌN THỜI LƯỢNG BẰNG SPIN THỜI GIAN (SPINNER VÀ STEPPER 15 PHÚT)
 # ==============================================================================
+class DownwardDropDown(DropDown):
+    """
+    DropDown ép buộc luôn mở xổ xuống bên dưới widget gắn kèm,
+    giới hạn chiều cao max_height để không bị tràn màn hình.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.max_height = dp(160)
+        self.auto_width = False
+
+    def _reposition(self, *args):
+        widget = self.attach_to
+        if not widget or not widget.get_root_window():
+            return
+        wx, wy = widget.to_window(widget.x, widget.y)
+        self.x = wx
+        self.width = widget.width
+        # Luôn luôn mở xổ xuống bên dưới nút bấm
+        self.y = wy - self.height
+
+
+class DownwardSpinnerOption(SpinnerOption):
+    """
+    Các mục lựa chọn trong danh sách xổ xuống:
+    - Nền sáng nhẹ, chữ đen rõ ràng
+    - Chiều cao 38dp, viền phân cách
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ''
+        self.background_color = [0.95, 0.96, 0.98, 1]
+        self.color = [0, 0, 0, 1]
+        self.size_hint_y = None
+        self.height = dp(38)
+        self.font_size = dp(14)
+
+
 class DurationSpinnerModal(ModalView):
     """
     Modal chọn thời lượng (phút) dạng Spin thời gian:
@@ -195,7 +233,8 @@ class DurationSpinnerModal(ModalView):
     - Giữ nguyên toàn bộ các giá trị lựa chọn:
         + Break: 0 đến 120 phút, bước 15 phút (0, 15, 30, ..., 120 mins).
         + Max continuous: 30 đến 720 phút, bước 15 phút (30, 45, ..., 720 mins).
-    - Cung cấp Spinner dropdown chọn nhanh và 2 nút [-] / [+] để xoay/spin giá trị mượt mà.
+    - Cung cấp Spinner dropdown chọn nhanh xổ xuống bên dưới và 2 nút [-] / [+] để xoay/spin giá trị.
+    - Nút giữa nền màu trắng chữ đen viền mảnh.
     """
     def __init__(self, title="Select Duration", current_val=30, start_min=0, max_min=120, step_min=15, on_select=None, **kwargs):
         super().__init__(**kwargs)
@@ -242,7 +281,7 @@ class DurationSpinnerModal(ModalView):
             halign="center"
         ))
 
-        # Khung Spin thời gian (Nút [-], Spinner dropdown, Nút [+])
+        # Khung Spin thời gian (Nút [-], Spinner dropdown xổ xuống dưới, Nút [+])
         spin_box = MDBoxLayout(
             orientation='horizontal',
             size_hint_y=None,
@@ -263,16 +302,23 @@ class DurationSpinnerModal(ModalView):
             on_release=self._decrement
         )
 
+        # Nút giữa: Đổi thành màu trắng chữ đen, danh sách xổ xuống bên dưới
         self.spinner = Spinner(
             text=f"{self.selected_val} mins",
             values=[f"{v} mins" for v in self.valid_values],
+            dropdown_cls=DownwardDropDown,
+            option_cls=DownwardSpinnerOption,
             font_size=dp(15),
             bold=True,
             background_normal='',
-            background_color=BLUE_COLOR,
-            color=WHITE_COLOR,
+            background_color=WHITE_COLOR,
+            color=BLACK_COLOR,
             size_hint=(1, 1)
         )
+        with self.spinner.canvas.before:
+            Color(0.7, 0.7, 0.75, 1)
+            self.spinner_border = Line(rounded_rectangle=[0, 0, 0, 0, dp(6)], width=1.1)
+        self.spinner.bind(pos=self._update_spinner_border, size=self._update_spinner_border)
         self.spinner.bind(text=self._on_spinner_text)
 
         btn_plus = Button(
@@ -312,6 +358,11 @@ class DurationSpinnerModal(ModalView):
         layout.add_widget(btn_box)
 
         self.add_widget(layout)
+
+    def _update_spinner_border(self, *args):
+        self.spinner_border.rounded_rectangle = [
+            self.spinner.x, self.spinner.y, self.spinner.width, self.spinner.height, dp(6)
+        ]
 
     def _decrement(self, *args):
         idx = self.valid_values.index(self.selected_val) if self.selected_val in self.valid_values else 0

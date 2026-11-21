@@ -830,6 +830,7 @@ class AddEventModal(ModalView):
             api.commit_import(
                 import_batch_id="manual",
                 resolved_rows=incoming_row,
+                replace_previous_imports=False,
                 on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
                 on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
                 on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
@@ -1265,6 +1266,46 @@ class ImportStep2Modal(ModalView):
         scroll.add_widget(self.list_layout)
         layout.add_widget(scroll)
 
+        # Tùy chọn thay thế toàn bộ lịch đã import trước đó (replace_previous_imports)
+        replace_box = MDBoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            adaptive_height=True,
+            spacing=dp(8),
+            padding=[dp(6), dp(6), dp(6), dp(6)],
+            md_bg_color=[0.95, 0.95, 0.98, 1],
+            radius=[dp(8)],
+        )
+        self.chk_replace = MDCheckbox(
+            active=False,
+            size_hint=(None, None),
+            size=(dp(36), dp(36)),
+            pos_hint={'center_y': 0.5},
+            color_active=[0, 51/255, 204/255, 1],
+        )
+        desc_box = MDBoxLayout(orientation='vertical', size_hint_x=1, adaptive_height=True, spacing=dp(2))
+        lbl_replace_title = MDLabel(
+            text="Replace all previously imported schedules",
+            bold=True,
+            font_style="Body",
+            role="medium",
+            theme_text_color="Primary",
+            adaptive_height=True,
+        )
+        lbl_replace_desc = MDLabel(
+            text="When checked: Clears previously imported schedules not in this file. Manual & AI events are untouched.",
+            font_style="Label",
+            role="small",
+            theme_text_color="Hint",
+            adaptive_height=True,
+        )
+        desc_box.add_widget(lbl_replace_title)
+        desc_box.add_widget(lbl_replace_desc)
+
+        replace_box.add_widget(self.chk_replace)
+        replace_box.add_widget(desc_box)
+        layout.add_widget(replace_box)
+
         self.lbl_status = MDLabel(
             text="",
             theme_text_color="Error",
@@ -1304,8 +1345,12 @@ class ImportStep2Modal(ModalView):
         self.lbl_status.text = "Checking for schedule conflicts..."
         self.lbl_status.theme_text_color = "Hint"
 
+        replace_flag = bool(self.chk_replace.active)
+        self._replace_previous_imports = replace_flag
+
         api.check_conflicts(
             incoming_rows=valid_rows,
+            replace_previous_imports=replace_flag,
             on_success=self.on_check_success,
             on_failure=self.on_check_failure,
             on_error=self.on_check_error,
@@ -1315,20 +1360,26 @@ class ImportStep2Modal(ModalView):
         self.dismiss()
         batch_id = self.preview_data.get("import_batch_id", "")
         conflict_cards = result.get("conflict_cards", [])
+        replace_flag = getattr(self, "_replace_previous_imports", False)
 
         if not conflict_cards:
-            # Không có xung đột -> commit trực tiếp các dòng hợp lệ vào DB
+            # Không có xung đột -> commit trực tiếp các dòng hợp lệ vào DB với cờ replace_previous_imports
             api.commit_import(
                 import_batch_id=batch_id,
                 resolved_rows=result.get("non_conflicting_rows", []),
+                replace_previous_imports=replace_flag,
                 on_success=self.on_commit_success,
                 on_failure=lambda r, res: print("Lỗi commit:", res),
                 on_error=lambda r, err: print("Lỗi mạng commit:", err),
             )
         else:
-            # Có xung đột -> chuyển sang Bước 3
+            # Có xung đột -> chuyển sang Bước 3, truyền tiếp replace_previous_imports
             try:
-                ImportStep3Modal(conflict_data=result, import_batch_id=batch_id).open()
+                ImportStep3Modal(
+                    conflict_data=result,
+                    import_batch_id=batch_id,
+                    replace_previous_imports=replace_flag
+                ).open()
             except Exception as e:
                 print("Lỗi mở Bước 3:", e)
 
@@ -1357,12 +1408,13 @@ class ImportStep2Modal(ModalView):
 # Dùng MDBoxLayout thay cho MDCard để tránh lỗi FBO crash trên GPU OpenGL
 # ==============================================================================
 class ImportStep3Modal(ModalView):
-    def __init__(self, conflict_data, import_batch_id=None, **kwargs):
+    def __init__(self, conflict_data, import_batch_id=None, replace_previous_imports=False, **kwargs):
         super().__init__(**kwargs)
         self.size_hint = (0.95, 0.9)
         self.auto_dismiss = False
         self.conflict_data = conflict_data or {}
         self.import_batch_id = import_batch_id or self.conflict_data.get("import_batch_id", "")
+        self.replace_previous_imports = bool(replace_previous_imports)
         
         layout = MDBoxLayout(
             orientation='vertical',
@@ -1498,6 +1550,7 @@ class ImportStep3Modal(ModalView):
         api.commit_import(
             import_batch_id=self.import_batch_id,
             resolved_rows=rows,
+            replace_previous_imports=self.replace_previous_imports,
             on_success=self.on_commit_success,
             on_failure=self.on_commit_failure,
             on_error=self.on_commit_error,
