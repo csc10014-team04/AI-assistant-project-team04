@@ -10,7 +10,7 @@ from kivy.utils import platform
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.animation import Animation
-from kivy.graphics import Color, RoundedRectangle
+from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.clock import Clock
@@ -21,6 +21,8 @@ import datetime
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.spinner import Spinner, SpinnerOption
+from kivy.uix.dropdown import DropDown
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 from kivymd.app import MDApp
@@ -34,7 +36,7 @@ from event_store import store
 WHITE_COLOR = [1, 1, 1, 1]
 BLUE_COLOR = [0, 51/255, 204/255, 1]
 LIGHT_GRAY = [0.95, 0.95, 0.95, 1]
-
+BLACK_COLOR = [0,0,0,1]
 # ==============================================================================
 # WIDGET THÔNG TIN TÀI KHOẢN (CỐ ĐỊNH DƯỚI CÙNG)
 # ==============================================================================
@@ -59,8 +61,11 @@ class UserAccountWidget(ButtonBehavior, MDBoxLayout):
         
         # Thông tin user
         self.info_box = MDBoxLayout(orientation='vertical')
-        self.lbl_display = MDLabel(text=api.display_name or "User", bold=True, font_style="Body", role="medium")
-        self.lbl_username = MDLabel(text=f"ID: {api.user_id or 'username'}", theme_text_color="Hint", font_style="Label", role="small")
+        disp = api.display_name or getattr(api, "username", None) or "User"
+        uname = getattr(api, "username", None) or (f"ID: {api.user_id}" if api.user_id else "username")
+        uname_display = f"@{uname}" if not uname.startswith("ID:") else uname
+        self.lbl_display = MDLabel(text=disp, bold=True, font_style="Body", role="medium")
+        self.lbl_username = MDLabel(text=uname_display, theme_text_color="Hint", font_style="Label", role="small")
         self.info_box.add_widget(self.lbl_display)
         self.info_box.add_widget(self.lbl_username)
         
@@ -182,34 +187,91 @@ class SimpleTimePicker(ModalView):
 
 
 # ==============================================================================
-# BỘ CHỌN THỜI LƯỢNG BẰNG GRID 5 CỘT (Scale 15 phút)
+# BỘ CHỌN THỜI LƯỢNG BẰNG SPIN THỜI GIAN (SPINNER VÀ STEPPER 15 PHÚT)
 # ==============================================================================
-class DurationGridPickerModal(ModalView):
+class DownwardDropDown(DropDown):
     """
-    Modal chọn thời lượng (phút) bằng Grid 5 cột tối ưu, siêu nhẹ:
-    - cols = 5
-    - Dải giá trị số phút từ start_min đến max_min theo bước nhảy step_min (15 phút)
-    - Tự động highlight nút đang chọn
-    - Hỗ trợ cuộn mượt mà bằng ScrollView
+    DropDown ép buộc luôn mở xổ xuống bên dưới widget gắn kèm,
+    giới hạn chiều cao max_height để không bị tràn màn hình.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.max_height = dp(160)
+        self.auto_width = False
+
+    def _reposition(self, *args):
+        widget = self.attach_to
+        if not widget or not widget.get_root_window():
+            return
+        wx, wy = widget.to_window(widget.x, widget.y)
+        self.x = wx
+        self.width = widget.width
+        # Luôn luôn mở xổ xuống bên dưới nút bấm
+        self.y = wy - self.height
+
+
+class DownwardSpinnerOption(SpinnerOption):
+    """
+    Các mục lựa chọn trong danh sách xổ xuống:
+    - Nền sáng nhẹ, chữ đen rõ ràng
+    - Chiều cao 38dp, viền phân cách
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ''
+        self.background_color = [0.95, 0.96, 0.98, 1]
+        self.color = [0, 0, 0, 1]
+        self.size_hint_y = None
+        self.height = dp(38)
+        self.font_size = dp(14)
+
+
+class DurationSpinnerModal(ModalView):
+    """
+    Modal chọn thời lượng (phút) dạng Spin thời gian:
+    - Thay thế dạng bảng Grid cũ theo yêu cầu người dùng.
+    - Giữ nguyên toàn bộ các giá trị lựa chọn:
+        + Break: 0 đến 120 phút, bước 15 phút (0, 15, 30, ..., 120 mins).
+        + Max continuous: 30 đến 720 phút, bước 15 phút (30, 45, ..., 720 mins).
+    - Cung cấp Spinner dropdown chọn nhanh xổ xuống bên dưới và 2 nút [-] / [+] để xoay/spin giá trị.
+    - Nút giữa nền màu trắng chữ đen viền mảnh.
     """
     def __init__(self, title="Select Duration", current_val=30, start_min=0, max_min=120, step_min=15, on_select=None, **kwargs):
         super().__init__(**kwargs)
         is_mobile = (platform in ['android', 'ios']) or (Window.width < dp(600))
         if is_mobile:
-            self.size_hint = (0.92, 0.8)
+            self.size_hint = (0.88, None)
+            self.height = dp(240)
         else:
-            self.size_hint = (None, 0.8)
-            self.width = min(dp(480), Window.width * 0.85)
+            self.size_hint = (None, None)
+            self.width = min(dp(420), Window.width * 0.8)
+            self.height = dp(240)
+            
         self.auto_dismiss = True
         self.on_select = on_select
+        self.start_min = start_min
+        self.max_min = max_min
+        self.step_min = step_min
+
+        # Danh sách các mốc thời gian giữ nguyên không đổi
+        self.valid_values = list(range(start_min, max_min + 1, step_min))
+        try:
+            curr_int = int(current_val)
+        except (ValueError, TypeError):
+            curr_int = start_min
+        if curr_int not in self.valid_values:
+            curr_int = self.valid_values[0]
+        self.selected_val = curr_int
 
         layout = MDBoxLayout(
             orientation='vertical',
-            padding=dp(14),
-            spacing=dp(8),
+            padding=dp(16),
+            spacing=dp(14),
             md_bg_color=WHITE_COLOR,
-            radius=[dp(12)]
+            radius=[dp(14)]
         )
+
+        # Tiêu đề
         layout.add_widget(MDLabel(
             text=title,
             bold=True,
@@ -219,50 +281,117 @@ class DurationGridPickerModal(ModalView):
             halign="center"
         ))
 
-        scroll = ScrollView(size_hint=(1, 1))
-        grid = GridLayout(cols=5, spacing=dp(6), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
-
-        try:
-            curr_int = int(current_val)
-        except (ValueError, TypeError):
-            curr_int = start_min
-
-        for val in range(start_min, max_min + 1, step_min):
-            is_curr = (val == curr_int)
-            btn = Button(
-                text=str(val),
-                font_size=dp(13),
-                bold=is_curr,
-                background_normal='',
-                background_color=BLUE_COLOR if is_curr else [0.93, 0.94, 0.97, 1],
-                color=WHITE_COLOR if is_curr else [0.1, 0.1, 0.1, 1],
-                size_hint_y=None,
-                height=dp(38),
-                on_release=lambda _, v=val: self._choose(v)
-            )
-            grid.add_widget(btn)
-
-        scroll.add_widget(grid)
-        layout.add_widget(scroll)
-
-        btn_cancel = Button(
-            text="CANCEL",
-            font_size=dp(13),
-            background_normal='',
-            background_color=[0.9, 0.9, 0.9, 1],
-            color=[0.3, 0.3, 0.3, 1],
+        # Khung Spin thời gian (Nút [-], Spinner dropdown xổ xuống dưới, Nút [+])
+        spin_box = MDBoxLayout(
+            orientation='horizontal',
             size_hint_y=None,
-            height=dp(38),
+            height=dp(48),
+            spacing=dp(10),
+            padding=[dp(10), 0, dp(10), 0]
+        )
+
+        btn_minus = Button(
+            text="-",
+            font_size=dp(20),
+            bold=True,
+            background_normal='',
+            background_color=[0.9, 0.92, 0.96, 1],
+            color=BLUE_COLOR,
+            size_hint=(None, 1),
+            width=dp(48),
+            on_release=self._decrement
+        )
+
+        # Nút giữa: Đổi thành màu trắng chữ đen, danh sách xổ xuống bên dưới
+        self.spinner = Spinner(
+            text=f"{self.selected_val} mins",
+            values=[f"{v} mins" for v in self.valid_values],
+            dropdown_cls=DownwardDropDown,
+            option_cls=DownwardSpinnerOption,
+            font_size=dp(15),
+            bold=True,
+            background_normal='',
+            background_color=WHITE_COLOR,
+            color=BLACK_COLOR,
+            size_hint=(1, 1)
+        )
+        with self.spinner.canvas.before:
+            Color(0.7, 0.7, 0.75, 1)
+            self.spinner_border = Line(rounded_rectangle=[0, 0, 0, 0, dp(6)], width=1.1)
+        self.spinner.bind(pos=self._update_spinner_border, size=self._update_spinner_border)
+        self.spinner.bind(text=self._on_spinner_text)
+
+        btn_plus = Button(
+            text="+",
+            font_size=dp(20),
+            bold=True,
+            background_normal='',
+            background_color=[0.9, 0.92, 0.96, 1],
+            color=BLUE_COLOR,
+            size_hint=(None, 1),
+            width=dp(48),
+            on_release=self._increment
+        )
+
+        spin_box.add_widget(btn_minus)
+        spin_box.add_widget(self.spinner)
+        spin_box.add_widget(btn_plus)
+        layout.add_widget(spin_box)
+
+        # 2 nút hành động: Xác nhận & Hủy
+        btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(42))
+        btn_confirm = MDButton(
+            MDButtonText(text="CONFIRM", text_color=WHITE_COLOR, bold=True),
+            style="filled",
+            md_bg_color=BLUE_COLOR,
+            size_hint_x=0.5,
+            on_release=self._confirm
+        )
+        btn_cancel = MDButton(
+            MDButtonText(text="CANCEL"),
+            style="outlined",
+            size_hint_x=0.5,
             on_release=self.dismiss
         )
-        layout.add_widget(btn_cancel)
+        btn_box.add_widget(btn_confirm)
+        btn_box.add_widget(btn_cancel)
+        layout.add_widget(btn_box)
+
         self.add_widget(layout)
 
-    def _choose(self, val):
+    def _update_spinner_border(self, *args):
+        self.spinner_border.rounded_rectangle = [
+            self.spinner.x, self.spinner.y, self.spinner.width, self.spinner.height, dp(6)
+        ]
+
+    def _decrement(self, *args):
+        idx = self.valid_values.index(self.selected_val) if self.selected_val in self.valid_values else 0
+        if idx > 0:
+            self.selected_val = self.valid_values[idx - 1]
+            self.spinner.text = f"{self.selected_val} mins"
+
+    def _increment(self, *args):
+        idx = self.valid_values.index(self.selected_val) if self.selected_val in self.valid_values else 0
+        if idx < len(self.valid_values) - 1:
+            self.selected_val = self.valid_values[idx + 1]
+            self.spinner.text = f"{self.selected_val} mins"
+
+    def _on_spinner_text(self, instance, text):
+        try:
+            val_int = int(text.replace("mins", "").strip())
+            if val_int in self.valid_values:
+                self.selected_val = val_int
+        except Exception:
+            pass
+
+    def _confirm(self, *args):
         if self.on_select:
-            self.on_select(val)
+            self.on_select(self.selected_val)
         self.dismiss()
+
+
+# Alias tương thích ngược
+DurationGridPickerModal = DurationSpinnerModal
 
 
 # ==============================================================================
@@ -860,8 +989,11 @@ class SideBarMenu(ModalView):
                 self.tf_snooze_m.text = str(s_data.get("minutes", 5))
             except Exception:
                 pass
-        self.user_widget.lbl_display.text = api.display_name or "User"
-        self.user_widget.lbl_username.text = f"ID: {api.user_id or 'username'}"
+        disp = api.display_name or getattr(api, "username", None) or "User"
+        uname = getattr(api, "username", None) or (f"ID: {api.user_id}" if api.user_id else "username")
+        uname_display = f"@{uname}" if not uname.startswith("ID:") else uname
+        self.user_widget.lbl_display.text = disp
+        self.user_widget.lbl_username.text = uname_display
         self.user_widget.logout_container.height = 0
         self.user_widget.logout_container.opacity = 0
         self.user_widget.logout_btn.disabled = True
