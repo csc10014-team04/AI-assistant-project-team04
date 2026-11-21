@@ -809,7 +809,11 @@ class AddEventModal(ModalView):
             self.lbl_status.theme_text_color = "Error"
             return
 
-        # Lưu vào lịch giống như step cuối ở phương thức import lịch
+        # Chuẩn bị timestamp định dạng ISO 8601 kèm múi giờ +07:00
+        start_iso = f"{date_str}T{start_str}:00+07:00"
+        end_iso = start_iso if self.selected_kind == "DEADLINE" else f"{date_str}T{end_str}:00+07:00"
+
+        # Cấu trúc dòng sự kiện phục vụ fallback commit_import nếu API chính không khả dụng
         incoming_row = [{
             "line_number": 1,
             "course_code": "",
@@ -826,29 +830,57 @@ class AddEventModal(ModalView):
         self.lbl_status.text = "Saving event to schedule..."
         self.lbl_status.theme_text_color = "Hint"
 
+        # Nếu đã đăng nhập và kết nối máy chủ: gửi qua POST /api/v1/events kèm cờ is_important
         if getattr(api, "access_token", None):
-            api.commit_import(
-                import_batch_id="manual",
-                resolved_rows=incoming_row,
-                replace_previous_imports=False,
+            api.create_event(
+                title=title,
+                start_time=start_iso,
+                end_time=end_iso,
+                kind=self.selected_kind,
+                room=room or None,
+                is_important=is_imp,
                 on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-                on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
-                on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
+                on_failure=lambda req, res: self._fallback_commit_import(incoming_row, title, duration, date_str, start_str, end_str, is_imp, room),
+                on_error=lambda req, err: self._fallback_commit_import(incoming_row, title, duration, date_str, start_str, end_str, is_imp, room),
             )
         else:
             self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration)
 
+    def _fallback_commit_import(self, incoming_row, title, duration, date_str, start_str, end_str, is_imp, room=None):
+        """Fallback qua commit_import nếu endpoint tạo sự kiện trực tiếp gặp lỗi phản hồi."""
+        api.commit_import(
+            import_batch_id="manual",
+            resolved_rows=incoming_row,
+            replace_previous_imports=False,
+            on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
+            on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
+            on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
+        )
+
     def _on_committed(self, res, title, is_imp, date_str, start_str):
-        # Đặt báo thức nếu đánh dấu quan trọng
+        # Lấy event_id từ kết quả trả về của API (hỗ trợ cả EventOut và CommitImportResponse)
+        ev_id = 0
+        if isinstance(res, dict):
+            ev_id = res.get("id") or 0
+            if not ev_id and "events" in res and isinstance(res["events"], list) and res["events"]:
+                ev_id = res["events"][0].get("id") or 0
+
+        # Nếu được đánh dấu là sự kiện quan trọng:
         if is_imp:
             fire_at = f"{date_str}T{start_str}:00+07:00"
-            reminder_scheduler.schedule(0, fire_at=fire_at, title=title, offset_minutes=30)
+            reminder_scheduler.schedule(ev_id or 0, fire_at=fire_at, title=title, offset_minutes=30)
+            # Nếu phản hồi từ server chưa lưu is_important = True (ví dụ khi đi qua commit_import), gửi patch cập nhật
+            if ev_id and getattr(api, "access_token", None) and (not isinstance(res, dict) or not res.get("is_important")):
+                api.patch_event(ev_id, payload={"is_important": True})
+                api.upsert_reminder(ev_id, offset_minutes=30)
+                api.audit_reminder(ev_id, offset_minutes=30, scheduled_on_device_at=datetime.now(VN_TZ).isoformat())
+
         store.refresh(api)
         self.dismiss()
 
     def _create_manual_fallback(self, title, duration, date_str, start_str, end_str, is_imp, room=None):
         start_iso = f"{date_str}T{start_str}:00+07:00"
-        end_iso = f"{date_str}T{end_str}:00+07:00"
+        end_iso = start_iso if self.selected_kind == "DEADLINE" else f"{date_str}T{end_str}:00+07:00"
         api.create_manual_event(
             title=title,
             duration_minutes=max(15, duration),
@@ -861,7 +893,7 @@ class AddEventModal(ModalView):
 
     def _save_local_event(self, title, room, date_str, start_str, end_str, is_imp, duration):
         start_iso = f"{date_str}T{start_str}:00+07:00"
-        end_iso = f"{date_str}T{end_str}:00+07:00"
+        end_iso = start_iso if self.selected_kind == "DEADLINE" else f"{date_str}T{end_str}:00+07:00"
         new_ev = {
             "id": int(datetime.now().timestamp()),
             "title": title,

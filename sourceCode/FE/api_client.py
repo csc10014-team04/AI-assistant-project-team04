@@ -336,9 +336,10 @@ class APIClient:
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, "Cannot connect to server (check network or VPN)"), 0)
             except Exception as e:
+                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -387,9 +388,10 @@ class APIClient:
                     if on_failure:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
             except Exception as e:
+                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -505,6 +507,19 @@ class APIClient:
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def create_event(self, title, start_time, end_time, kind="TASK", room=None, is_important=False, on_success=None, on_failure=None, on_error=None):
+        """Tạo một sự kiện lịch thủ công trên server (POST /api/v1/events)."""
+        payload = {
+            "title": title,
+            "start_time": start_time,
+            "end_time": end_time,
+            "kind": kind,
+            "room": room,
+            "is_important": is_important,
+        }
+        self._request("/api/v1/events", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def patch_event(self, event_id, payload, on_success=None, on_failure=None, on_error=None):
         """Update event details (start_time, end_time, is_important, title, room)."""

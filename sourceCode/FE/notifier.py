@@ -80,12 +80,19 @@ class DeviceNotificationModal(ModalView):
             adaptive_height=True
         ))
 
-        # Định dạng nội dung: "({Địa điểm}) - {tên sự kiện}: At {Start_time}"
+        # Định dạng nội dung hiển thị: nếu có giờ cụ thể thì hiện giờ, ngược lại hiển thị số phút báo trước
         room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
-        if room_clean:
-            msg_text = f"({room_clean}) - {title}: At {start_time_str}"
+        if start_time_str and str(start_time_str).strip():
+            if room_clean:
+                msg_text = f"({room_clean}) - {title}: {start_time_str}"
+            else:
+                msg_text = f"{title}: {start_time_str}"
         else:
-            msg_text = f"{title}: At {start_time_str}"
+            mins = offset_minutes if offset_minutes is not None else 30
+            if room_clean:
+                msg_text = f"({room_clean}) - {title} Start after {mins} mins"
+            else:
+                msg_text = f"{title} Start after {mins} mins"
 
         self.lbl_msg = MDLabel(
             text=msg_text,
@@ -238,14 +245,18 @@ class ReminderScheduler:
 
     def _fire(self, event_id: int, title: str, room: str, start_time_str: str, offset_minutes: int) -> None:
         self._armed.pop(event_id, None)
-        room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
-        if room_clean:
-            msg_text = f"({room_clean}) - {title}: At {start_time_str}"
-        else:
-            msg_text = f"{title}: At {start_time_str}"
+        mins = offset_minutes if offset_minutes is not None else 30
+        msg_text = f"{title} Start after {mins} mins"
 
-        # Báo thông báo hệ thống qua plyer
-        self.notify("Upcoming Event", msg_text)
+        # Báo thông báo hệ thống qua plyer với tiêu đề và nội dung đúng chuẩn định dạng kiểm thử
+        self.notify("Sắp đến giờ", msg_text)
+
+        # Báo cáo việc đã chuyển giao thông báo tới người dùng (delivery audit)
+        if self.reporter:
+            try:
+                self.reporter.report_reminder_delivered(event_id)
+            except Exception:
+                pass
 
         # Mở popup thông báo trực quan trên giao diện ứng dụng (với 2 nút Xác nhận và Báo lại)
         try:
