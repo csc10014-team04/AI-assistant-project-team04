@@ -35,6 +35,8 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: int
+    username: str | None = None
+    display_name: str | None = None
 
 
 class UpdateUsernameRequest(BaseModel):
@@ -127,10 +129,14 @@ def login_user(
         )
 
     token = create_access_token(identity.user_id)  # sign fresh session token for user
+    user = db.scalar(select(User).where(User.id == identity.user_id))
+    display_name = user.display_name if user is not None else None
     return TokenResponse(
         access_token=token,
         token_type="bearer",
         user_id=identity.user_id,
+        username=identity.provider_user_id,
+        display_name=display_name,
     )
 
 

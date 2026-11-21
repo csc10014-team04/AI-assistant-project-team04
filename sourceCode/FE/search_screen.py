@@ -261,6 +261,13 @@ class SearchScreen(MDScreen):
             "TASK": True, "DEADLINE": True
         }
         self.filter_important_only = False
+
+        # Phân trang lazy loading: vẽ 10 thẻ mỗi đợt khi cuộn để chống giật lag
+        self._all_matching_events = []
+        self._rendered_count = 0
+        self._batch_size = 10
+        self._is_rendering_batch = False
+
         # Đăng ký lắng nghe thay đổi từ store để tự động làm mới kết quả tìm kiếm
         store.on_change(self._on_store_changed)
         Clock.schedule_once(self.build_ui, 0)
@@ -360,6 +367,7 @@ class SearchScreen(MDScreen):
         self.main_layout.add_widget(mode_bar_outer)
 
         self.results_scroll = ScrollView(size_hint=(1, 1))
+        self.results_scroll.bind(scroll_y=self._on_scroll)
         self.results_box = MDBoxLayout(orientation='vertical', size_hint_y=None, padding=dp(15), spacing=dp(10))
         self.results_box.bind(minimum_height=self.results_box.setter('height'))
 
@@ -515,8 +523,49 @@ class SearchScreen(MDScreen):
         self.perform_search()
 
     def on_pre_enter(self, *args):
-        """load the user's real events when the tab opens, then repeat the current search."""
+        """Hiển thị kết quả ngay từ cache để tránh khựng UI, sau đó đồng bộ nền từ server."""
+        if hasattr(self, "txt_search"):
+            self.perform_search()
         store.refresh(api, on_done=lambda: self.perform_search() if hasattr(self, "txt_search") else None)
+
+    def _on_scroll(self, instance, scroll_y):
+        """Lắng nghe sự kiện cuộn chuột/ngón tay; khi gần tới đáy (scroll_y <= 0.15) vẽ tiếp 10 thẻ."""
+        if self.search_mode == "schedule" and scroll_y <= 0.15:
+            self._render_next_batch()
+
+    def _set_search_results(self, matching_events):
+        """Khởi tạo danh sách kết quả và vẽ mẻ đầu tiên (10 sự kiện) để giao diện luôn mượt mà."""
+        self._all_matching_events = matching_events or []
+        self._rendered_count = 0
+        self.results_box.clear_widgets()
+
+        if not self._all_matching_events:
+            self.results_box.add_widget(MDLabel(
+                text="No results found!",
+                halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
+                font_style="Body", role="large", size_hint_y=None, height=dp(50)
+            ))
+            return
+
+        self.results_scroll.scroll_y = 1.0
+        self._render_next_batch()
+
+    def _render_next_batch(self):
+        """Vẽ mẻ tiếp theo gồm tối đa 10 sự kiện khi người dùng cuộn trang xuống."""
+        if getattr(self, "_is_rendering_batch", False):
+            return
+        if self._rendered_count >= len(self._all_matching_events):
+            return
+
+        self._is_rendering_batch = True
+        next_end = min(self._rendered_count + self._batch_size, len(self._all_matching_events))
+        batch = self._all_matching_events[self._rendered_count:next_end]
+
+        for event in batch:
+            self.results_box.add_widget(EventCard(event))
+            self._rendered_count += 1
+
+        self._is_rendering_batch = False
 
     # --- LOGIC TÌM KIẾM ---
     def on_text_change(self, instance, value):
@@ -593,8 +642,7 @@ class SearchScreen(MDScreen):
             return
 
         events = res.get("events", [])
-        self.results_box.clear_widgets()
-        count = 0
+        matching = []
         for event in events:
             kind = event.get("kind", "EVENT")
             is_important = event.get("is_important", False)
@@ -602,35 +650,13 @@ class SearchScreen(MDScreen):
                 continue
             if self.filter_important_only and not is_important:
                 continue
+            matching.append(event)
 
-            self.results_box.add_widget(EventCard(event))
-            count += 1
-
-        if count == 0:
-            self.results_box.add_widget(MDLabel(
-                text="No matching schedule found!",
-                halign="center",
-                theme_text_color="Custom",
-                text_color=GRAY_TEXT,
-                font_style="Body",
-                role="large",
-                size_hint_y=None,
-                height=dp(50),
-            ))
+        self._set_search_results(matching)
 
     def _local_schedule_filter(self, query):
-        self.results_box.clear_widgets()
-        count = 0
-        MAX_RESULTS = 30
+        matching = []
         for event in store.events:
-            if count >= MAX_RESULTS:
-                self.results_box.add_widget(MDLabel(
-                    text=f"Displaying {MAX_RESULTS} results...",
-                    halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
-                    font_style="Body", role="medium", size_hint_y=None, height=dp(40)
-                ))
-                break
-
             kind = event.get("kind", "EVENT")
             is_important = event.get("is_important", False)
             if not self.active_filters.get(kind, True):
@@ -654,15 +680,9 @@ class SearchScreen(MDScreen):
                 query in date_short_str
             )
             if match_text:
-                self.results_box.add_widget(EventCard(event))
-                count += 1
+                matching.append(event)
 
-        if count == 0:
-            self.results_box.add_widget(MDLabel(
-                text="No results found!",
-                halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
-                font_style="Body", role="large", size_hint_y=None, height=dp(50)
-            ))
+        self._set_search_results(matching)
 
     def _perform_academic_search(self, query):
         self.results_box.clear_widgets()

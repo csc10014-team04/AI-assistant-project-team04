@@ -39,6 +39,7 @@ class APIClient:
         self.access_token = None
         self.user_id = None
         self.display_name = None
+        self.username = None
         self.debug_http = os.getenv("FE_DEBUG_HTTP", "1") != "0"  # print detailed http failures to console by default
         self._load_session()
 
@@ -53,25 +54,28 @@ class APIClient:
         self.store.put("settings", base_url=self.base_url)
 
     def _load_session(self):
-        """Khôi phục token từ lần đăng nhập trước"""
+        """Khôi phục token và thông tin người dùng từ lần đăng nhập trước"""
         if self.store.exists("auth"):
             data = self.store.get("auth")
             self.access_token = data.get("access_token")
             self.user_id = data.get("user_id")
             self.display_name = data.get("display_name")
+            self.username = data.get("username")
 
-    def save_session(self, token, user_id, display_name):
-        """Lưu token sau khi đăng nhập thành công"""
+    def save_session(self, token, user_id, display_name, username=None):
+        """Lưu token và thông tin tài khoản (display_name, username) sau khi đăng nhập thành công"""
         self.access_token = token
         self.user_id = user_id
         self.display_name = display_name
-        self.store.put("auth", access_token=token, user_id=user_id, display_name=display_name)
+        self.username = username
+        self.store.put("auth", access_token=token, user_id=user_id, display_name=display_name, username=username)
 
     def clear_session(self):
-        """Xóa token khi người dùng đăng xuất"""
+        """Xóa token và thông tin người dùng khi đăng xuất"""
         self.access_token = None
         self.user_id = None
         self.display_name = None
+        self.username = None
         if self.store.exists("auth"):
             self.store.delete("auth")
 
