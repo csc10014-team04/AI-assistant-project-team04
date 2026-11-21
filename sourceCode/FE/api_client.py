@@ -39,6 +39,7 @@ class APIClient:
         self.access_token = None
         self.user_id = None
         self.display_name = None
+        self.username = None
         self.debug_http = os.getenv("FE_DEBUG_HTTP", "1") != "0"  # print detailed http failures to console by default
         self._load_session()
 
@@ -53,25 +54,28 @@ class APIClient:
         self.store.put("settings", base_url=self.base_url)
 
     def _load_session(self):
-        """Khôi phục token từ lần đăng nhập trước"""
+        """Khôi phục token và thông tin người dùng từ lần đăng nhập trước"""
         if self.store.exists("auth"):
             data = self.store.get("auth")
             self.access_token = data.get("access_token")
             self.user_id = data.get("user_id")
             self.display_name = data.get("display_name")
+            self.username = data.get("username")
 
-    def save_session(self, token, user_id, display_name):
-        """Lưu token sau khi đăng nhập thành công"""
+    def save_session(self, token, user_id, display_name, username=None):
+        """Lưu token và thông tin tài khoản (display_name, username) sau khi đăng nhập thành công"""
         self.access_token = token
         self.user_id = user_id
         self.display_name = display_name
-        self.store.put("auth", access_token=token, user_id=user_id, display_name=display_name)
+        self.username = username
+        self.store.put("auth", access_token=token, user_id=user_id, display_name=display_name, username=username)
 
     def clear_session(self):
-        """Xóa token khi người dùng đăng xuất"""
+        """Xóa token và thông tin người dùng khi đăng xuất"""
         self.access_token = None
         self.user_id = None
         self.display_name = None
+        self.username = None
         if self.store.exists("auth"):
             self.store.delete("auth")
 
@@ -332,9 +336,10 @@ class APIClient:
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, "Cannot connect to server (check network or VPN)"), 0)
             except Exception as e:
+                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -383,9 +388,10 @@ class APIClient:
                     if on_failure:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
             except Exception as e:
+                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, str(e)), 0)
+                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -501,6 +507,19 @@ class APIClient:
                "duration_minutes": duration_minutes, "respect_preferences": respect_preferences}
         self._request("/api/v1/search/free-slots", method="POST", payload=payload,
                   on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def create_event(self, title, start_time, end_time, kind="TASK", room=None, is_important=False, on_success=None, on_failure=None, on_error=None):
+        """Tạo một sự kiện lịch thủ công trên server (POST /api/v1/events)."""
+        payload = {
+            "title": title,
+            "start_time": start_time,
+            "end_time": end_time,
+            "kind": kind,
+            "room": room,
+            "is_important": is_important,
+        }
+        self._request("/api/v1/events", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def patch_event(self, event_id, payload, on_success=None, on_failure=None, on_error=None):
         """Update event details (start_time, end_time, is_important, title, room)."""

@@ -111,7 +111,7 @@ class AuthScreen(MDScreen):
 
         self.main_container = MDBoxLayout(
             orientation='vertical', size_hint_x=None, adaptive_height=True,
-            spacing=dp(20), pos_hint={"center_y": 0.55} 
+            spacing=dp(20), padding=[0, dp(15), 0, dp(10)], pos_hint={"center_y": 0.58} 
         )
         anchor.add_widget(self.main_container)
         self.bind(width=self.update_main_container_width)
@@ -142,7 +142,7 @@ class AuthScreen(MDScreen):
 
     def setup_login_tab(self):
         login_screen = MDScreen(name="login_tab")
-        self.login_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(12), pos_hint={"center_x": 0.5, "top": 1})
+        self.login_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(12), padding=[0, dp(12), 0, dp(6)], pos_hint={"center_x": 0.5, "top": 1})
         self.login_container.bind(minimum_height=self.login_container.setter('height'))
         self.sm.bind(width=self.login_container.setter('width'))
         
@@ -170,7 +170,7 @@ class AuthScreen(MDScreen):
 
     def setup_register_tab(self):
         reg_screen = MDScreen(name="register_tab")
-        self.register_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(12), pos_hint={"center_x": 0.5, "top": 1})
+        self.register_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(12), padding=[0, dp(12), 0, dp(6)], pos_hint={"center_x": 0.5, "top": 1})
         self.register_container.bind(minimum_height=self.register_container.setter('height'))
         self.sm.bind(width=self.register_container.setter('width'))
         
@@ -200,7 +200,7 @@ class AuthScreen(MDScreen):
 
     def setup_oauth_tab(self):
         oauth_screen = MDScreen(name="oauth_tab")
-        self.oauth_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(15), pos_hint={"center_x": 0.5, "top": 1})
+        self.oauth_container = BoxLayout(orientation='vertical', size_hint_x=None, size_hint_y=None, spacing=dp(15), padding=[0, dp(12), 0, dp(6)], pos_hint={"center_x": 0.5, "top": 1})
         self.oauth_container.bind(minimum_height=self.oauth_container.setter('height'))
         self.sm.bind(width=self.oauth_container.setter('width'))
         
@@ -308,20 +308,24 @@ class AuthScreen(MDScreen):
             self.show_error("Please enter both Username and Password.")
             return
 
+        self._login_username = username.strip()
         api.login(
             username, password,
             on_success=self.on_login_success, on_failure=self.on_login_failure, on_error=self.on_network_error
         )
 
     def on_login_success(self, req, result):
-        # [CẦN BACKEND XỬ LÝ]: Backend phải đảm bảo trả về cấu trúc JSON đúng chuẩn chứa {access_token, user_id, display_name}
+        # Lưu phiên đăng nhập: lấy display_name và username từ response hoặc từ form đăng nhập
         app = MDApp.get_running_app()
+        username_val = result.get("username") or getattr(self, "_login_username", None) or ""
+        display_name_val = result.get("display_name") or username_val or "User"
         api.save_session(
             token=result.get("access_token"),
             user_id=result.get("user_id"),
-            display_name=result.get("display_name")
+            display_name=display_name_val,
+            username=username_val
         )
-        print(f"Đăng nhập thành công! Chào {api.display_name}")
+        print(f"Đăng nhập thành công! Chào {api.display_name} (@{api.username})")
         if app.root and hasattr(app.root, 'current'):
             app.root.current = "calendar_home"
 
