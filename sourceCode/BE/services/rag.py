@@ -1,6 +1,7 @@
 # [pic: khoi] p2-2 rag chunking, embedding & encrypted vector index (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import json
+import logging
 import math
 import os
 import re
@@ -17,7 +18,67 @@ RAG_DIR = Path(os.getenv("RAG_DATA_DIR", str(Path(__file__).resolve().parent.par
 EMBED_DIM = 512
 CHUNK_CHARS = 400
 CHUNK_OVERLAP = 80
-MIN_SCORE = 0.12  # below this the retrieval is treated as a miss and logged for prompt tuning
+MIN_SCORE = 0.22  # raised from 0.12 to filter out-of-scope noise after weekday/abbreviation canonicalization
+_logger = logging.getLogger(__name__)
+
+
+class IndexDecryptionError(RuntimeError):
+    """raised when writing to an existing vector index whose ciphertext cannot be decrypted."""
+
+
+_EMBED_ABBREVIATIONS: dict[str, str] = {
+    "xstk": "xac suat thong ke",
+    "vtp": "vi tich phan",
+    "vtp1": "vi tich phan 1",
+    "vtp2": "vi tich phan 2",
+    "dstt": "dai so tuyen tinh",
+    "trr": "toan roi rac",
+    "tth": "toan to hop",
+    "ctdl": "cau truc du lieu va giai thuat",
+    "ctdlgt": "cau truc du lieu va giai thuat",
+    "ktlt": "ky thuat lap trinh",
+    "nmlt": "nhap mon lap trinh",
+    "lthdt": "lap trinh huong doi tuong",
+    "oop": "lap trinh huong doi tuong",
+    "hdh": "he dieu hanh",
+    "mmt": "mang may tinh",
+    "csdl": "co so du lieu",
+    "cnpm": "cong nghe phan mem",
+    "nmcnpm": "nhap mon cong nghe phan mem",
+    "ttnt": "tri tue nhan tao",
+    "tdtt": "tu duy tinh toan",
+    "attt": "an toan thong tin",
+    "khdl": "khoa hoc du lieu",
+    "ktmt": "kien truc may tinh",
+    "vl1": "vat ly dai cuong 1",
+    "vl2": "vat ly dai cuong 2",
+    "ktct": "kinh te chinh tri",
+    "cnxh": "chu nghia xa hoi khoa hoc",
+    "tthcm": "tu tuong ho chi minh",
+    "lsd": "lich su dang",
+    "pldc": "phap luat dai cuong",
+    "gdtc": "giao duc the chat",
+    "gdqp": "giao duc quoc phong va an ninh",
+    "cntt": "cong nghe thong tin",
+    "khmt": "khoa hoc may tinh",
+    "httt": "he thong thong tin",
+    "ktpm": "ky thuat phan mem",
+    "tgmt": "thi giac may tinh",
+    "khtn": "khoa hoc tu nhien",
+    "clb": "cau lac bo",
+    "gk": "giua ky",
+    "ck": "cuoi ky",
+}
+
+_WEEKDAY_CANONICAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(?:thu\s*2|t2|monday|mon)\b"), " thu2mon "),
+    (re.compile(r"\b(?:thu\s*3|t3|tuesday|tue)\b"), " thu3tue "),
+    (re.compile(r"\b(?:thu\s*4|t4|wednesday|wed)\b"), " thu4wed "),
+    (re.compile(r"\b(?:thu\s*5|t5|thursday)\b"), " thu5thu "),
+    (re.compile(r"\b(?:thu\s*6|t6|friday|fri)\b"), " thu6fri "),
+    (re.compile(r"\b(?:thu\s*7|t7|saturday|sat)\b"), " thu7sat "),
+    (re.compile(r"\b(?:chu\s*nhat|sunday|sun)\b"), " chunhatsun "),
+]
 
 
 def fold(text: str) -> str:
@@ -26,13 +87,25 @@ def fold(text: str) -> str:
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
+def _canonicalize_for_embed(text: str) -> str:
+    """normalize weekdays into disjoint tokens and append expanded domain abbreviations."""
+    folded = fold(text)
+    for pattern, token in _WEEKDAY_CANONICAL_PATTERNS:
+        folded = pattern.sub(token, folded)
+    words = re.findall(r"\w+", folded)
+    expansions = [_EMBED_ABBREVIATIONS[w] for w in words if w in _EMBED_ABBREVIATIONS]
+    if expansions:
+        return f"{folded} {' '.join(expansions)}"
+    return folded
+
+
 def embed(text: str, dim: int = EMBED_DIM) -> list[float]:
     """
     deterministic offline embedding (feature hashing of word unigrams/bigrams + char trigrams, L2-normalised).
     no network and no model download, so personal schedule text never leaves the host (P1-2). swap this one
     function for a sentence-transformer if a GPU budget is available; the index format stays the same.
     """
-    words = re.findall(r"\w+", fold(text))
+    words = re.findall(r"\w+", _canonicalize_for_embed(text))
     feats = list(words) + [f"{a}_{b}" for a, b in zip(words, words[1:])]
     for w in words:
         padded = f"^{w}$"
@@ -79,15 +152,37 @@ class VectorIndex:
     def __init__(self, owner_id: int, directory: Path | None = None) -> None:
         self.owner_id = owner_id
         self.path = (directory or RAG_DIR) / f"owner_{int(owner_id)}.idx"
+        self._decryption_failed: bool = False
         self._items: list[dict] = self._load()
 
     def _load(self) -> list[dict]:
         if not self.path.is_file():
             return []
         plain = decrypt_text(self.path.read_text(encoding="ascii"))
-        return json.loads(plain) if plain else []
+        if plain is None:
+            self._decryption_failed = True
+            _logger.error(
+                "Failed to decrypt RAG index %s; refusing silent overwrite until key is restored or clear() is called.",
+                self.path,
+            )
+            return []
+        try:
+            loaded = json.loads(plain)
+        except json.JSONDecodeError:
+            self._decryption_failed = True
+            _logger.error("Corrupted JSON payload in encrypted RAG index %s; refusing silent overwrite.", self.path)
+            return []
+        if not isinstance(loaded, list):
+            self._decryption_failed = True
+            _logger.error("Unexpected payload structure in RAG index %s; refusing silent overwrite.", self.path)
+            return []
+        return loaded
 
     def _save(self) -> None:
+        if self._decryption_failed:
+            raise IndexDecryptionError(
+                f"Refusing to overwrite unreadable encrypted index {self.path}; restore DATA_ENCRYPTION_KEY or call clear() explicitly."
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(encrypt_text(json.dumps(self._items)), encoding="ascii")
 
@@ -114,6 +209,7 @@ class VectorIndex:
 
     def clear(self) -> None:
         with self._lock:
+            self._decryption_failed = False
             self._items = []
             self.path.unlink(missing_ok=True)
 
