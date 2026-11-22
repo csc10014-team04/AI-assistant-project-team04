@@ -7,6 +7,7 @@ from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.textinput import TextInput
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.modalview import ModalView
 # IMPORT THUẦN KIVY ĐỂ CHỐNG CRASH CHO POPUP
 from kivy.uix.button import Button
@@ -20,6 +21,7 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
+from kivymd.uix.progressindicator import MDCircularProgressIndicator
 from kivy.uix.screenmanager import SlideTransition
 
 # Import mock data từ file mock_data.py
@@ -262,11 +264,13 @@ class SearchScreen(MDScreen):
         }
         self.filter_important_only = False
 
-        # Phân trang lazy loading: vẽ 10 thẻ mỗi đợt khi cuộn để chống giật lag
+        # Phân trang lazy loading: vẽ 15 thẻ mỗi đợt khi cuộn để chống giật lag
         self._all_matching_events = []
         self._rendered_count = 0
-        self._batch_size = 10
+        self._batch_size = 15
         self._is_rendering_batch = False
+        self._render_queue = []
+        self._render_clock_event = None
 
         # Đăng ký lắng nghe thay đổi từ store để tự động làm mới kết quả tìm kiếm
         store.on_change(self._on_store_changed)
@@ -280,10 +284,60 @@ class SearchScreen(MDScreen):
             else:
                 self._needs_refresh = True
 
+    def show_loading(self):
+        """
+        Hiển thị biểu tượng xoay tròn (loading indicator) ở chính giữa khung chứa sự kiện.
+        Đồng thời hủy các tiến trình vẽ dở dang và dọn sạch các thẻ sự kiện cũ.
+        """
+        self._cancel_progressive_rendering()
+        if hasattr(self, "results_box"):
+            self.results_box.clear_widgets()
+        if hasattr(self, "loading_spinner"):
+            self.loading_spinner.opacity = 1
+            self.loading_spinner.active = True
+            self.loading_spinner.disabled = False
+
+    def hide_loading(self):
+        """Ẩn biểu tượng xoay tròn sau khi đã bắt đầu nạp sự kiện hoặc tìm kiếm xong."""
+        if hasattr(self, "loading_spinner"):
+            self.loading_spinner.opacity = 0
+            self.loading_spinner.active = False
+            self.loading_spinner.disabled = True
+
+    def _cancel_progressive_rendering(self):
+        """Hủy bỏ hàng đợi vẽ dở dang nếu người dùng tìm kiếm mới, chuyển tab hoặc rời màn hình."""
+        if self._render_clock_event is not None:
+            self._render_clock_event.cancel()
+            self._render_clock_event = None
+        self._render_queue.clear()
+        self._is_rendering_batch = False
+
+    def on_pre_enter(self, *args):
+        """
+        Kích hoạt ngay khi bắt đầu bấm chuyển sang tab SearchScreen:
+        Thay vì vẽ ngay lập tức gây khựng hiệu ứng chuyển tab, chỉ hiển thị biểu tượng loading
+        ở chính giữa khung chứa sự kiện.
+        """
+        self.show_loading()
+
     def on_enter(self, *args):
-        if getattr(self, "_needs_refresh", False):
-            self._needs_refresh = False
-            self.perform_search()
+        """
+        Kích hoạt sau khi chuyển động chuyển tab hoàn tất:
+        Bắt đầu xử lý tìm kiếm và lần lượt vẽ các thẻ sự kiện ra màn hình.
+        """
+        # Trì hoãn nhẹ 0.1s sau khi kết thúc chuyển động để đảm bảo frame chuyển động hoàn toàn mượt mà
+        Clock.schedule_once(lambda dt: self.perform_search(), 0.1)
+        store.refresh(api, on_done=self._on_store_refresh_done)
+
+    def on_leave(self, *args):
+        """Dọn dẹp hàng đợi vẽ dở dang khi người dùng rời khỏi màn hình tìm kiếm."""
+        self._cancel_progressive_rendering()
+
+    def _on_store_refresh_done(self):
+        """Cập nhật lại kết quả tìm kiếm sau khi đồng bộ nền từ server hoàn tất."""
+        if hasattr(self, "txt_search") and self.search_mode == "schedule":
+            if self.get_root_window() and getattr(self.parent, "current", None) == self.name:
+                self.perform_search()
 
     def build_ui(self, dt):
         self.main_layout = MDBoxLayout(orientation='vertical')
@@ -366,13 +420,30 @@ class SearchScreen(MDScreen):
         mode_bar.add_widget(self.btn_mode_academic)
         self.main_layout.add_widget(mode_bar_outer)
 
-        self.results_scroll = ScrollView(size_hint=(1, 1))
+        # Khung chứa danh sách sự kiện và biểu tượng xoay tròn loading ở chính giữa
+        self.results_container = FloatLayout(size_hint=(1, 1))
+
+        self.results_scroll = ScrollView(size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
         self.results_scroll.bind(scroll_y=self._on_scroll)
         self.results_box = MDBoxLayout(orientation='vertical', size_hint_y=None, padding=dp(15), spacing=dp(10))
         self.results_box.bind(minimum_height=self.results_box.setter('height'))
 
         self.results_scroll.add_widget(self.results_box)
-        self.main_layout.add_widget(self.results_scroll)
+        self.results_container.add_widget(self.results_scroll)
+
+        # Biểu tượng xoay tròn (loading indicator) đặt chính giữa khung chứa sự kiện
+        self.loading_spinner = MDCircularProgressIndicator(
+            size_hint=(None, None),
+            size=(dp(44), dp(44)),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+            color=BLUE_COLOR
+        )
+        self.loading_spinner.opacity = 0
+        self.loading_spinner.active = False
+        self.loading_spinner.disabled = True
+        self.results_container.add_widget(self.loading_spinner)
+
+        self.main_layout.add_widget(self.results_container)
 
         nav_bar = MDBoxLayout(
             orientation='horizontal', size_hint_y=None, height=dp(50), 
@@ -384,7 +455,8 @@ class SearchScreen(MDScreen):
         self.main_layout.add_widget(nav_bar)
 
         self.txt_search.bind(text=self.on_text_change)
-        self.perform_search()
+        # Khởi tạo trạng thái chờ tải khi dựng UI ban đầu
+        self.show_loading()
 
     def switch_mode(self, mode):
         self.search_mode = mode
@@ -522,24 +594,20 @@ class SearchScreen(MDScreen):
         self.filter_modal.dismiss()
         self.perform_search()
 
-    def on_pre_enter(self, *args):
-        """Hiển thị kết quả ngay từ cache để tránh khựng UI, sau đó đồng bộ nền từ server."""
-        if hasattr(self, "txt_search"):
-            self.perform_search()
-        store.refresh(api, on_done=lambda: self.perform_search() if hasattr(self, "txt_search") else None)
-
     def _on_scroll(self, instance, scroll_y):
-        """Lắng nghe sự kiện cuộn chuột/ngón tay; khi gần tới đáy (scroll_y <= 0.15) vẽ tiếp 10 thẻ."""
+        """Lắng nghe sự kiện cuộn chuột/ngón tay; khi gần tới đáy (scroll_y <= 0.15) vẽ tiếp tối đa 15 thẻ."""
         if self.search_mode == "schedule" and scroll_y <= 0.15:
             self._render_next_batch()
 
     def _set_search_results(self, matching_events):
-        """Khởi tạo danh sách kết quả và vẽ mẻ đầu tiên (10 sự kiện) để giao diện luôn mượt mà."""
+        """Khởi tạo danh sách kết quả và bắt đầu vẽ mẻ đầu tiên (tối đa 15 sự kiện) lần lượt."""
+        self._cancel_progressive_rendering()
         self._all_matching_events = matching_events or []
         self._rendered_count = 0
         self.results_box.clear_widgets()
 
         if not self._all_matching_events:
+            self.hide_loading()
             self.results_box.add_widget(MDLabel(
                 text="No results found!",
                 halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
@@ -548,24 +616,53 @@ class SearchScreen(MDScreen):
             return
 
         self.results_scroll.scroll_y = 1.0
+        # Bắt đầu vẽ mẻ đầu tiên (tối đa 15 sự kiện), vẽ lần lượt qua Clock
         self._render_next_batch()
 
     def _render_next_batch(self):
-        """Vẽ mẻ tiếp theo gồm tối đa 10 sự kiện khi người dùng cuộn trang xuống."""
+        """
+        Vẽ mẻ tiếp theo gồm tối đa 15 sự kiện:
+        Thực hiện vẽ lần lượt (progressive rendering) qua từng nhịp Clock
+        để giao diện hiển thị mượt mà, không bị khựng đơ khung hình.
+        """
         if getattr(self, "_is_rendering_batch", False):
             return
         if self._rendered_count >= len(self._all_matching_events):
+            self.hide_loading()
             return
 
         self._is_rendering_batch = True
         next_end = min(self._rendered_count + self._batch_size, len(self._all_matching_events))
-        batch = self._all_matching_events[self._rendered_count:next_end]
+        items_to_render = self._all_matching_events[self._rendered_count:next_end]
+        
+        # Đưa các sự kiện vào hàng đợi để vẽ lần lượt
+        self._render_queue.extend(items_to_render)
+        self._step_render()
 
-        for event in batch:
-            self.results_box.add_widget(EventCard(event))
-            self._rendered_count += 1
+    def _step_render(self, *args):
+        """Vẽ lần lượt từng sự kiện trong hàng đợi qua từng nhịp Clock."""
+        if not self._render_queue:
+            self._is_rendering_batch = False
+            self.hide_loading()
+            return
 
-        self._is_rendering_batch = False
+        # Mỗi nhịp Clock thêm 1-2 sự kiện để mắt người dùng thấy xuất hiện nối tiếp và không drop frame
+        batch_slice = 2
+        for _ in range(batch_slice):
+            if self._render_queue:
+                event = self._render_queue.pop(0)
+                card = EventCard(event)
+                self.results_box.add_widget(card)
+                self._rendered_count += 1
+
+        # Ẩn spinner loading khi đã bắt đầu có thẻ sự kiện hiển thị
+        if self._rendered_count > 0:
+            self.hide_loading()
+
+        if self._render_queue:
+            self._render_clock_event = Clock.schedule_once(self._step_render, 0.015)
+        else:
+            self._is_rendering_batch = False
 
     # --- LOGIC TÌM KIẾM ---
     def on_text_change(self, instance, value):
@@ -579,6 +676,7 @@ class SearchScreen(MDScreen):
             app.root.current = target_screen
 
     def _show_redirect_banner(self, message, redirect_target, redirect_label):
+        self.hide_loading()
         self.results_box.clear_widgets()
         card = MDBoxLayout(
             orientation='vertical',
@@ -609,6 +707,7 @@ class SearchScreen(MDScreen):
         self.results_box.add_widget(card)
 
     def perform_search(self, *args):
+        self.show_loading()
         query = self.txt_search.text.strip()
         if self.search_mode == "academic":
             self._perform_academic_search(query)
@@ -685,8 +784,9 @@ class SearchScreen(MDScreen):
         self._set_search_results(matching)
 
     def _perform_academic_search(self, query):
-        self.results_box.clear_widgets()
         if not query:
+            self.hide_loading()
+            self.results_box.clear_widgets()
             hint_box = MDBoxLayout(
                 orientation='vertical', padding=dp(15), spacing=dp(8),
                 md_bg_color=WHITE_COLOR, radius=[dp(12)], adaptive_height=True
@@ -702,12 +802,7 @@ class SearchScreen(MDScreen):
             self.results_box.add_widget(hint_box)
             return
 
-        self.results_box.add_widget(MDLabel(
-            text="Searching academic knowledge base...",
-            halign="center", theme_text_color="Custom", text_color=GRAY_TEXT,
-            font_style="Body", role="medium", size_hint_y=None, height=dp(40)
-        ))
-
+        self.show_loading()
         api.ask_academic_kb(
             query,
             on_success=self._on_academic_ok,
@@ -716,6 +811,7 @@ class SearchScreen(MDScreen):
         )
 
     def _on_academic_ok(self, req, res):
+        self.hide_loading()
         self.results_box.clear_widgets()
         if not isinstance(res, dict):
             self.results_box.add_widget(MDLabel(
@@ -779,6 +875,7 @@ class SearchScreen(MDScreen):
             self.results_box.add_widget(cite_container)
 
     def _on_academic_error(self, req, err):
+        self.hide_loading()
         self.results_box.clear_widgets()
         err_msg = "Cannot connect to academic search server."
         if isinstance(err, dict) and err.get("detail"):
