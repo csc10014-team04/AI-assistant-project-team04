@@ -1,7 +1,6 @@
 # [pic: khoi] p1-7 conversational scheduling entry & cross-tab redirect (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import re
-import threading
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -19,20 +18,6 @@ from services.security import get_current_user
 from services.temporal import resolve_date_hint
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
-_clarification_table_lock = threading.Lock()
-_clarification_table_ready = False
-
-
-def _ensure_clarification_table(db: Session) -> None:
-    """ensure pending_clarifications exists even on pre-initialized MySQL volumes."""
-    global _clarification_table_ready
-    if _clarification_table_ready:
-        return
-    with _clarification_table_lock:
-        if _clarification_table_ready:
-            return
-        PendingClarification.__table__.create(bind=db.get_bind(), checkfirst=True)
-        _clarification_table_ready = True
 
 
 class UnderstandRequest(BaseModel):
@@ -126,8 +111,6 @@ def understand(
     parent = None
     abandoned = 0
     now = datetime.now(UTC_TZ)
-
-    _ensure_clarification_table(db)
     pending = db.get(PendingClarification, current_user.id)
     context = None
 
@@ -350,7 +333,7 @@ def understand(
         message = None
     available_slots: list[FallbackSlotOut] = []
     if result.fallback_mode:
-        message = "Trợ lý AI đang bận. Chuyển sang chế độ chọn lịch trực tiếp."
+        message = "AI Assistant is currently busy. Switching to manual slot selection."
         if result.intent != "query_schedule":
             now_vn = now.astimezone(VN_TZ)
             start_date = result.window_start or now_vn.date()
@@ -384,13 +367,13 @@ def understand(
             "title": created.task.title,
         })
         if created is None:
-            message = "Không tìm thấy khung giờ trống phù hợp trong khoảng thời gian này. Bạn thử chọn ngày khác nhé."
+            message = "No suitable free slot was found in this time range. Please try another date."
         else:
             if parent is not None:
                 parent.status = ProposalStatus.RESCHEDULED
             db.flush()
             proposal = proposal_out(created)
-            message = "Mình đề xuất khung giờ này, bạn xác nhận nhé."
+            message = "Here is a suggested time slot. Please confirm or adjust it."
     print("[DEBUG CLARIFICATION]", {
         "user_id": current_user.id,
         "pending_exists": pending is not None,
@@ -403,11 +386,11 @@ def understand(
     redirect_button_label: str | None = None
     if result.intent == "query_schedule":  # a calendar / academic question belongs in the search tab
         message = (
-            "It seems bạn đang muốn tra cứu lịch trình hoặc hỏi đáp học vụ. "
-            "Khung 'Trợ lý AI' chỉ dùng để xếp lịch công việc mới; bạn hãy bấm nút 'Tìm kiếm' để chuyển sang trang Tra cứu nhé."
+            "It looks like you want to search your schedule or ask an academic question. "
+            "The AI Assistant tab is for scheduling tasks; tap 'Search' to switch to the Search tab."
         )
         redirect_target = "search_home"
-        redirect_button_label = "Tìm kiếm"
+        redirect_button_label = "Search"
 
     return UnderstandResponse(
         nlu=result,

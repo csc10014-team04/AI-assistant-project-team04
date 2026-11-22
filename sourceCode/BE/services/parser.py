@@ -264,26 +264,17 @@ def _is_header_row(cells: list[str]) -> bool:
 
 
 def _parse_time_cell(value: str) -> time:
-    """Parse an HH:MM cell, accepting and discarding an ISO timezone suffix.
+    """Parse a strict 24-hour wall-clock HH:MM cell without timezone suffixes.
 
-    Input: a time cell such as '08:00', '8:00Z', or '08:00+07:00'.
-    Output: a naive time preserving the displayed wall-clock hour and minute.
-    Edge Cases Handled: Invalid offsets still fail; the legacy no-suffix format stays unchanged.
+    Input: a time cell such as '08:00' or '08:00:00'.
+    Output: a naive time value.
+    Edge Cases Handled: Rejects ISO timezone suffixes ('08:00Z', '08:00+07:00') with ValueError
+    so callers isolate malformed rows instead of crashing or stripping offsets.
     """
-    timezone_match = re.fullmatch(
-        r"(\d{1,2}:\d{2})(Z|[+-]\d{2}:\d{2})",
-        value.strip(),
-        flags=re.IGNORECASE,
-    )
-    if timezone_match is None:
-        return time.fromisoformat(value)
-
-    clock_text, timezone_suffix = timezone_match.groups()
-    hour_text, minute_text = clock_text.split(":", maxsplit=1)
-    normalized_clock = f"{int(hour_text):02d}:{minute_text}"
-    iso_offset = "+00:00" if timezone_suffix.upper() == "Z" else timezone_suffix
-    parsed_time = time.fromisoformat(f"{normalized_clock}{iso_offset}")
-    return parsed_time.replace(tzinfo=None)
+    parsed_time = time.fromisoformat(value.strip())
+    if parsed_time.tzinfo is not None:
+        raise ValueError(f"Timezone suffix is not allowed in time cell: {value!r}")
+    return parsed_time
 
 
 def _parse_and_validate_row(
@@ -716,12 +707,9 @@ def _parse_timetable_table_rows(
     previous_course_code = ""
     previous_title = ""
     previous_semester = ""
-    low_confidence_cells = low_confidence_cells or set()
+    _ = low_confidence_cells  # kept for caller signature compatibility; UI warnings are suppressed
 
-    for table_row_index, table_row in enumerate(
-        table_rows[header_position + 1:],
-        start=header_position + 1,
-    ):
+    for table_row in table_rows[header_position + 1:]:
         if not any(cell.strip() for cell in table_row):
             continue
 
@@ -774,30 +762,6 @@ def _parse_timetable_table_rows(
                 combined_schedule = f"{weekday_text} {start_text}-{end_text}".strip()
                 schedule_entries.extend(_schedule_entries_from_text(combined_schedule))
 
-        important_fields = (
-            "course_code",
-            "title",
-            "weekday",
-            "start_time",
-            "end_time",
-            "room",
-            "first_date",
-            "last_date",
-            "semester",
-            "lecture_schedule",
-            "practice_schedule",
-            "schedule",
-        )
-        important_columns = {
-            header_map[field_name]
-            for field_name in important_fields
-            if field_name in header_map
-        }
-        row_has_low_confidence = any(
-            (table_row_index, column_index) in low_confidence_cells
-            for column_index in important_columns
-        )
-
         if not schedule_entries:
             invalid_rows.append(InvalidCsvRow(
                 line_number=next_line_number,
@@ -814,17 +778,6 @@ def _parse_timetable_table_rows(
         for weekday, start_text, end_text, room_from_schedule, schedule_error in schedule_entries:
             row_line_number = next_line_number
             next_line_number += 1
-            if row_has_low_confidence:
-                invalid_rows.append(InvalidCsvRow(
-                    line_number=row_line_number,
-                    raw_text=raw_text,
-                    error_code="OCR_LOW_CONFIDENCE",
-                    error_message=(
-                        "OCR confidence is low in a course or schedule cell. "
-                        "Review and correct this session before importing it."
-                    ),
-                ))
-                continue
             if schedule_error is not None:
                 invalid_rows.append(InvalidCsvRow(
                     line_number=row_line_number,
@@ -1370,9 +1323,9 @@ def extract_raw_text_from_file(file_bytes: bytes, filename: str) -> str:
 
     # --- Plain text formats: CSV, Markdown, plain text ---
     if ext in (".csv", ".txt", ".md", ""):
-        # Try UTF-8 first (most common), fall back to latin-1 for legacy Windows files
+        # Strip optional Excel UTF-8 BOM before falling back to latin-1
         try:
-            return file_bytes.decode("utf-8")
+            return file_bytes.decode("utf-8-sig")
         except UnicodeDecodeError:
             return file_bytes.decode("latin-1")
 
@@ -1555,8 +1508,8 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                             raw_text=f"{filename} page {page_number}",
                             error_code="PDF_PAGE_REQUIRES_OCR",
                             error_message=(
-                                "This PDF page is image-only. Install Pillow and pytesseract "
-                                "with the Vietnamese OCR language data to read it."
+                                "This scanned PDF page cannot be read right now. "
+                                "Please upload a text-based PDF, .csv, or .txt file."
                             ),
                         )],
                     ))
@@ -1585,14 +1538,17 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
 
                     page_ocr_text = pytesseract.image_to_string(page_image, lang="vie+eng")
                     page_results.append(parse_timetable_content(page_ocr_text, filename))
-                except Exception as error:
+                except Exception:
                     page_results.append(ParseBatchResult(
                         import_batch_id=import_batch_id,
                         invalid_rows=[InvalidCsvRow(
                             line_number=page_number,
                             raw_text=f"{filename} page {page_number}",
                             error_code="PDF_PAGE_OCR_FAILED",
-                            error_message=f"Could not read this scanned page: {type(error).__name__}: {error}",
+                            error_message=(
+                                "Could not read this scanned page clearly. "
+                                "Please upload a clearer image or a .csv/.txt file."
+                            ),
                         )],
                     ))
     except Exception as error:

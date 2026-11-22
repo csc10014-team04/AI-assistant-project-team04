@@ -14,10 +14,11 @@ import uuid
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import Table, text
 from sqlalchemy.orm import Session
 
-from database import UTC_TZ, get_db
+from database import UTC_TZ, engine, get_db
+from models import Base, PendingClarification
 from services.llm_config import describe_runtime_ai_config, load_be_dotenv
 
 load_be_dotenv()  # load .env values before router/telemetry/privacy modules read env vars
@@ -25,6 +26,7 @@ load_be_dotenv()  # load .env values before router/telemetry/privacy modules rea
 from routers import assistant, auth, events, ingestion, oauth, proposals, reminders, search, tasks
 from services import ai_logging
 from services.ai_logging import read_recent_ai_calls
+from services.security import validate_security_config
 from services.telemetry import collector
 
 AI_ERROR_LOG_PATH = ai_logging.LOG_PATH
@@ -99,6 +101,14 @@ def _extract_be_origin(exc: Exception) -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_security_config()
+    # create pending_clarifications before serving requests to avoid mysql metadata locks
+    tbl = PendingClarification.__table__
+    if isinstance(tbl, Table):
+        try:
+            Base.metadata.create_all(bind=engine, tables=[tbl], checkfirst=True)
+        except Exception:
+            pass  # offline / sqlite unit tests initialize tables via conftest.py
     collector.start()  # no-op unless TELEMETRY_INTERVAL_SECONDS > 0
     try:
         yield
