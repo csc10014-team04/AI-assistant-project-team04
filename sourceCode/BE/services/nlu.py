@@ -67,6 +67,10 @@ FEW_SHOT: list[dict[str, str]] = [
     {"role": "assistant", "content": '{"intent":"schedule_task","title":"học bài","duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
     {"role": "user", "content": "hôm nay trời đẹp quá"},
     {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
+    {"role": "user", "content": "thank you"},
+    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
+    {"role": "user", "content": "dịch giúp mình câu này sang tiếng Anh"},
+    {"role": "assistant", "content": '{"intent":"unknown","title":null,"duration_minutes":null,"priority":null,"preferred_time_of_day":null,"avoid_time_of_day":null,"date_hint":null,"deadline_hint":null}'},
 ]
 
 
@@ -314,6 +318,28 @@ def _extract_title(text: str) -> str | None:
     return cleaned[:255] or None
 
 
+_ENGLISH_QUERY_SCHEDULE_RE = re.compile(
+    r"\b(?:what(?:'s|\s+is|\s+are)?|when|show|view|check|see|list|on\s+my|my|the)\s+(?:\w+\s+){0,2}schedule\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_EN_SCHED_VERB_RE = re.compile(
+    r"(?:^|\b(?:please|can\s+you|could\s+you|help\s+me|want\s+to|need\s+to|let's|to)\s+)(?:schedule|plan|book)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_scheduling_verb(lowered: str) -> bool:
+    """distinguish English/Vietnamese scheduling commands from passive schedule queries like 'what is my schedule'."""
+    if re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch)\b", lowered):
+        return True
+    if _EXPLICIT_EN_SCHED_VERB_RE.search(lowered):
+        return True
+    if re.search(r"\b(schedule|plan|book)\b", lowered) and not _ENGLISH_QUERY_SCHEDULE_RE.search(lowered):
+        if not re.match(r"^\s*(what|when|where|which|show|view|check|list|do\s+i\s+have)\b", lowered):
+            return True
+    return False
+
+
 def rule_based_understand(text: str) -> NluResult:
     """
     input: text (str) sanitized prompt.
@@ -335,9 +361,9 @@ def rule_based_understand(text: str) -> NluResult:
     stripped_clock = _strip_clock_times(text)
     has_explicit_duration = _has_explicit_duration(text)
     extracted_title = _extract_title(text_without_deadline)
-    has_sched_verb = bool(re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", lowered))
+    has_sched_verb = _has_scheduling_verb(lowered)
 
-    if re.search(r"\b(xóa|xoa|hủy|huy|delete|cancel)\b", lowered):
+    if re.search(r"\b(xóa|xoá|xoa|hủy|huỷ|huy|delete|cancel)\b", lowered):
         intent: Intent = "delete_event"
     elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
         intent = "reschedule"
@@ -461,7 +487,10 @@ def _finalize(
                 result.window_start = now.astimezone(VN_TZ).date()
     if result.intent == "schedule_task" and result.duration_minutes is None:
         result.needs_clarification = True
-        result.clarification_question = result.clarification_question or "Bạn muốn dành bao lâu cho hoạt động này?"
+        result.clarification_question = (
+            result.clarification_question
+            or "How long would you like to spend on this activity?"
+        )
     if result.intent == "schedule_task" and not result.title:
         result.needs_clarification = True
         result.clarification_question = (
@@ -543,7 +572,13 @@ def understand_prompt(
     now_vn = reference_now.astimezone(VN_TZ)
     system = f"{SYSTEM_PROMPT} Now: {now_vn:%Y-%m-%d %A %H:%M} (+07:00)."
     messages = [{"role": "system", "content": system}, *FEW_SHOT, {"role": "user", "content": safe_prompt}]
-    payload = {"model": model_name, "messages": messages, "max_tokens": 200, "temperature": 0.0}
+    payload = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": 200,
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"},
+    }
 
     http = client or httpx.Client(timeout=timeout_sec)
     raw_output: str | None = None
@@ -618,9 +653,9 @@ def understand_prompt(
             # Never treat a healthy LLM "unknown" reply (e.g. bare duration or chitchat) as AI busy/down
             if result.intent == "unknown":
                 bare_duration = _has_explicit_duration(safe_prompt) and not _extract_title(safe_prompt)
-                has_explicit_sched = bool(
-                    re.search(r"\b(xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|schedule|plan|book)\b", safe_prompt, re.IGNORECASE)
-                ) and (rules.title is not None or rules.duration_minutes is not None)
+                has_explicit_sched = _has_scheduling_verb(safe_prompt.lower()) and (
+                    rules.title is not None or rules.duration_minutes is not None
+                )
                 if bare_duration or has_explicit_sched:
                     result.intent = "schedule_task"
                     if not result.title:

@@ -75,17 +75,19 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         try:
             d = date(year, month, day)
         except ValueError:
-            default.clarification_question = f'Ngày "{month_date.group(0)}" không hợp lệ. Bạn muốn chọn ngày nào?'
+            default.clarification_question = f'The date "{month_date.group(0)}" is invalid. Which date would you like to choose?'
             return default
         if not has_year and d < today:
             try:
                 d = date(year + 1, month, day)
             except ValueError:
-                default.clarification_question = f'Ngày "{month_date.group(0)}" không hợp lệ trong năm tiếp theo.'
+                default.clarification_question = (
+                    f'The date "{month_date.group(0)}" is invalid in the next year. Which date would you like to choose?'
+                )
                 return default
         return ResolvedWindow(d, d)
     if any(v in h for v in _VAGUE):
-        default.clarification_question = "Bạn muốn xếp vào ngày nào? (ví dụ: ngày mai, thứ sáu, tuần sau)"
+        default.clarification_question = "Which date would you like to schedule this for? (e.g., tomorrow, Friday, next week)"
         default.note = "vague date; defaulted to next 7 days"
         return default
 
@@ -98,7 +100,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         try:
             d = date(year, month, day)
         except ValueError:
-            default.clarification_question = f"Ngày {m.group(0)} không hợp lệ, bạn muốn ngày nào?"
+            default.clarification_question = f'The date "{m.group(0)}" is invalid. Which date would you like to choose?'
             return default
         if not m.group(3) and d < today:
             d = date(year + 1, month, day)
@@ -110,14 +112,16 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         try:
             d = date(year, today.month, day)
         except ValueError:
-            default.clarification_question = f"Ngày {ordinal.group(0)} không hợp lệ, bạn muốn ngày nào?"
+            default.clarification_question = f'The date "{ordinal.group(0)}" is invalid. Which date would you like to choose?'
             return default
         if d < today:
             next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
             try:
                 d = date(next_month.year, next_month.month, day)
             except ValueError:
-                default.clarification_question = f"Ngày {ordinal.group(0)} không hợp lệ trong tháng tiếp theo."
+                default.clarification_question = (
+                    f'The date "{ordinal.group(0)}" is invalid in the next month. Which date would you like to choose?'
+                )
                 return default
         return ResolvedWindow(d, d)
     if "hôm nay" in h or h == "today":
@@ -152,7 +156,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         return ResolvedWindow(max(today, last - timedelta(days=6)), last)
 
     if wd or sunday:
-        target = 6 if sunday else _WEEKDAYS[wd.group(1)]
+        target = 6 if (sunday or wd is None) else _WEEKDAYS[wd.group(1)]
         if next_week:
             d = _week_monday(today) + timedelta(days=7 + target)
             return ResolvedWindow(d, d)
@@ -163,5 +167,5 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
             window.note = "weekday is today; assumed today (say 'tuần sau' for next week)"
         return window
 
-    default.clarification_question = f'Mình chưa hiểu "{hint}". Bạn muốn xếp vào ngày nào?'
+    default.clarification_question = f'I could not understand the date "{hint}". Which date would you like to schedule this for?'
     return default

@@ -348,9 +348,18 @@ def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
 
 
 _SCHEDULING_CMD_RE = re.compile(
-    r"\b(xếp\s+lịch|xep\s+lich|sắp\s+xếp|sap\s+xep|xếp\s+cho\s+mình|xep\s+cho\s+minh|"
-    r"đặt\s+lịch|dat\s+lich|thêm\s+lịch|them\s+lich|dời\s+lịch|doi\s+lich|"
-    r"xóa\s+lịch|xoa\s+lich|hủy\s+buổi|schedule\s+for\s+me)\b",
+    r"\b("
+    r"xếp\s+lịch|xep\s+lich|sắp\s+xếp|sap\s+xep|"
+    r"xếp\s+(?:cho\s+mình|cho\s+toi|cho\s+tôi|giúp\s+mình|giup\s+minh|giúp\s+tôi|giup\s+toi)|"
+    r"xep\s+(?:cho\s+minh|cho\s+toi|giup\s+minh|giup\s+toi)|"
+    r"(?:xếp|xep)\s+\d+(?:[.,]\d+)?\s*(?:tiếng|tieng|giờ|gio|h|phút|phut|p|hours?|hrs?|mins?|minutes?)|"
+    r"đặt\s+lịch|dat\s+lich|lên\s+lịch|len\s+lich|thêm\s+lịch|them\s+lich|"
+    r"dời\s+lịch|doi\s+lich|dời\s+buổi|doi\s+buoi|"
+    r"xóa\s+lịch|xoá\s+lịch|xoa\s+lich|xóa\s+buổi|xoá\s+buổi|xoa\s+buoi|"
+    r"hủy\s+lịch|huỷ\s+lịch|huy\s+lich|hủy\s+buổi|huỷ\s+buổi|huy\s+buoi|"
+    r"schedule\s+(?:for\s+me|a\s+|an\s+|\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|mins?|minutes?))|"
+    r"reschedule\s+(?:my\s+|the\s+)?"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -663,6 +672,33 @@ ACADEMIC_RAG_SYSTEM_PROMPT = (
     "do not mention it. Never invent regulations, room numbers, or deadlines."
 )
 
+_RAG_REFUSAL_PATTERNS = (
+    "khong de cap",
+    "khong co thong tin",
+    "khong du thong tin",
+    "khong tim thay thong tin",
+    "khong nam trong",
+    "ngoai pham vi",
+    "tai lieu khong",
+    "so tay khong",
+    "khong du du lieu",
+    "chua co thong tin",
+    "khong the tra loi",
+    "does not mention",
+    "do not mention",
+    "not enough information",
+    "not contain enough",
+    "cannot answer",
+)
+
+
+def _is_academic_rag_refusal(answer: str) -> bool:
+    """detect out-of-scope refusal answers so unrelated retrieved citations can be suppressed."""
+    folded = rag.fold(answer or "")
+    if any(pat in folded for pat in _RAG_REFUSAL_PATTERNS):
+        return True
+    return bool(re.search(r"ngu\s+canh[^\n.]{0,60}khong\s+(?:de\s+cap|co\s+thong\s+tin|du)", folded))
+
 
 def _get_academic_kb_dir(directory: Path | None = None) -> Path:
     """
@@ -767,25 +803,25 @@ def _retrieve_structured_kb_hits(
         sources = {s.id: s for s in db.scalars(select(KbSource)).all()}
 
         # 0. check faculties
-        for fac in faculties.values():
+        for faculty in faculties.values():
             cand = rag.fold(
-                f"khoa {fac.name} {fac.name_folded} {fac.short_name or ''} {fac.site_id} {fac.description or ''}"
+                f"khoa {faculty.name} {faculty.name_folded} {faculty.short_name or ''} {faculty.site_id} {faculty.description or ''}"
             )
             matched = sum(1 for tok in q_tokens if tok in cand)
             exact_fac = bool(
-                (fac.name_folded and fac.name_folded in q_fold)
-                or (fac.short_name and rag.fold(fac.short_name) in q_tokens)
-                or (fac.site_id and rag.fold(fac.site_id) in q_tokens)
+                (faculty.name_folded and faculty.name_folded in q_fold)
+                or (faculty.short_name and rag.fold(faculty.short_name) in q_tokens)
+                or (faculty.site_id and rag.fold(faculty.site_id) in q_tokens)
             )
             if matched == 0 and not exact_fac:
                 continue
             score = 0.90 if exact_fac else 0.80 * (matched / len(q_tokens))
             if score >= 0.4:
-                src = sources.get(fac.source_id) if fac.source_id else None
-                text = f"Khoa: {fac.name}"
-                if fac.description:
-                    text += f" | Giới thiệu: {fac.description[:240]}"
-                hits.append(rag.Hit(text=text, score=round(score, 4), source=(src.url if src else None) or fac.home_url or "kb_faculties"))
+                src = sources.get(faculty.source_id) if faculty.source_id else None
+                text = f"Khoa: {faculty.name}"
+                if faculty.description:
+                    text += f" | Giới thiệu: {faculty.description[:240]}"
+                hits.append(rag.Hit(text=text, score=round(score, 4), source=(src.url if src else None) or faculty.home_url or "kb_faculties"))
 
         # 1. check active lecturers (preferring APPROVED rows, falling back to non-REJECTED)
         lecturers = list(
@@ -934,7 +970,7 @@ def ask_academic_knowledge_base(
         return {
             "query": raw_query,
             "normalized_query": "",
-            "answer": "Vui lòng nhập nội dung câu hỏi học vụ.",
+            "answer": "Please enter an academic question.",
             "citations": [],
             "fallback_mode": False,
             "redirect_target": None,
@@ -945,14 +981,14 @@ def ask_academic_knowledge_base(
             "query": raw_query,
             "normalized_query": normalized_query,
             "answer": (
-                "It seems bạn đang muốn yêu cầu xếp lịch công việc. "
-                "Trang 'Tìm kiếm' chỉ dùng để tra cứu lịch trình và hỏi đáp học vụ; "
-                "bạn hãy bấm nút 'Trợ lý AI' để chuyển sang khung xếp lịch thông minh nhé."
+                "It looks like you want to schedule a task. "
+                "The Search tab is for looking up events and academic information; "
+                "tap 'AI Assistant' to switch to the scheduling assistant."
             ),
             "citations": [],
             "fallback_mode": False,
             "redirect_target": "chat_home",
-            "redirect_button_label": "Trợ lý AI",
+            "redirect_button_label": "AI Assistant",
         }
 
     # steps 1, 2, 3: retrieve from structured kb_* sql tables + academic vector store, and collect top-k chunks
@@ -984,7 +1020,7 @@ def ask_academic_knowledge_base(
         return {
             "query": raw_query,
             "normalized_query": normalized_query,
-            "answer": "Không tìm thấy thông tin phù hợp trong cơ sở tri thức học vụ.",
+            "answer": "No matching information was found in the academic knowledge base.",
             "citations": [],
             "fallback_mode": False,
         }
@@ -1047,7 +1083,7 @@ def ask_academic_knowledge_base(
                 "query": raw_query,
                 "normalized_query": normalized_query,
                 "answer": raw_output,
-                "citations": citations,
+                "citations": [] if _is_academic_rag_refusal(raw_output) else citations,
                 "fallback_mode": False,
             }
         db_err_type = AiErrorType.SEMANTIC_FAILURE
@@ -1108,7 +1144,7 @@ def ask_academic_knowledge_base(
     return {
         "query": raw_query,
         "normalized_query": normalized_query,
-        "answer": f"Trợ lý AI đang bận. Dưới đây là trích đoạn tài liệu học vụ liên quan:\n{fallback_excerpt}",
+        "answer": f"AI Assistant is currently busy. Relevant academic excerpts:\n{fallback_excerpt}",
         "citations": citations,
         "fallback_mode": True,
     }
