@@ -264,26 +264,20 @@ def _is_header_row(cells: list[str]) -> bool:
 
 
 def _parse_time_cell(value: str) -> time:
-    """Parse an HH:MM cell, accepting and discarding an ISO timezone suffix.
+    """Parse an HH:MM prefix and ignore accidental trailing cell text.
 
-    Input: a time cell such as '08:00', '8:00Z', or '08:00+07:00'.
+    Input: a time cell such as '08:00', '8:00Z', or '8:00zdas'.
     Output: a naive time preserving the displayed wall-clock hour and minute.
-    Edge Cases Handled: Invalid offsets still fail; the legacy no-suffix format stays unchanged.
+    Edge Cases Handled: Invalid hour/minute values still fail; a bare single-digit hour
+    retains the existing validator behavior unless followed by trailing text.
     """
-    timezone_match = re.fullmatch(
-        r"(\d{1,2}:\d{2})(Z|[+-]\d{2}:\d{2})",
-        value.strip(),
-        flags=re.IGNORECASE,
-    )
-    if timezone_match is None:
+    time_prefix_match = re.match(r"^\s*(\d{1,2})[:.](\d{2})(.*)$", value)
+    if time_prefix_match is None or not time_prefix_match.group(3).strip():
         return time.fromisoformat(value)
 
-    clock_text, timezone_suffix = timezone_match.groups()
-    hour_text, minute_text = clock_text.split(":", maxsplit=1)
+    hour_text, minute_text, _trailing_text = time_prefix_match.groups()
     normalized_clock = f"{int(hour_text):02d}:{minute_text}"
-    iso_offset = "+00:00" if timezone_suffix.upper() == "Z" else timezone_suffix
-    parsed_time = time.fromisoformat(f"{normalized_clock}{iso_offset}")
-    return parsed_time.replace(tzinfo=None)
+    return time.fromisoformat(normalized_clock)
 
 
 def _parse_and_validate_row(
