@@ -1169,9 +1169,13 @@ class ImportStep1Modal(ModalView):
         elif isinstance(res, str):
             error_msg = res
 
-        # Thông báo thân thiện nếu máy chủ thiếu Tesseract OCR
-        if "Tesseract OCR engine is not installed" in error_msg:
-            error_msg = "Server missing Tesseract OCR for images. Please import a .csv/.txt file or ask admin to install Tesseract."
+        # Thông báo thân thiện nếu ảnh/OCR chưa khả dụng (không lộ thông báo kỹ thuật OCR)
+        if (
+            "Tesseract OCR engine is not installed" in error_msg
+            or "OCR confidence" in error_msg
+            or "OCR" in error_msg
+        ):
+            error_msg = "Image import is currently unavailable. Please upload a .csv or .txt file instead."
 
         self.lbl_file.text = f"Error: {error_msg}"
         self.lbl_file.theme_text_color = "Error"
@@ -1212,7 +1216,14 @@ class ImportStep2Modal(ModalView):
         )
 
         valid_rows = self.preview_data.get("valid_rows", [])
-        invalid_rows = self.preview_data.get("invalid_rows", [])
+        raw_invalid_rows = self.preview_data.get("invalid_rows", [])
+        # Không hiển thị cảnh báo độ tự tin OCR kỹ thuật lên giao diện người dùng
+        invalid_rows = [
+            row
+            for row in raw_invalid_rows
+            if row.get("error_code") != "OCR_LOW_CONFIDENCE"
+            and "ocr confidence" not in str(row.get("error_message", "")).lower()
+        ]
         layout.add_widget(
             MDLabel(
                 text=f"Valid: {len(valid_rows)} events | Invalid: {len(invalid_rows)} lines",

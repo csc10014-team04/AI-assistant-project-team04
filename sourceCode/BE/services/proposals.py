@@ -242,7 +242,7 @@ def create_proposal(
         title, duration = task.title, task.duration_minutes
         excluded, fallback_start = [], None
     else:
-        title = (nlu.title or "Công việc").strip()[:255]
+        title = (nlu.title or "Task").strip()[:255]
         duration = nlu.duration_minutes or 60
         excluded, fallback_start = [], None
     excluded = excluded + list(extra_excluded or [])
@@ -329,16 +329,16 @@ def create_proposal(
         db.flush()
 
     rationale = (
-        f"Khung trống {chosen.start:%H:%M}-{chosen.end:%H:%M} ngày {chosen.start:%d/%m}, "
-        f"không trùng lịch học hay giờ ngủ."
+        f"Free slot {chosen.start:%H:%M}-{chosen.end:%H:%M} on {chosen.start:%d/%m}, "
+        "avoiding classes and sleep hours."
     )
     if extra:
         split_reason = (
-            f"vượt giới hạn liên tục {cap} phút (nghỉ {min_break} phút giữa các khối)"
+            f"it exceeds your {cap}-minute continuous work limit (with a {min_break}-minute break between blocks)"
             if duration > cap
-            else "không có khoảng trống liên tục đủ dài"
+            else "no single continuous free gap was long enough"
         )
-        rationale = f"Công việc {duration} phút được chia thành {len(pieces)} khối vì {split_reason}. " + rationale
+        rationale = f"This {duration}-minute task was split into {len(pieces)} blocks because {split_reason}. " + rationale
     proposal = Proposal(
         owner_id=owner_id,
         task_id=task.id,
@@ -447,7 +447,7 @@ def create_manual_event(
     db.flush()
     proposal = Proposal(
         owner_id=owner_id, task_id=task.id, start_time=to_db_utc(start), end_time=to_db_utc(end),
-        rationale="Người dùng tự chọn khung giờ.", source_prompt=None, status=ProposalStatus.CONFIRMED,
+        rationale="Manually selected by user.", source_prompt=None, status=ProposalStatus.CONFIRMED,
     )
     db.add(proposal)
     db.flush()
@@ -458,7 +458,7 @@ def create_manual_event(
 # ---------------------------------------------------------------------------------------------
 # priority queue (P2-5) and edge-case handling for a batch of pending tasks (P2-4)
 # ---------------------------------------------------------------------------------------------
-PRIORITY_LABEL = {1: "cao", 2: "trung bình", 3: "thấp"}
+PRIORITY_LABEL = {1: "high", 2: "medium", 3: "low"}
 
 
 def sort_queue(tasks: list[Task]) -> list[Task]:
@@ -511,7 +511,7 @@ def schedule_pending_tasks(
         )
         created = create_proposal(db, owner_id, nlu, task.title, now, task=task, extra_excluded=promised)
         if created is None:
-            dropped.append((task, f"không còn khoảng trống cho công việc ưu tiên {PRIORITY_LABEL.get(task.priority, task.priority)}"))
+            dropped.append((task, f"No free slot remaining for {PRIORITY_LABEL.get(task.priority, task.priority)}-priority task."))
             continue
         for slot in _slots_of(created):  # reserve break buffer between consecutive batch tasks
             promised.append(TimeSlot(slot.start - break_td, slot.end + break_td) if break_step > 0 else slot)

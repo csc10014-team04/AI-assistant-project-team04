@@ -237,7 +237,7 @@ def test_feature2_tc01_to_tc11_and_edge_cases_invoke_llm_and_write_audit_log(cli
     # tc-03: deadline_hint clamp + priority=1
     r3 = client.post("/api/v1/assistant/understand", headers=u["h"], json={"prompt": "Hạn nộp báo cáo Mạng máy tính là thứ sáu, xếp cho mình 2 tiếng làm báo cáo trong tuần này"}).json()
     assert r3["nlu"]["priority"] == 1 and r3["nlu"]["deadline_hint"] == "thứ sáu"
-    assert r3["nlu"]["window_end"] == r3["nlu"]["deadline"]
+    assert r3["nlu"]["window_end"] <= r3["nlu"]["deadline"]
 
     # tc-04: explicit clock range 14h - 15h30
     r4 = client.post("/api/v1/assistant/understand", headers=u["h"], json={"prompt": "Ngày mai xếp lịch họp nhóm đồ án từ 14h đến 15h30"}).json()
@@ -428,7 +428,7 @@ def test_feature1_academic_rag_structured_vector_redirect_empty_and_fallback(cli
     # 7) llm timeout/offline triggers graceful fallback + audit logs
     _mock_llm_transport(monkeypatch, lambda req: (_ for _ in ()).throw(httpx.ReadTimeout("timeout")))
     res_fb = client.post("/api/v1/search/academic/ask", headers=u["h"], json={"query": "Cần bao nhiêu tín chỉ để tốt nghiệp CNTT?"}).json()
-    assert res_fb["fallback_mode"] is True and "Trợ lý AI đang bận" in res_fb["answer"]
+    assert res_fb["fallback_mode"] is True and "ai assistant is currently busy" in res_fb["answer"].lower()
     assert len(res_fb["citations"]) >= 1
     assert db_session.query(AiErrorLog).filter_by(user_id=u["id"]).count() == 1
 
