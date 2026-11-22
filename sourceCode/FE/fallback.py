@@ -183,7 +183,7 @@ def parse_request(text: str, default_minutes: int = 60) -> dict:
     cleaned = re.sub(r"\b(?:xếp|xep|sắp xếp|sap xep)\s+lịch\b", " ", cleaned, flags=re.IGNORECASE)
     cleaned = _FILLER.sub(" ", cleaned)
     cleaned = re.sub(r"[^\w\s]", " ", cleaned)
-    title = re.sub(r"\s+", " ", cleaned).strip()[:100] or "Hoạt động"
+    title = re.sub(r"\s+", " ", cleaned).strip()[:100] or "Activity"
     result = {"title": title, "duration_minutes": duration, "fallback_mode": True}
     window = parse_clock_window(text)
     if window:

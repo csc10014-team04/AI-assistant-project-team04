@@ -222,3 +222,9 @@ __marimo__/
 # AI / telemetry runtime output
 sourceCode/BE/logs/
 sourceCode/BE/data/
+
+# Runtime frontend session & chat history state
+sourceCode/FE/auth_session.json
+sourceCode/FE/chat_history_db.json
+tests/auth_session.json
+tests/chat_history_db.json

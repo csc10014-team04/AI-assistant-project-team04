@@ -22,23 +22,32 @@ NOW = datetime(2026, 10, 19, 9, 0, tzinfo=VN_TZ)  # fixed Monday so expected win
 DATA = Path(__file__).resolve().parent.parent / "tests" / "data" / "nlu_eval.jsonl"
 
 
-def evaluate(rules_only: bool = False) -> dict:
+def evaluate(rules_only: bool = False) -> dict[str, int | float]:
     cases = [json.loads(line) for line in DATA.read_text(encoding="utf-8").splitlines() if line.strip()]
-    stats = {"n": len(cases), "llm_ok": 0, "fallback": 0, "intent_ok": 0, "duration_ok": 0, "hint_ok": 0, "bad_dates": 0}
+    counts: dict[str, int] = {
+        "n": len(cases),
+        "llm_ok": 0,
+        "fallback": 0,
+        "intent_ok": 0,
+        "duration_ok": 0,
+        "hint_ok": 0,
+        "bad_dates": 0,
+    }
     for c in cases:
         if rules_only:
             r = nlu.rule_based_understand(normalize_text(c["prompt"]).text)
         else:
             r = nlu.understand_prompt(c["prompt"], NOW)
-        stats["fallback" if r.fallback_mode else "llm_ok"] += 1
-        stats["intent_ok"] += r.intent == c["intent"]
-        stats["duration_ok"] += r.duration_minutes == c["duration_minutes"]
-        stats["hint_ok"] += (r.date_hint or None) == c["date_hint"]
+        counts["fallback" if r.fallback_mode else "llm_ok"] += 1
+        counts["intent_ok"] += int(r.intent == c["intent"])
+        counts["duration_ok"] += int(r.duration_minutes == c["duration_minutes"])
+        counts["hint_ok"] += int((r.date_hint or None) == c["date_hint"])
         if r.date_hint and r.date_hint.lower() not in normalize_text(c["prompt"]).text.lower():
-            stats["bad_dates"] += 1  # a date phrase that is not in the prompt = temporal hallucination
-    stats["schema_adherence_pct"] = round(100 * stats["llm_ok"] / stats["n"], 1)
+            counts["bad_dates"] += 1  # a date phrase that is not in the prompt = temporal hallucination
+    stats: dict[str, int | float] = dict(counts)
+    stats["schema_adherence_pct"] = round(100 * counts["llm_ok"] / counts["n"], 1)
     for k in ("intent_ok", "duration_ok", "hint_ok"):
-        stats[k.replace("_ok", "_acc_pct")] = round(100 * stats[k] / stats["n"], 1)
+        stats[k.replace("_ok", "_acc_pct")] = round(100 * counts[k] / counts["n"], 1)
     return stats
 
 

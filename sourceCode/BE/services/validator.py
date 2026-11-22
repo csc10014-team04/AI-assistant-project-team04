@@ -206,6 +206,23 @@ def check_hard_conflict(
     return conflicts
 
 
+def _bucket_slots_by_vn_date(
+    slot_groups: list[list[TimeSlot]],
+) -> dict[date, list[tuple[datetime, datetime, int]]]:
+    """group time intervals by local VN calendar date for sweep-line conflict detection."""
+    buckets: dict[date, list[tuple[datetime, datetime, int]]] = {}
+    for item_idx, slots in enumerate(slot_groups):
+        for slot in slots:
+            cur_day = slot.start.astimezone(VN_TZ).date()
+            end_day = slot.end.astimezone(VN_TZ).date()
+            while cur_day <= end_day:
+                buckets.setdefault(cur_day, []).append((slot.start, slot.end, item_idx))
+                cur_day += timedelta(days=1)
+    for bucket in buckets.values():
+        bucket.sort(key=lambda item: (item[0], item[1], item[2]))
+    return buckets
+
+
 def detect_import_conflicts(
     incoming_rows: list[ParsedCsvRow], existing_events: list[EventDomain]
 ) -> dict[str, Any]:
@@ -225,103 +242,105 @@ def detect_import_conflicts(
     # 1. detect conflicts within incoming_rows grouped at series level
 
     # expanded_incoming là list mà mỗi phần tử expanded_incoming[i] là ds con: các event đã được bung ra theo occurrence.
-    for i in range(len(incoming_rows)): #incoming_rows là đầu vào hàm này, chứa các dòng csv được parsed. 
-        slots_a = expanded_incoming[i] # xét ds con các event được bung ra từ dòng csv thứ i
-        if not slots_a: # rỗng thì bỏ qua
+    incoming_by_date = _bucket_slots_by_vn_date(expanded_incoming)
+    overlapping_incoming_pairs: set[tuple[int, int]] = set()
+    for bucket in incoming_by_date.values():
+        if len(bucket) < 2:
             continue
-        row_a = incoming_rows[i] #dòng này để lấy dòng csv gốc (chưa được bung ra event theo quy luật)
-        weekday_a = _resolve_row_weekday(row_a) # dòng này để lấy thứ trong tuần
+        for pos, (_start_a, end_a, idx_a) in enumerate(bucket):
+            scan = pos + 1
+            while scan < len(bucket) and bucket[scan][0] < end_a:
+                idx_b = bucket[scan][2]
+                if idx_a != idx_b:
+                    overlapping_incoming_pairs.add((min(idx_a, idx_b), max(idx_a, idx_b)))
+                scan += 1
 
-        """ 
-        event0 kiểm trùng lắp với event1 và event1 kiểm trùng lắp với event0 là như nhau
-        tức ta chỉ cần xét cặp (event0, event1) ra kiểm trùng lắp là đủ
-        nên 0 so với {1,2,3,...,n}
-        1 so với {2,3,...,n}
-        2 so với {3,...,n}
-        là sẽ tạo ra các cặp không trùng
-        nên j chạy từ i+1.
-        """
-        for j in range(i + 1, len(incoming_rows)):
-            slots_b = expanded_incoming[j]
-            if not slots_b:
-                continue
-            row_b = incoming_rows[j]
-            weekday_b = _resolve_row_weekday(row_b)
+    """
+    event0 kiểm trùng lắp với event1 và event1 kiểm trùng lắp với event0 là như nhau
+    tức ta chỉ cần xét cặp (event0, event1) ra kiểm trùng lắp là đủ
+    nên 0 so với {1,2,3,...,n}
+    1 so với {2,3,...,n}
+    2 so với {3,...,n}
+    là sẽ tạo ra các cặp không trùng
+    nên j chạy từ i+1.
+    """
+    for i, j in sorted(overlapping_incoming_pairs):
+        row_a = incoming_rows[i]  # dòng này để lấy dòng csv gốc (chưa được bung ra event theo quy luật)
+        weekday_a = _resolve_row_weekday(row_a)  # dòng này để lấy thứ trong tuần
+        row_b = incoming_rows[j]
+        weekday_b = _resolve_row_weekday(row_b)
 
-            # any() trả về True nếu có ít nhất 1 ptử True (hoặc khác rỗng, khác None)
-            
-            has_overlap = any(
-                slot_a.overlaps(slot_b) for slot_a in slots_a for slot_b in slots_b
-            )
+        conflicting_row_indices.add(i)
+        conflicting_row_indices.add(j)
 
-            # cái trong ngoặc any() tương đương với 
-            # for slot_a in slots_a:
-            #     for slot_b in slots_b:
-            #         slot_a.overlaps(slot_b)  # (tích Descartes) để xét từng buổi học của Môn A với từng buổi học của Môn B xem có đè lên nhau không.
-            # dùng any() là để nếu tìm được 1 cái trùng (.overlaps trả về T) là any() trả về T và dừng sớm.
+        # signature_a: do trong ParsedCsvRow có thể có một môn với buổi cố định hàng tuần giống nhau nhưng nửa đầu kỳ học phòng A rồi nửa sau học phòng B (do nửa đầu phòng B sửa chẳng hạn)
+        # thì nó vẫn là môn đó, buổi học đó, khung giờ đó hàng tuần nên sig_a là gom những attrib tối thiểu để xác định một buổi học
+        # ta lưu dạng set vì đảo vị trí các attrib thì bộ đó vẫn xác định buổi học y hệt bộ trước khi đảo
+        sig_a = (
+            "ROW",
+            row_a.course_code or "",
+            row_a.title,
+            weekday_a.value,
+            row_a.start_time,
+            row_a.end_time,
+        )
+        sig_b = (
+            "ROW",
+            row_b.course_code or "",
+            row_b.title,
+            weekday_b.value,
+            row_b.start_time,
+            row_b.end_time,
+        )
 
-            if not has_overlap: # nếu F tức không có buổi trùng -> bỏ qua (not F là T để continue)
-                continue
+        # xem file validator_FUNC_detect_import_conflicts.txt (sourceCode/BE/learning/)
+        pair_key = ("INCOMING", min(sig_a, sig_b), max(sig_a, sig_b))
+        if pair_key in seen_series_pairs:  # ta kiểm cặp này đã được xét chưa (không quan tâm có trùng lịch hay không, ta quan tâm đã được xét chưa, xét rồi thì continue)
+            continue
+        seen_series_pairs.add(pair_key)  # nếu chưa thì ghi nhận rồi đem đi xét
 
-            conflicting_row_indices.add(i)
-            conflicting_row_indices.add(j)
-
-            # signature_a: do trong ParsedCsvRow có thể có một môn với buổi cố định hàng tuần giống nhau nhưng nửa đầu kỳ học phòng A rồi nửa sau học phòng B (do nửa đầu phòng B sửa chẳng hạn)
-            # thì nó vẫn là môn đó, buổi học đó, khung giờ đó hàng tuần nên sig_a là gom những attrib tối thiểu để xác định một buổi học
-            # ta lưu dạng set vì đảo vị trí các attrib thì bộ đó vẫn xác định buổi học y hệt bộ trước khi đảo 
-            sig_a = (
-                "ROW",
-                row_a.course_code,
-                row_a.title,
-                weekday_a.value,
-                row_a.start_time,
-                row_a.end_time,
-            )
-            sig_b = (
-                "ROW",
-                row_b.course_code,
-                row_b.title,
-                weekday_b.value,
-                row_b.start_time,
-                row_b.end_time,
-            )
-            
-            # xem file validator_FUNC_detect_import_conflicts.txt (sourceCode/BE/learning/)
-            pair_key = ("INCOMING", min(sig_a, sig_b), max(sig_a, sig_b))
-            if pair_key in seen_series_pairs: # ta kiểm cặp này đã được xét chưa (không quan tâm có trùng lịch hay không, ta quan tâm đã được xét chưa, xét rồi thì continue)
-                continue
-            seen_series_pairs.add(pair_key) # nếu chưa thì ghi nhận rồi đem đi xét
-
-            # 2 biến này để xác định khoảng thời gian bị trùng
-            overlap_start = max(row_a.start_time, row_b.start_time)
-            overlap_end = min(row_a.end_time, row_b.end_time)
-            conflict_cards.append(
-                {
-                    "conflict_id": f"conflict_{len(conflict_cards) + 1}",
-                    "option_a": row_a,
-                    "option_b": row_b,
-                    "overlap_description": (
-                        f"{weekday_a.value} {_format_time_range(overlap_start, overlap_end)}: "
-                        f"'{row_a.title}' overlaps with '{row_b.title}'"
-                    ),
-                }
-            )
+        # 2 biến này để xác định khoảng thời gian bị trùng
+        overlap_start = max(row_a.start_time, row_b.start_time)
+        overlap_end = min(row_a.end_time, row_b.end_time)
+        conflict_cards.append(
+            {
+                "conflict_id": f"conflict_{len(conflict_cards) + 1}",
+                "option_a": row_a,
+                "option_b": row_b,
+                "overlap_description": (
+                    f"{weekday_a.value} {_format_time_range(overlap_start, overlap_end)}: "
+                    f"'{row_a.title}' overlaps with '{row_b.title}'"
+                ),
+            }
+        )
 
     # 2. detect conflicts between incoming_rows and existing_events grouped at series level
     blocking_existing = [ev for ev in existing_events if ev.blocks_availability]
-    for i, row in enumerate(incoming_rows):
-        slots_a = expanded_incoming[i]
-        if not slots_a:
+    existing_by_date = _bucket_slots_by_vn_date([[ev.to_slot()] for ev in blocking_existing])
+    matched_existing_by_row: dict[int, set[int]] = {}
+    for day, inc_bucket in incoming_by_date.items():
+        ex_bucket = existing_by_date.get(day)
+        if not ex_bucket:
             continue
+        active_existing: list[tuple[datetime, datetime, int]] = []
+        ex_pos = 0
+        for inc_start, inc_end, row_idx in inc_bucket:
+            while ex_pos < len(ex_bucket) and ex_bucket[ex_pos][0] < inc_end:
+                if ex_bucket[ex_pos][1] > inc_start:
+                    active_existing.append(ex_bucket[ex_pos])
+                ex_pos += 1
+            active_existing = [ex for ex in active_existing if ex[1] > inc_start]
+            for ex_start, _ex_end, ev_idx in active_existing:
+                if ex_start < inc_end:
+                    matched_existing_by_row.setdefault(row_idx, set()).add(ev_idx)
+
+    for i, ev_indices in sorted(matched_existing_by_row.items()):
+        row = incoming_rows[i]
         weekday_a = _resolve_row_weekday(row)
+        conflicting_row_indices.add(i)
 
-        for event in blocking_existing:
-            event_slot = event.to_slot()
-            if not any(slot_a.overlaps(event_slot) for slot_a in slots_a):
-                continue
-
-            conflicting_row_indices.add(i)
-
+        for ev_idx in sorted(ev_indices):
+            event = blocking_existing[ev_idx]
             ev_start_vn = event.start_time.astimezone(VN_TZ)
             ev_end_vn = event.end_time.astimezone(VN_TZ)
             ev_weekday = INDEX_TO_WEEKDAY[ev_start_vn.weekday()]
@@ -422,6 +441,12 @@ def _subject_keys_for_event(
             keys.add((kind_val, f"code:{norm_code}"))
     return keys
 
+    """
+    2 hàm _subject_keys_for_row và _subject_keys_for_event nhìn đầu ra giống nhau vậy có hai hàm chi?
+    -> Mấy cái được import mới thì gọi hàm _subject_keys_for_row, còn để so cái mới được import với cái đã có (có đụng độ hay không) thì cái đã có (lưu trong DB) thì gọi hàm _subject_keys_for_event.
+    Vì mới được import sẽ là ParsedCsvRow, còn lưu trong DB thì data tổ chức kiểu khác, 2 kiểu data khác nhau nên logic xử lý khác nhau. (trong DB thì bảng events chỉ lưu fk: course_id chứ không lưu course_code, nên buộc phải tra cứu gián tiếp course_code thông qua từ điển course_code_by_id)
+    Đầu ra giống nhau là do cái mới vào và cái đã có muốn check xem có conflict hay không thì phải đưa về một chuẩn chung.
+    """
 
 def _build_incoming_subject_windows(
     rows: list[ParsedCsvRow],
@@ -432,10 +457,10 @@ def _build_incoming_subject_windows(
     output: dict mapping each subject_key -> (min_first_date, max_last_date).
     typical flow: 2 rows of same course -> merged date range covering both rows.
     """
-    windows: dict[tuple[str, str], tuple[date, date]] = {}
+    windows: dict[tuple[str, str], tuple[date, date]] = {} # key của dict windows là tuple(event_kind, normalized code) hay tuple(event_kind, normalized title), key dạng tuple được tạo ra ở dòng for skey in _subject_keys_for_row(row).
     for row in rows:
         for skey in _subject_keys_for_row(row):
-            if skey not in windows:
+            if skey not in windows: # toán tử 'in' trên một dict dùng để kiểm tra sự tồn tại của key
                 windows[skey] = (row.first_date, row.last_date)
             else:
                 cur_min, cur_max = windows[skey]
@@ -451,8 +476,8 @@ def _is_event_covered_by_incoming_subjects(
     """
     input: ev (Event | EventDomain), course_code_by_id map, and subject_windows from incoming rows.
     core logic: return True if ev shares a subject key with incoming rows AND falls inside that subject's date window.
-    output: bool indicating whether ev belongs to a subject+period being updated by the incoming file.
-    typical flow: updating 'Thể dục 1' from week 3 -> True for week 3..15 of 'Thể dục 1', False for week 1..2 and other courses.
+    [READ THIS] output: BOOL, indicating whether ev belongs to a subject+period being updated by the incoming file.
+    [READ THIS] typical flow: updating 'Thể dục 1' from week 3 => True for week 3..15 of 'Thể dục 1', False for week 1..2 and other courses.
     """
     ev_keys = _subject_keys_for_event(ev, course_code_by_id)
     if not ev_keys:
@@ -479,12 +504,12 @@ def filter_existing_for_conflict_check(
                 same-subject events within the updated date window if replace=False) so step 3 never raises
                 false self-conflicts when updating a course's schedule while still catching collisions with other courses.
     output: list[EventDomain] of existing events that must be checked for hard overlaps.
-    typical flow: update 2 courses -> skip old slots of those 2 courses, keep the other 3 courses for conflict check.
+    [READ THIS] typical flow: update 2 courses (total: 5 courses) -> skip old slots of those 2 courses (lịch sau replace lịch trước nên lịch ban đầu sẽ bị xóa, nếu không có func ignore sẽ bị báo conflict giả, nó lúc sau conflict với nó lúc trước, trong khi đang cập nhật nó), keep the other 3 courses for conflict check.
     """
     # xem file validator_FUNC_commit_resolved_import.txt (sourceCode/BE/learning/)
     if replace_previous_imports:
         return [
-            ev.to_domain()
+            ev.to_domain() 
             for ev in db_events
             if ev.source != EventSource.IMPORTED
         ]
@@ -534,22 +559,27 @@ def commit_resolved_import(
     db: Session,
     owner_id: int,
     import_batch_id: str,
-    resolved_rows: list[ParsedCsvRow],
+    resolved_rows: list[ParsedCsvRow], # các dòng bị lỗi định dạng đã được sửa hoặc bỏ qua và các lịch được giữ lại trong các cặp bị trùng giờ
     replace_previous_imports: bool = False,
 ) -> list[EventDomain]:
     """
     input: db (Session), owner_id (int), import_batch_id (str), resolved_rows, replace_previous_imports.
-    core logic: reconcile incoming occurrences against existing IMPORTED events (preserving unchanged rows,
+    core logic: reconcile (đối chiếu) incoming occurrences against existing IMPORTED events (preserving unchanged rows,
                 soft-deleting only modified/removed rows in scope, and inserting only new/changed rows).
     output: list[EventDomain] of all active Event records resulting from resolved_rows.
     typical flow: expand incoming specs -> match unchanged DB rows -> soft-delete stale rows -> insert diff -> return.
     """
     now_naive_utc = datetime.now(UTC_TZ).replace(tzinfo=None)
 
-    # 1. tải danh sách Course và Event đang active của user trong DB để chuẩn bị đối chiếu (Diffing)
+    # lấy danh sách Course và Event còn active (chưa bị xóa mềm) của user để chuẩn bị đối chiếu (Diffing)
     active_courses = list(db.scalars(active_courses_stmt(owner_id)).all())
-    course_code_by_id: dict[int, str] = {c.id: c.course_code for c in active_courses}
-    # lập bảng tra cứu Course theo (norm_code, norm_title) để tái sử dụng Course có sẵn thay vì tạo bản ghi trùng
+    course_code_by_id: dict[int, str] = {c.id: c.course_code for c in active_courses} 
+    # course_code_by_id là từ điển được tạo bằng cách duyệt qua id của các event chưa bị xóa mềm (còn active) và truy xuất mã môn tương ứng với id (nếu event đó có id),
+    # mỗi phần tử trong dict là cặp id và mã môn. 
+
+    # từ điển này để tra Course theo (norm_code, norm_title), là khi import, đi qua bước normalize ta được cặp (norm_code, norm_title) là duy nhất, thì nếu file mới nhắc
+    # đến một sự kiện đã có rồi sẽ tra ra, ta sẽ biết đó là cập nhật, xử lý như nào đó chứ không phải xóa cái cũ đi tạo cái mới vì 2 cái đều có code và title giống nhau, 
+    # nếu file mới chứa 1 sự kiện đã có trong hệ thống mà khác thời gian thì cập nhật thời gian thôi chứ không xóa cả cái cũ đi tạo lại cái mới, hàm này là để truy xem cái được import vào có giống cái đã có không
     course_by_identity: dict[tuple[str, str], Course] = {
         (_normalize_key_text(c.course_code or "GENERAL"), _normalize_key_text(c.title)): c
         for c in active_courses
@@ -564,25 +594,42 @@ def commit_resolved_import(
             )
         ).all()
     )
+    # active_courses ở đoạn đầu cũng dùng db.scalars nhưng là lấy hết mọi thứ chưa bị xóa, còn list active_imported_events này chỉ lấy những event được tạo bằng nút import (không phải tạo bởi AI hay tạo bởi user manually)
 
     # 2. xác định tập các Event IMPORTED cũ nằm trong phạm vi cần đối chiếu (candidate_old_events):
-    # - nếu replace_previous_imports=True (user chủ động chọn thay mới toàn bộ TKB): xét toàn bộ active_imported_events.
-    # - nếu replace_previous_imports=False (mặc định khi cập nhật lịch 2 môn, nạp tiếp nửa học kỳ sau, hoặc nạp lịch làm thêm):
+    # - nếu replace_previous_imports=True (chỉ dùng như nút Reset khi user lỡ nạp nhầm file sai hoàn toàn hoặc muốn xóa trắng lịch IMPORTED cũ):
+    #   xét toàn bộ active_imported_events. (Lưu ý: khi sang học kỳ mới, các lớp kỳ cũ vốn đã kết thúc ở last_date của kỳ cũ nên không cần bật cờ này).
+    # - nếu replace_previous_imports=False (mặc định cho cả sang kỳ mới, cập nhật lịch giữa kỳ, nạp tiếp nửa kỳ sau, hoặc nạp lịch làm thêm):
     #   chỉ xét các Event IMPORTED có cùng khóa môn (_subject_key) VÀ nằm trong khoảng [first_date, last_date] của môn đó ở file mới.
-    #   nhờ vậy: 3 môn không có trong file vá, hoặc 5 tuần đầu đã học, hoặc lịch học khi nạp lịch làm thêm được bảo toàn 100%.
-    subject_windows = _build_incoming_subject_windows(resolved_rows)
+    #   nhờ vậy: các môn không có trong file sửa đổi, hoặc các tuần/học kỳ trước đã học, hoặc lịch học khi nạp lịch làm thêm được giữ lại toàn bộ.
+    
+    subject_windows = _build_incoming_subject_windows(resolved_rows) # resolved_rows là list
+    # subject_windows này là 1 dict, một thành phần hợp lệ trong dict này có thể là {"(event_kind, normalized code)": (first_date, last_date)}
     candidate_old_events: list[Event] = []
     for ev in active_imported_events:
-        if replace_previous_imports or _is_event_covered_by_incoming_subjects(
-            ev, course_code_by_id, subject_windows
-        ):
+        if replace_previous_imports or _is_event_covered_by_incoming_subjects(ev, course_code_by_id, subject_windows):
             candidate_old_events.append(ev)
+        """ 
+        Biến cờ replace_previous_imports mặc định là False: khi user nạp file mới chỉ để sửa giờ vài môn hoặc nạp bổ sung (kể cả sửa 1-2 môn trong 5 môn cũ), không cần bật cờ này vì cơ chế Smart Diff đã tự cập nhật đúng các môn trong file mới và giữ nguyên các môn khác.
+        Cờ replace_previous_imports chỉ được gửi là True (ở UI có checkbox "thay thế toàn bộ lịch đã import" và được user tích chọn) khi user muốn xóa sạch toàn bộ lịch IMPORTED trước đó và thay bằng file mới, có thể do nạp nhầm file chẳng hạn.
+
+        * Ngay cả khi replace_previous_imports=True, hàm commit_resolved_import không xóa sạch mù quáng mọi dòng cũ rồi chèn lại từ đầu nếu file mới có những buổi không thay đổi (vẫn giữ nguyên bản ghi cũ nếu trùng chữ ký).
+        * Chỉ với những buổi có thay đổi hoặc bị bỏ đi, hệ thống mới đánh dấu xóa mềm bản ghi cũ (deleted_at) rồi INSERT bản ghi mới chứ không UPDATE đè lên dòng cũ.
+        Vì:
+        - File nguồn không có event.id và số buổi cũ/mới có thể không khớp 1-1: ví dụ một môn từ 2 buổi/tuần (Thứ Hai, Thứ Tư) chuyển sang 1 buổi/tuần (Thứ Năm).
+        - Hệ thống không có căn cứ chắc chắn để biết "buổi Thứ Năm mới" là bản sửa của "buổi Thứ Hai cũ" hay "buổi Thứ Tư cũ".
+        - Nếu cố đoán ghép theo vị trí để UPDATE tại chỗ sẽ rất dễ ghi đè sai lên lịch các tuần đã qua, làm lệch dữ liệu hoặc kéo nhầm trạng thái Reminder cũ sang khung giờ mới.
+        
+        Còn hàm _is_event_covered...: vd trong các sự kiện trong file import, cái bắt đầu sớm nhất là ngày a, 
+        cái sau cùng là kết thúc ngày b, thì hệ thống chỉ xét những event thuộc khoảng ngày a đến ngày b, 
+        các sự kiện thuộc khoảng khác bỏ qua.
+        """
 
     # gom các Event cũ theo chữ ký buổi học (_event_occurrence_sig) để tra cứu O(1)
-    old_events_by_sig: dict[tuple[str, str, str, datetime, datetime], list[Event]] = {}
+    old_events_by_sig: dict[tuple[str, str, str, datetime, datetime], list[Event]] = {} # dict có key là chữ ký buổi học, value là tất cả event có chữ ký như key
     for ev in candidate_old_events:
         sig = _event_occurrence_sig(
-            ev.kind.value, ev.title, ev.room, ev.start_time, ev.end_time
+            ev.kind.value, ev.title, ev.room, ev.start_time, ev.end_time # đóng gói lại thành 1 tuple
         )
         old_events_by_sig.setdefault(sig, []).append(ev)
 
@@ -593,7 +640,7 @@ def commit_resolved_import(
         if row.kind == CsvRowKind.CLASS:
             code_val = row.course_code or "GENERAL"
             course_ident = (_normalize_key_text(code_val), _normalize_key_text(row.title))
-            course = course_by_identity.get(course_ident)
+            course = course_by_identity.get(course_ident) # trả về đối tượng môn học nếu đã tồn tại hoặc None
             if course is None:
                 course = Course(
                     owner_id=owner_id,
@@ -611,6 +658,7 @@ def commit_resolved_import(
                 course.default_room = row.room
                 course.import_batch_id = import_batch_id
 
+            # hàm này bung lịch học ra từng buổi cụ thể, từ occurrence rule vd như lặp thứ hai hàng tuần
             for occ_date in _iter_row_dates(row):
                 start_vn = datetime.combine(occ_date, row.start_time, tzinfo=VN_TZ)
                 end_vn = datetime.combine(occ_date, row.end_time, tzinfo=VN_TZ)
@@ -675,6 +723,8 @@ def commit_resolved_import(
             )
 
     # 4. đối chiếu từng buổi học trong incoming_specs với old_events_by_sig:
+    # Nguyên tắc: giống hệt 100% thì giữ nguyên dòng cũ; có thay đổi dù nhỏ thì xóa mềm dòng cũ và tạo dòng mới với id mới.
+    
     # - nếu chữ ký sig đã có sẵn trong DB -> giữ nguyên bản ghi cũ (reused_event_ids), KHÔNG xóa và KHÔNG tạo mới.
     # - nếu chữ ký sig chưa có trong DB -> tạo bản ghi Event mới (newly_created_events).
     reused_event_ids: set[int] = set()

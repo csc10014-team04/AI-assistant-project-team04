@@ -90,9 +90,9 @@ class DeviceNotificationModal(ModalView):
         else:
             mins = offset_minutes if offset_minutes is not None else 30
             if room_clean:
-                msg_text = f"({room_clean}) - {title} Start after {mins} mins"
+                msg_text = f"({room_clean}) - {title} starts in {mins} mins"
             else:
-                msg_text = f"{title} Start after {mins} mins"
+                msg_text = f"{title} starts in {mins} mins"
 
         self.lbl_msg = MDLabel(
             text=msg_text,
@@ -246,10 +246,10 @@ class ReminderScheduler:
     def _fire(self, event_id: int, title: str, room: str, start_time_str: str, offset_minutes: int) -> None:
         self._armed.pop(event_id, None)
         mins = offset_minutes if offset_minutes is not None else 30
-        msg_text = f"{title} Start after {mins} mins"
+        msg_text = f"{title} starts in {mins} mins"
 
-        # Báo thông báo hệ thống qua plyer với tiêu đề và nội dung đúng chuẩn định dạng kiểm thử
-        self.notify("Sắp đến giờ", msg_text)
+        # Báo thông báo hệ thống qua plyer bằng tiếng Anh đồng bộ với giao diện
+        self.notify("Upcoming Event", msg_text)
 
         # Báo cáo việc đã chuyển giao thông báo tới người dùng (delivery audit)
         if self.reporter:

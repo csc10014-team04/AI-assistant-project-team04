@@ -6,6 +6,7 @@ from typing import Optional
 from urllib.parse import quote_plus
 
 from sqlalchemy import Select, create_engine, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
 from models import Course, Event, Proposal, ProposalStatus, Task
@@ -150,7 +151,7 @@ def active_events_stmt(
     owner_id: int,
     start_from: Optional[datetime] = None,
     end_until: Optional[datetime] = None,
-) -> Select[tuple[Event]]:
+) -> Select[Event]:
     """
     input: owner_id (int) and optional aware window bounds start_from, end_until.
     core logic: filter events by owner_id, deleted_at is null, and optional time intersection.
@@ -168,11 +169,11 @@ def active_events_stmt(
     return stmt.order_by(Event.start_time.asc())
 
 
-def active_courses_stmt(owner_id: int) -> Select[tuple[Course]]:
+def active_courses_stmt(owner_id: int) -> Select[Course]:
     """
     input: owner_id (int) of the authenticated user.
     core logic: build select query restricted to owner's non-soft-deleted course records.
-    output: sqlalchemy Select[tuple[Course]] statement.
+    output: sqlalchemy Select[Course] statement.
     typical flow: pass current_user.id -> execute via db.scalars(stmt) -> receive active courses.
     """
     return select(Course).where(
@@ -181,11 +182,11 @@ def active_courses_stmt(owner_id: int) -> Select[tuple[Course]]:
     )
 
 
-def active_tasks_stmt(owner_id: int) -> Select[tuple[Task]]:
+def active_tasks_stmt(owner_id: int) -> Select[Task]:
     """
     input: owner_id (int) of the authenticated user.
     core logic: build select query restricted to owner's non-soft-deleted flexible tasks.
-    output: sqlalchemy Select[tuple[Task]] statement.
+    output: sqlalchemy Select[Task] statement.
     typical flow: pass current_user.id -> execute via db.scalars(stmt) -> receive active tasks.
     """
     return select(Task).where(
@@ -209,4 +210,4 @@ def abandon_pending_proposals(db: Session, owner_id: int) -> int:
         )
         .values(status=ProposalStatus.ABANDONED)
     )
-    return result.rowcount or 0
+    return (result.rowcount or 0) if isinstance(result, CursorResult) else 0

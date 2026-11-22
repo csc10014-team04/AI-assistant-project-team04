@@ -402,10 +402,11 @@ class ProposalCard(MDBoxLayout):
 
         task_title = self.proposal.get('task_title', self.proposal.get('title', 'Event'))
         rationale = self.proposal.get('rationale', 'Proposed by AI Assistant.')
+        reason_label = "Why this schedule was split" if extra_slots else "Why this time was chosen"
 
         self.add_widget(MDLabel(text=f"Schedule proposal: {task_title}", bold=True, font_style="Title", role="medium", adaptive_height=True))
         self.add_widget(MDLabel(text=f"Time: {time_str}", font_style="Body", role="medium", adaptive_height=True))
-        self.add_widget(MDLabel(text=f"Rationale: {rationale}", font_style="Body", role="medium", adaptive_height=True))
+        self.add_widget(MDLabel(text=f"{reason_label}: {rationale}", font_style="Body", role="medium", adaptive_height=True))
 
         self.status_lbl = MDLabel(text="", theme_text_color="Custom", text_color=BLUE_COLOR, bold=True, adaptive_height=True, opacity=0)
         self.add_widget(self.status_lbl)

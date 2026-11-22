@@ -53,13 +53,13 @@ Câu lệnh tự nhiên (xếp mới hoặc xếp lại kèm reschedule_proposal
    * **`5 -> 6 -> 7 -> 8`:** Văn bản sau khi khử thông tin nhạy cảm và chuẩn hóa teencode được gửi qua `AI Processing (NLU)` tới `Llama 3.1 (vLLM)`. Kết quả JSON trả về được kiểm tra lược đồ Pydantic và đối chiếu chữ gốc để tạo đối tượng `NluResult` hợp lệ.
 2. **Các nhánh rẽ sau Bước `8` (Chỉ đi theo MỘT trong các nhánh `8a`, `8b`, `8c`, hoặc `8d`):**
    * **Nhánh `[8a: query_schedule intent]` (Gõ nhầm câu hỏi tìm kiếm vào ô Trợ lý AI):**
-     * Nếu sinh viên hỏi lịch hoặc hỏi quy chế học vụ, hệ thống dừng luồng xếp lịch và trả thông báo nhắc chuyển sang tab **Tìm kiếm** kèm `redirect_target = "search_home"`, `redirect_button_label = "Tìm kiếm"`.
+     * Nếu sinh viên hỏi lịch hoặc hỏi quy chế học vụ, hệ thống dừng luồng xếp lịch và trả thông báo nhắc chuyển sang tab **Search** kèm `redirect_target = "search_home"`, `redirect_button_label = "Search"`.
    * **Nhánh `[8b: missing duration/ambiguous date]` (Thiếu thông tin bắt buộc):**
      * Nếu sinh viên quên nêu thời lượng cần làm hoặc nói ngày quá mơ hồ, hệ thống trả về `needs_clarification = true` kèm câu hỏi làm rõ (`12`), chưa ghi bất kỳ dòng nào vào bảng `proposals`.
    * **Nhánh `[8c: valid intent]` -> `9 -> 10 -> 11 -> 12` (Đủ thông tin - Tìm và Lưu nháp Đề xuất):**
      * **`8c -> 9`:** `Orchestrator` truyền `NluResult` (gồm cửa sổ `[window_start, window_end]` đã khóa cận trên theo `deadline`), danh sách sự kiện, cấu hình nghỉ ngơi và `excluded_slots` sang `Scheduling Engine` để quét giờ trống (`< 200ms`) và chấm điểm trên thang 35 điểm, chọn ra khung giờ tối ưu nhất.
      * **`10` (Lưu nháp Proposal vào DB trước khi trả về UI):** `Orchestrator` lưu bản ghi `Task (status = PENDING)` và `Proposal (status = PROPOSED)` vào `MySQL` để sinh mã định danh `proposal_id` thật (lúc này bảng `events` **chưa** có sự kiện mới).
-     * **`11 -> 12`:** `Orchestrator` trả thẻ `Proposal Card` (chứa `proposal_id`, giờ đề xuất `+07:00`, lý do chọn giờ `rationale`) qua `API` về hiển thị trên màn hình `UI (Kivy)` cho sinh viên xem xét.
+     * **`11 -> 12`:** `Orchestrator` trả thẻ `Proposal Card` (chứa `proposal_id`, giờ đề xuất `+07:00`, giải thích `rationale`) qua `API` về hiển thị trên màn hình `UI (Kivy)` cho sinh viên xem xét. Trường `rationale` do BE (`services/proposals.py`) tự động sinh trên mọi `Proposal` để nêu rõ khung giờ trống được chọn không trùng lịch học/giờ ngủ, và hiển thị trên UI dưới nhãn `Why this time was chosen` hoặc `Why this schedule was split`. Khi một công việc buộc phải chia nhỏ thành nhiều khối (`extra_slots` khác rỗng) vì vượt `max_block_minutes` (kèm `min_break_minutes`) hoặc thiếu khoảng trống liên tục đủ dài, `rationale` ghi rõ thêm lý do tách khối này.
    * **Nhánh `[8d: error / timeout / invalid JSON]` -> `9d -> 10d -> 12` (Sự cố AI - Chuyển sang Fallback):**
      * Nếu `vLLM` quá hạn 3 giây, tắt máy hoặc trả sai JSON sau khi thử lại, `Orchestrator` ghi `AiErrorLog` xuống MySQL và kích hoạt `Fallback Handler`.
      * `Fallback Handler` chạy bộ trích xuất quy tắc Python, gọi `Scheduling Engine` lấy danh sách giờ trống (`9d`) và trả `fallback_mode = true` kèm `available_slots` (`10d -> 12`) để giao diện mở ngay bảng chọn giờ thủ công (`ManualFallbackModal`).
@@ -99,8 +99,8 @@ Câu lệnh tự nhiên (xếp mới hoặc xếp lại kèm reschedule_proposal
   * Nếu câu gốc không có cụm từ chỉ thời lượng (`_DURATION_RE`) mà LLM tự điền `duration_minutes`, hệ thống xóa về `None`.
   * Chỉ chấp nhận `date_hint` và `deadline_hint` khi cụm từ ngày tháng đó xuất hiện nguyên văn trong câu nói của người dùng.
 * **Chốt chặn 3 - Cổng yêu cầu làm rõ (`Clarification Gate`) & Điều hướng chéo (`Cross-Tab Redirect Gate`):**
-  * Nếu `intent == "query_schedule"` (người dùng hỏi lịch/học vụ trong khung Trợ lý AI): trả `message` nhắc chuyển sang trang Tìm kiếm kèm `redirect_target = "search_home"` và `redirect_button_label = "Tìm kiếm"`. Trên giao diện Kivy (`ChatBubble` trong [`sourceCode/FE/chat_screen.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/FE/chat_screen.py#L133-L172)), khi nhận `redirect_target != None`, bong bóng chat có thể gắn trực tiếp một nút `MDButton` gọi `MDApp.get_running_app().root.current = "search_home"` để chuyển màn hình chỉ bằng 1 chạm.
-  * Nếu `intent == "schedule_task"` nhưng thiếu `duration_minutes` hoặc ngày tháng mơ hồ: bật `needs_clarification = True` kèm `clarification_question` cụ thể.
+  * Nếu `intent == "query_schedule"` (người dùng hỏi lịch/học vụ trong khung Trợ lý AI): trả `message` nhắc chuyển sang trang Search kèm `redirect_target = "search_home"` và `redirect_button_label = "Search"`. Trên giao diện Kivy (`ChatBubble` trong [`sourceCode/FE/chat_screen.py`](file:///C:/Users/heyto/projects/AI-assistant-project-team04/sourceCode/FE/chat_screen.py#L133-L172)), khi nhận `redirect_target != None`, bong bóng chat có thể gắn trực tiếp một nút `MDButton` gọi `MDApp.get_running_app().root.current = "search_home"` để chuyển màn hình chỉ bằng 1 chạm.
+  * Nếu `intent == "schedule_task"` nhưng thiếu `duration_minutes` hoặc ngày tháng mơ hồ: bật `needs_clarification = True` kèm `clarification_question` cụ thể bằng tiếng Anh.
 
 ---
 
@@ -123,10 +123,10 @@ Câu lệnh tự nhiên (xếp mới hoặc xếp lại kèm reschedule_proposal
 ---
 
 ## 5. Đặc tả Output tương ứng cho từng Kịch bản
-1. **Kịch bản 1 - Đề xuất xếp lịch thành công (`HTTP 200 OK`):** Trả `nlu` (`fallback_mode = False`, `needs_clarification = False`), đối tượng `proposal` (`proposal_id`, `task_id`, `parent_id`, `title`, `duration_minutes`, `priority`, `start_time` `+07:00`, `end_time` `+07:00`, `extra_slots`, `rationale`, `status = "PROPOSED"`) và `abandoned_proposals`.
-2. **Kịch bản 2 - Điều hướng chéo sang trang Tìm kiếm (`HTTP 200 OK`):** Khi `nlu.intent == "query_schedule"`, trả `message` nhắc chuyển tab, `redirect_target = "search_home"`, `redirect_button_label = "Tìm kiếm"`.
-3. **Kịch bản 3 - Thiếu thông tin, cần hỏi lại (`HTTP 200 OK`):** Trả `nlu` với `needs_clarification = True`, `clarification_question` cụ thể và `proposal = None`.
-4. **Kịch bản 4 - Chuyển sang chế độ Fallback (`HTTP 200 OK`):** Trả `nlu` từ quy tắc (`fallback_mode = True`), `message` báo chuyển chế độ chọn trực tiếp và danh sách `available_slots`.
+1. **Kịch bản 1 - Đề xuất xếp lịch thành công (`HTTP 200 OK`):** Trả `nlu` (`fallback_mode = False`, `needs_clarification = False`), đối tượng `proposal` (`proposal_id`, `task_id`, `parent_id`, `title`, `duration_minutes`, `priority`, `start_time` `+07:00`, `end_time` `+07:00`, `extra_slots`, `rationale`, `status = "PROPOSED"`) và `abandoned_proposals`. Trường `rationale` luôn xuất hiện trên mọi `Proposal` do BE (`services/proposals.py`) sinh tự động để nêu rõ khung giờ trống phù hợp đã chọn; khi công việc buộc phải chia thành nhiều khối (`extra_slots` khác rỗng) vì vượt `max_block_minutes` hoặc thiếu khoảng trống liền mạch đủ dài, trường này nêu thêm lý do tách khối.
+2. **Kịch bản 2 - Điều hướng chéo sang trang Tìm kiếm (`HTTP 200 OK`):** Khi `nlu.intent == "query_schedule"`, trả `message` nhắc chuyển tab bằng tiếng Anh, `redirect_target = "search_home"` và `redirect_button_label = "Search"`.
+3. **Kịch bản 3 - Thiếu thông tin, cần hỏi lại (`HTTP 200 OK`):** Trả `nlu` với `needs_clarification = True`, `clarification_question` cụ thể bằng tiếng Anh và `proposal = None`.
+4. **Kịch bản 4 - Chuyển sang chế độ Fallback (`HTTP 200 OK`):** Trả `nlu` từ quy tắc (`fallback_mode = True`), `message` báo chuyển chế độ chọn trực tiếp bằng tiếng Anh và danh sách `available_slots`.
 
 ---
 

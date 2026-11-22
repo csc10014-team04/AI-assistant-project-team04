@@ -1,5 +1,6 @@
 # [pic: khoi] p1-3 password hashing, jwt & current user guard (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -12,12 +13,34 @@ from sqlalchemy.orm import Session
 
 from database import UTC_TZ, get_db
 from models import User
+from services.privacy import _DEFAULT_ENCRYPTION_KEY
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production-32b")
+_DEFAULT_JWT_SECRET = "dev-secret-key-change-in-production-32b"
+_logger = logging.getLogger(__name__)
+_warned_default_jwt = False
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", _DEFAULT_JWT_SECRET)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+def validate_security_config() -> None:
+    """enforce non-default secrets in production while warning once in development/tests."""
+    global _warned_default_jwt
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    jwt_secret = os.getenv("JWT_SECRET_KEY", JWT_SECRET_KEY)
+    enc_secret = os.getenv("DATA_ENCRYPTION_KEY", _DEFAULT_ENCRYPTION_KEY)
+
+    if app_env in {"production", "prod"}:
+        if jwt_secret == _DEFAULT_JWT_SECRET or len(jwt_secret) < 32:
+            raise RuntimeError("JWT_SECRET_KEY must be set to a non-default secret (>= 32 chars) in production")
+        if enc_secret == _DEFAULT_ENCRYPTION_KEY or len(enc_secret) < 32:
+            raise RuntimeError("DATA_ENCRYPTION_KEY must be set to a non-default secret (>= 32 chars) in production")
+    elif jwt_secret == _DEFAULT_JWT_SECRET and not _warned_default_jwt:
+        _warned_default_jwt = True
+        _logger.warning("Using development default JWT_SECRET_KEY; set JWT_SECRET_KEY in production.")
 
 
 def hash_password(plain_password: str) -> str:

@@ -124,7 +124,7 @@ def test_temporal_hallucination_dropped():
 def test_missing_duration_asks_clarification():
     reply = {"intent": "schedule_task", "title": "học bài", "duration_minutes": 60}
     r = nlu.understand_prompt("xếp lịch học bài", NOW, client=_client(lambda q: _reply(reply)))
-    assert r.needs_clarification and r.duration_minutes is None and "bao lâu" in r.clarification_question
+    assert r.needs_clarification and r.duration_minutes is None and "how long" in r.clarification_question.lower()
 
 
 def test_failures_are_taxonomized(_isolate_logs):

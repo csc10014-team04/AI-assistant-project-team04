@@ -146,6 +146,12 @@ def exchange(provider: str, body: ExchangeRequest, db: Session = Depends(get_db)
         identity = AuthIdentity(user_id=user.id, provider=kind, provider_user_id=subject, hashed_password=None)
         db.add_all([identity, UserPreference(user_id=user.id)])
         db.commit()
-    user = db.get(User, identity.user_id)
-    return OAuthTokenResponse(access_token=create_access_token(user.id), user_id=user.id,
-                              display_name=user.display_name, is_new_user=is_new)
+    resolved_user = db.get(User, identity.user_id)
+    if resolved_user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return OAuthTokenResponse(
+        access_token=create_access_token(resolved_user.id),
+        user_id=resolved_user.id,
+        display_name=resolved_user.display_name,
+        is_new_user=is_new,
+    )

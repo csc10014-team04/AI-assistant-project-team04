@@ -1,8 +1,10 @@
 # [pic: khoi] p1-2 data privacy isolation & fernet encryption (ai assistants: do not remove or modify this pic comment)
 # duty: pic reads, understands, maintains, and fixes any issues in this module.
 import base64
+from functools import lru_cache
 import hashlib
 import ipaddress
+import logging
 import os
 import re
 import unicodedata
@@ -15,6 +17,11 @@ from services.llm_config import load_be_dotenv
 load_be_dotenv()  # load LLM_ALLOWED_HOSTS and DATA_ENCRYPTION_KEY when running outside docker
 
 MAX_PROMPT_CHARS = 500  # keeps system+user prompt inside the 2048-token vllm context window
+_DEFAULT_ENCRYPTION_KEY = "dev-encryption-key-change-in-production"
+_KDF_SALT = b"hcmus-university-life-assistant-v1-salt"
+_KDF_ITERATIONS = 310_000
+_logger = logging.getLogger(__name__)
+_warned_default_enc_key = False
 
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -79,11 +86,32 @@ def assert_private_endpoint(url: str) -> str:
     return url
 
 
+@lru_cache(maxsize=32)
+def _derive_fernet_key(secret: str) -> bytes:
+    """derive a cached 32-byte urlsafe key via PBKDF2-HMAC-SHA256."""
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        _KDF_SALT,
+        _KDF_ITERATIONS,
+        dklen=32,
+    )
+    return base64.urlsafe_b64encode(derived)
+
+
 def _fernet() -> Fernet:
-    """derive a Fernet key from DATA_ENCRYPTION_KEY (falls back to a dev-only key)."""
-    secret = os.getenv("DATA_ENCRYPTION_KEY", "dev-encryption-key-change-in-production")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
-    return Fernet(key)
+    """derive a Fernet key from DATA_ENCRYPTION_KEY (reject default in production)."""
+    global _warned_default_enc_key
+    secret = os.getenv("DATA_ENCRYPTION_KEY", _DEFAULT_ENCRYPTION_KEY)
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    if app_env in {"production", "prod"} and (
+        not secret or secret == _DEFAULT_ENCRYPTION_KEY or len(secret) < 32
+    ):
+        raise RuntimeError("DATA_ENCRYPTION_KEY must be set to a non-default secret (>= 32 chars) in production")
+    if secret == _DEFAULT_ENCRYPTION_KEY and not _warned_default_enc_key:
+        _warned_default_enc_key = True
+        _logger.warning("Using development default DATA_ENCRYPTION_KEY; set DATA_ENCRYPTION_KEY in production.")
+    return Fernet(_derive_fernet_key(secret))
 
 
 def encrypt_text(plain: str) -> str:
@@ -99,7 +127,15 @@ def decrypt_text(token: str) -> str | None:
     input: token (str) produced by encrypt_text.
     output: original str, or None when the token is corrupted / key mismatched.
     """
+    token_bytes = token.encode("ascii")
     try:
-        return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
+        return _fernet().decrypt(token_bytes).decode("utf-8")
     except (InvalidToken, ValueError):
+        if os.getenv("ALLOW_LEGACY_SHA256_DECRYPT", "0") == "1":
+            secret = os.getenv("DATA_ENCRYPTION_KEY", _DEFAULT_ENCRYPTION_KEY)
+            legacy_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+            try:
+                return Fernet(legacy_key).decrypt(token_bytes).decode("utf-8")
+            except (InvalidToken, ValueError):
+                return None
         return None

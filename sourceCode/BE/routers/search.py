@@ -138,12 +138,12 @@ def search_schedule_events(
             total=0,
             events=[],
             message=(
-                "It seems bạn đang muốn yêu cầu xếp lịch công việc. "
-                "Trang 'Tìm kiếm' chỉ dùng để tra cứu lịch trình và hỏi đáp học vụ; "
-                "bạn hãy bấm nút 'Trợ lý AI' để chuyển sang khung xếp lịch thông minh nhé."
+                "It looks like you want to schedule a task. "
+                "The Search tab is for looking up events and academic information; "
+                "tap 'AI Assistant' to switch to the scheduling assistant."
             ),
             redirect_target="chat_home",
-            redirect_button_label="Trợ lý AI",
+            redirect_button_label="AI Assistant",
         )
 
     if kind is not None:
