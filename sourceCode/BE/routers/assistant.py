@@ -19,6 +19,12 @@ from services.temporal import resolve_date_hint
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
 
+_EXPLICIT_QUERY_CUE_RE = re.compile(
+    r"\b(what|when|where|which|show|list|quy chế|quy định|tín chỉ|học vụ|"
+    r"có lịch gì|lịch gì|khi nào|mấy giờ|ở đâu|xem lịch|tra cứu)\b",
+    re.IGNORECASE,
+)
+
 
 class UnderstandRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
@@ -308,7 +314,10 @@ def understand(
         parent is not None
         and not is_cancel
         and not result.fallback_mode
-        and result.intent == "unknown"
+        and (
+            result.intent == "unknown"
+            or (result.intent == "query_schedule" and not _EXPLICIT_QUERY_CUE_RE.search(body.prompt))
+        )
     ):
         has_date_cue = result.date_hint is not None or bool(_DATE_HINT_RE.search(body.prompt))
         if (
@@ -359,7 +368,9 @@ def understand(
                     requested_end=result.requested_end,
                     limit=20,
                 )
-    elif not result.needs_clarification and (result.intent == "schedule_task" or (parent and result.intent != "unknown")):
+    elif not result.needs_clarification and (
+        result.intent == "schedule_task" or (parent is not None and result.intent == "reschedule")
+    ):
         created = proposal_svc.create_proposal(db, current_user.id, result, body.prompt, now, parent)
         print("[DEBUG PROPOSAL]", None if created is None else {
             "start": from_db_to_vn(created.start_time).isoformat(),
@@ -384,7 +395,7 @@ def understand(
 
     redirect_target: str | None = None
     redirect_button_label: str | None = None
-    if result.intent == "query_schedule":  # a calendar / academic question belongs in the search tab
+    if result.intent == "query_schedule" and proposal is None:  # a calendar / academic question belongs in the search tab
         message = (
             "It looks like you want to search your schedule or ask an academic question. "
             "The AI Assistant tab is for scheduling tasks; tap 'Search' to switch to the Search tab."
