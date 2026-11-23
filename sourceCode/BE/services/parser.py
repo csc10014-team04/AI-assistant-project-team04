@@ -28,6 +28,7 @@ try:
     # Check common Tesseract installation paths on Windows and Linux
     _tess_candidates = [
         os.getenv("TESSERACT_CMD"),
+        os.path.join(os.getenv("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR", "tesseract.exe"),
         r"C:\Program Files\Tesseract-OCR\tesseract.exe",
         r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
         "/usr/bin/tesseract",
@@ -320,33 +321,42 @@ def _parse_and_validate_row(
     first_date_raw = cells[6].strip()
     last_date_raw = cells[7].strip()
     kind_raw = cells[8].strip().upper()
-   
-    # 1. Validate title against CsvRowKind
-    if not title:
+
+    prefill: dict[str, str] = {  # prefill fields so fe edit modal can correct invalid rows quickly
+        "course_code": course_code,
+        "title": title,
+        "weekday": weekday_raw,
+        "start_time": start_time_raw,
+        "end_time": end_time_raw,
+        "room": room_raw,
+        "first_date": first_date_raw,
+        "last_date": last_date_raw,
+        "kind": kind_raw or "CLASS",
+    }
+
+    def _invalid(error_code: str, error_message: str) -> tuple[None, InvalidCsvRow]:
         return None, InvalidCsvRow(
             line_number=line_number,
             raw_text=raw_text,
-            error_code="EMPTY_TITLE",
-            error_message="Title cannot be empty",
+            error_code=error_code,
+            error_message=error_message,
+            prefill=dict(prefill),
         )
+
+    # 1. Validate title against CsvRowKind
+    if not title:
+        return _invalid("EMPTY_TITLE", "Title cannot be empty")
 
     # 2. Validate kind against CsvRowKind
     if not kind_raw:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_KIND",
-            error_message="Kind cannot be empty",
-        )
+        return _invalid("EMPTY_KIND", "Kind cannot be empty")
 
     try:
         row_kind = CsvRowKind(kind_raw)
     except ValueError:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="INVALID_KIND",
-            error_message=f"Invalid kind '{cells[8]}'. Must be one of CLASS, EXAM, DEADLINE, EVENT",
+        return _invalid(
+            "INVALID_KIND",
+            f"Invalid kind '{cells[8]}'. Must be one of CLASS, EXAM, DEADLINE, EVENT",
         )
 
     # 3. Validate weekday
@@ -354,21 +364,18 @@ def _parse_and_validate_row(
     if weekday_raw:
         if weekday_raw in WEEKDAY_LOOKUP:
             parsed_weekday = WEEKDAY_LOOKUP[weekday_raw]
+            prefill["weekday"] = parsed_weekday.value
         else:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="INVALID_WEEKDAY",
-                error_message=f"Invalid weekday '{cells[2]}'. Expected one of MON, TUE, WED, THU, FRI, SAT, SUN",
+            return _invalid(
+                "INVALID_WEEKDAY",
+                f"Invalid weekday '{cells[2]}'. Expected one of MON, TUE, WED, THU, FRI, SAT, SUN",
             )
 
     # CLASS requires a valid weekday because it recurs weekly on that day
     if row_kind == CsvRowKind.CLASS and parsed_weekday is None:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="MISSING_WEEKDAY",
-            error_message="CLASS row requires a valid weekday (e.g. MON, TUE, WED, THU, FRI, SAT, SUN)",
+        return _invalid(
+            "MISSING_WEEKDAY",
+            "CLASS row requires a valid weekday (e.g. MON, TUE, WED, THU, FRI, SAT, SUN)",
         )
 
     # 4. Handle DEADLINE special rule: set start_time = end_time if start_time is omitted
@@ -378,81 +385,55 @@ def _parse_and_validate_row(
             start_time_raw = end_time_raw
         elif start_time_raw and not end_time_raw:
             end_time_raw = start_time_raw
+        prefill["start_time"] = start_time_raw
+        prefill["end_time"] = end_time_raw
 
     # 5. Validate presence of time values
     if not start_time_raw:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_START_TIME",
-            error_message="Start time cannot be empty",
-        )
+        return _invalid("EMPTY_START_TIME", "Start time cannot be empty")
 
     if not end_time_raw:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_END_TIME",
-            error_message="End time cannot be empty",
-        )
+        return _invalid("EMPTY_END_TIME", "End time cannot be empty")
 
     # Parse 24-hour HH:MM time
     try:
         parsed_start_time = _parse_time_cell(start_time_raw)
     except ValueError:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="INVALID_START_TIME",
-            error_message=f"Invalid start_time '{start_time_raw}'. Expected 24-hour format HH:MM",
+        return _invalid(
+            "INVALID_START_TIME",
+            f"Invalid start_time '{start_time_raw}'. Expected 24-hour format HH:MM",
         )
 
     try:
         parsed_end_time = _parse_time_cell(end_time_raw)
     except ValueError:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="INVALID_END_TIME",
-            error_message=f"Invalid end_time '{end_time_raw}'. Expected 24-hour format HH:MM",
+        return _invalid(
+            "INVALID_END_TIME",
+            f"Invalid end_time '{end_time_raw}'. Expected 24-hour format HH:MM",
         )
 
     # 6. Validate presence of date values
     if not first_date_raw:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_FIRST_DATE",
-            error_message="First date cannot be empty",
-        )
+        return _invalid("EMPTY_FIRST_DATE", "First date cannot be empty")
 
     if not last_date_raw:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="EMPTY_LAST_DATE",
-            error_message="Last date cannot be empty",
-        )
+        return _invalid("EMPTY_LAST_DATE", "Last date cannot be empty")
 
     # Parse YYYY-MM-DD date
     try:
         parsed_first_date = date.fromisoformat(first_date_raw)
     except ValueError:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="INVALID_FIRST_DATE",
-            error_message=f"Invalid first_date '{first_date_raw}'. Expected format YYYY-MM-DD",
+        return _invalid(
+            "INVALID_FIRST_DATE",
+            f"Invalid first_date '{first_date_raw}'. Expected format YYYY-MM-DD",
         )
 
     try:
         parsed_last_date = date.fromisoformat(last_date_raw)
     except ValueError:
-        return None, InvalidCsvRow(
-            line_number=line_number,
-            raw_text=raw_text,
-            error_code="INVALID_LAST_DATE",
-            error_message=f"Invalid last_date '{last_date_raw}'. Expected format YYYY-MM-DD",
+        return _invalid(
+            "INVALID_LAST_DATE",
+            f"Invalid last_date '{last_date_raw}'. Expected format YYYY-MM-DD",
         )
 
     # Room is optional; store None if empty
@@ -462,52 +443,40 @@ def _parse_and_validate_row(
     if row_kind == CsvRowKind.DEADLINE:
         # Deadlines must represent a point-in-time: start == end and on a single date
         if parsed_start_time != parsed_end_time:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="DEADLINE_TIME_MISMATCH",
-                error_message=f"DEADLINE requires start_time == end_time (found {start_time_raw} vs {end_time_raw})",
+            return _invalid(
+                "DEADLINE_TIME_MISMATCH",
+                f"DEADLINE requires start_time == end_time (found {start_time_raw} vs {end_time_raw})",
             )
         if parsed_first_date != parsed_last_date:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="DEADLINE_DATE_MISMATCH",
-                error_message=f"DEADLINE requires first_date == last_date (found {first_date_raw} vs {last_date_raw})",
+            return _invalid(
+                "DEADLINE_DATE_MISMATCH",
+                f"DEADLINE requires first_date == last_date (found {first_date_raw} vs {last_date_raw})",
             )
 
     elif row_kind == CsvRowKind.CLASS:
         # Recurring weekly class sessions must have positive duration and valid date range
         if parsed_start_time >= parsed_end_time:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="INVALID_TIME_RANGE",
-                error_message=f"CLASS start_time ({start_time_raw}) must be strictly earlier than end_time ({end_time_raw})",
+            return _invalid(
+                "INVALID_TIME_RANGE",
+                f"CLASS start_time ({start_time_raw}) must be strictly earlier than end_time ({end_time_raw})",
             )
         if parsed_first_date > parsed_last_date:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="INVALID_DATE_RANGE",
-                error_message=f"CLASS first_date ({first_date_raw}) cannot be after last_date ({last_date_raw})",
+            return _invalid(
+                "INVALID_DATE_RANGE",
+                f"CLASS first_date ({first_date_raw}) cannot be after last_date ({last_date_raw})",
             )
 
     elif row_kind in (CsvRowKind.EXAM, CsvRowKind.EVENT):
         # One-off exams and fixed events must have positive duration and occur on a single date
         if parsed_start_time >= parsed_end_time:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="INVALID_TIME_RANGE",
-                error_message=f"{row_kind.value} start_time ({start_time_raw}) must be strictly earlier than end_time ({end_time_raw})",
+            return _invalid(
+                "INVALID_TIME_RANGE",
+                f"{row_kind.value} start_time ({start_time_raw}) must be strictly earlier than end_time ({end_time_raw})",
             )
         if parsed_first_date != parsed_last_date:
-            return None, InvalidCsvRow(
-                line_number=line_number,
-                raw_text=raw_text,
-                error_code="INVALID_DATE_RANGE",
-                error_message=f"{row_kind.value} is a single-day event and requires first_date == last_date (found {first_date_raw} vs {last_date_raw})",
+            return _invalid(
+                "INVALID_DATE_RANGE",
+                f"{row_kind.value} is a single-day event and requires first_date == last_date (found {first_date_raw} vs {last_date_raw})",
             )
 
     # All validations passed: construct clean ParsedCsvRow
@@ -771,6 +740,17 @@ def _parse_timetable_table_rows(
                     "This course row has no recognizable weekday and time. "
                     "Check the schedule cells or skip the row if the course has no published time."
                 ),
+                prefill={
+                    "course_code": course_code,
+                    "title": title,
+                    "weekday": "",
+                    "start_time": "",
+                    "end_time": "",
+                    "room": room or "",
+                    "first_date": first_date,
+                    "last_date": last_date,
+                    "kind": kind,
+                },
             ))
             next_line_number += 1
             continue
@@ -784,6 +764,17 @@ def _parse_timetable_table_rows(
                     raw_text=raw_text,
                     error_code="UNPARSEABLE_SCHEDULE",
                     error_message=schedule_error,
+                    prefill={
+                        "course_code": course_code,
+                        "title": title,
+                        "weekday": weekday.value if weekday else "",
+                        "start_time": start_text or "",
+                        "end_time": end_text or "",
+                        "room": room_from_schedule or room or "",
+                        "first_date": first_date,
+                        "last_date": last_date,
+                        "kind": kind,
+                    },
                 ))
                 continue
 
@@ -1090,6 +1081,23 @@ def _extract_text_from_pdf(file_bytes: bytes) -> str:
     return "\n".join(page_texts)
 
 
+def _ocr_with_lang_fallback(ocr_fn: Any, image: Any, **kwargs: Any) -> Any:
+    """run pytesseract with vie+eng first and fall back to eng or default when vie data is missing."""
+    last_exc: Optional[Exception] = None
+    for lang in ("vie+eng", "eng", None):
+        try:
+            call_kwargs = dict(kwargs)
+            if lang is not None:
+                call_kwargs["lang"] = lang
+            return ocr_fn(image, **call_kwargs)
+        except pytesseract.TesseractNotFoundError:
+            raise
+        except Exception as exc:
+            last_exc = exc
+    assert last_exc is not None
+    raise last_exc
+
+
 def _extract_text_from_image(file_bytes: bytes) -> str:
     """
     Input:
@@ -1119,24 +1127,16 @@ def _extract_text_from_image(file_bytes: bytes) -> str:
         ) from exc
 
     try:
-        extracted = pytesseract.image_to_string(image, lang="vie+eng")
+        return str(_ocr_with_lang_fallback(pytesseract.image_to_string, image))
     except pytesseract.TesseractNotFoundError as exc:
         raise ValueError(
             "Tesseract OCR engine is not installed on this server. "
             "Contact the system administrator to install Tesseract."
         ) from exc
-    except Exception:
-        try:
-            extracted = pytesseract.image_to_string(image, lang="eng")
-        except Exception:
-            try:
-                extracted = pytesseract.image_to_string(image)
-            except Exception as exc:
-                raise ValueError(
-                    f"OCR failed on image: {type(exc).__name__}: {exc}"
-                ) from exc
-
-    return extracted
+    except Exception as exc:
+        raise ValueError(
+            f"OCR failed on image: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def _grid_line_positions(image: Any, horizontal: bool) -> list[int]:
@@ -1225,9 +1225,9 @@ def _extract_image_table_rows(
         return None
 
     try:
-        ocr_data = pytesseract.image_to_data(
+        ocr_data = _ocr_with_lang_fallback(
+            pytesseract.image_to_data,
             image,
-            lang="vie+eng",
             output_type=pytesseract.Output.DICT,
         )
     except pytesseract.TesseractNotFoundError as error:
@@ -1536,7 +1536,7 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                             page_results.append(table_result)
                             continue
 
-                    page_ocr_text = pytesseract.image_to_string(page_image, lang="vie+eng")
+                    page_ocr_text = _ocr_with_lang_fallback(pytesseract.image_to_string, page_image)
                     page_results.append(parse_timetable_content(page_ocr_text, filename))
                 except Exception:
                     page_results.append(ParseBatchResult(

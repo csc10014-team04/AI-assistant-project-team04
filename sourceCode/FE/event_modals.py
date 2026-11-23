@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, date, time, timedelta
 from kivy.uix.modalview import ModalView
 from kivy.uix.widget import Widget
@@ -1187,6 +1188,153 @@ class ImportStep1Modal(ModalView):
         self.lbl_file.theme_text_color = "Error"
 
 
+def _normalize_input_date(raw_text):
+    """accept YYYY-MM-DD, DD/MM/YYYY, or DD-MM-YYYY and return ISO YYYY-MM-DD."""
+    cleaned = (raw_text or "").strip()
+    if not cleaned:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+        y, m, d = map(int, cleaned.split("-"))
+        return date(y, m, d).isoformat()
+    match = re.fullmatch(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})", cleaned)
+    if match:
+        d, m, y = map(int, match.groups())
+        return date(y, m, d).isoformat()
+    raise ValueError(f"Invalid date '{cleaned}'. Use YYYY-MM-DD or DD/MM/YYYY.")
+
+
+def _default_row_fields(invalid_row):
+    """build editable 9-column dict from server prefill with safe defaults."""
+    pre = invalid_row.get("prefill") or {}
+    return {
+        "line_number": int(invalid_row.get("line_number") or 1),
+        "course_code": str(pre.get("course_code") or ""),
+        "title": str(pre.get("title") or ""),
+        "kind": str(pre.get("kind") or "CLASS").upper(),
+        "weekday": str(pre.get("weekday") or ""),
+        "start_time": str(pre.get("start_time") or ""),
+        "end_time": str(pre.get("end_time") or ""),
+        "room": str(pre.get("room") or ""),
+        "first_date": str(pre.get("first_date") or ""),
+        "last_date": str(pre.get("last_date") or ""),
+    }
+
+
+class EditImportRowModal(ModalView):
+    """modal allowing manual correction of a single invalid import row."""
+
+    def __init__(self, initial_data, on_save=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.92, 0.88)
+        self.auto_dismiss = False
+        self.initial_data = dict(initial_data or {})
+        self.on_save = on_save
+
+        layout = MDBoxLayout(
+            orientation="vertical",
+            padding=dp(15),
+            spacing=dp(8),
+            md_bg_color=[1, 1, 1, 1],
+            radius=[dp(12)],
+        )
+        line_no = self.initial_data.get("line_number", 1)
+        layout.add_widget(
+            MDLabel(
+                text=f"Edit Import Row (Line {line_no})",
+                font_style="Title",
+                role="medium",
+                bold=True,
+                size_hint_y=None,
+                height=dp(32),
+            )
+        )
+
+        scroll = ScrollView()
+        form = MDBoxLayout(orientation="vertical", spacing=dp(8), adaptive_height=True, padding=[0, dp(4), 0, dp(4)])
+        self.fields = {}
+        specs = [
+            ("course_code", "Course Code (optional)", self.initial_data.get("course_code", "")),
+            ("title", "Course / Event Title *", self.initial_data.get("title", "")),
+            ("kind", "Kind (CLASS / EXAM / DEADLINE / EVENT) *", self.initial_data.get("kind", "CLASS")),
+            ("weekday", "Weekday (MON..SUN, required for CLASS)", self.initial_data.get("weekday", "")),
+            ("start_time", "Start Time (HH:MM) *", self.initial_data.get("start_time", "")),
+            ("end_time", "End Time (HH:MM) *", self.initial_data.get("end_time", "")),
+            ("room", "Room (optional)", self.initial_data.get("room", "")),
+            ("first_date", "First Date (YYYY-MM-DD or DD/MM/YYYY) *", self.initial_data.get("first_date", "")),
+            ("last_date", "Last Date (YYYY-MM-DD or DD/MM/YYYY) *", self.initial_data.get("last_date", "")),
+        ]
+        for key, hint, val in specs:
+            tf = MDTextField(
+                MDTextFieldHintText(text=hint),
+                text=str(val or ""),
+                mode="outlined",
+            )
+            self.fields[key] = tf
+            form.add_widget(tf)
+
+        scroll.add_widget(form)
+        layout.add_widget(scroll)
+
+        self.lbl_err = MDLabel(
+            text="",
+            theme_text_color="Error",
+            adaptive_height=True,
+            size_hint_y=None,
+        )
+        self.lbl_err.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+        layout.add_widget(self.lbl_err)
+
+        actions = MDBoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(46))
+        actions.add_widget(
+            MDButton(
+                MDButtonText(text="SAVE ROW", text_color=[1, 1, 1, 1]),
+                style="filled",
+                md_bg_color=[0, 51 / 255, 204 / 255, 1],
+                size_hint_x=0.65,
+                on_release=self._save,
+            )
+        )
+        actions.add_widget(
+            MDButton(
+                MDButtonText(text="CANCEL"),
+                style="outlined",
+                size_hint_x=0.35,
+                on_release=self.dismiss,
+            )
+        )
+        layout.add_widget(actions)
+        self.add_widget(layout)
+
+    def _save(self, *args):
+        raw_first = self.fields["first_date"].text.strip()
+        raw_last = self.fields["last_date"].text.strip()
+        try:
+            norm_first = _normalize_input_date(raw_first)
+            norm_last = _normalize_input_date(raw_last)
+        except ValueError as exc:
+            self.lbl_err.text = str(exc)
+            return
+
+        payload = {
+            "line_number": int(self.initial_data.get("line_number") or 1),
+            "course_code": self.fields["course_code"].text.strip(),
+            "title": self.fields["title"].text.strip(),
+            "kind": (self.fields["kind"].text.strip() or "CLASS").upper(),
+            "weekday": self.fields["weekday"].text.strip().upper() or None,
+            "start_time": self.fields["start_time"].text.strip(),
+            "end_time": self.fields["end_time"].text.strip(),
+            "room": self.fields["room"].text.strip() or None,
+            "first_date": norm_first,
+            "last_date": norm_last,
+        }
+        if not payload["title"] or not payload["start_time"] or not payload["end_time"] or not norm_first or not norm_last:
+            self.lbl_err.text = "Please fill title, start/end time, and first/last date."
+            return
+        if self.on_save:
+            self.on_save(payload)
+        self.dismiss()
+
+
 # ==============================================================================
 # 3. MODAL: IMPORT LỊCH - BƯỚC 2 (Review & Fix Lỗi)
 # Dùng MDBoxLayout thay cho MDCard để tránh lỗi FBO crash trên GPU OpenGL
@@ -1197,7 +1345,7 @@ class ImportStep2Modal(ModalView):
         self.size_hint = (0.95, 0.9)
         self.auto_dismiss = False
         self.preview_data = preview_data or {}
-        
+
         layout = MDBoxLayout(
             orientation='vertical',
             padding=dp(15),
@@ -1215,29 +1363,74 @@ class ImportStep2Modal(ModalView):
             )
         )
 
-        valid_rows = self.preview_data.get("valid_rows", [])
+        self.valid_rows = list(self.preview_data.get("valid_rows", []))
         raw_invalid_rows = self.preview_data.get("invalid_rows", [])
         # Không hiển thị cảnh báo độ tự tin OCR kỹ thuật lên giao diện người dùng
-        invalid_rows = [
+        self.invalid_rows = [
             row
             for row in raw_invalid_rows
             if row.get("error_code") != "OCR_LOW_CONFIDENCE"
             and "ocr confidence" not in str(row.get("error_message", "")).lower()
         ]
-        layout.add_widget(
-            MDLabel(
-                text=f"Valid: {len(valid_rows)} events | Invalid: {len(invalid_rows)} lines",
-                theme_text_color="Hint",
-                size_hint_y=None,
-                height=dp(25),
-            )
+        self.corrected_rows = {}
+        self.skipped_lines = set()
+        self._invalid_card_refs = {}
+
+        self.lbl_summary = MDLabel(
+            text="",
+            theme_text_color="Hint",
+            size_hint_y=None,
+            height=dp(24),
         )
-        
+        layout.add_widget(self.lbl_summary)
+
+        # quick batch-date bar when any row is missing first_date or last_date
+        needs_dates = any(
+            row.get("error_code") in ("EMPTY_FIRST_DATE", "EMPTY_LAST_DATE")
+            for row in self.invalid_rows
+        )
+        if needs_dates:
+            batch_box = MDBoxLayout(
+                orientation='horizontal',
+                spacing=dp(6),
+                size_hint_y=None,
+                height=dp(64),
+                padding=[dp(8), dp(6), dp(8), dp(6)],
+                md_bg_color=[0.94, 0.96, 1.0, 1.0],
+                radius=[dp(8)],
+            )
+            self.tf_batch_first = MDTextField(
+                MDTextFieldHintText(text="Term First (DD/MM/YYYY)"),
+                mode="outlined",
+                size_hint_x=0.36,
+            )
+            self.tf_batch_last = MDTextField(
+                MDTextFieldHintText(text="Term Last (DD/MM/YYYY)"),
+                mode="outlined",
+                size_hint_x=0.36,
+            )
+            btn_apply_dates = Button(
+                text="APPLY ALL",
+                font_size=dp(12),
+                bold=True,
+                background_normal='',
+                background_color=[0, 51 / 255, 204 / 255, 1],
+                color=[1, 1, 1, 1],
+                size_hint=(0.28, None),
+                height=dp(44),
+                pos_hint={'center_y': 0.5},
+                on_release=self._apply_batch_dates,
+            )
+            batch_box.add_widget(self.tf_batch_first)
+            batch_box.add_widget(self.tf_batch_last)
+            batch_box.add_widget(btn_apply_dates)
+            layout.add_widget(batch_box)
+
         scroll = ScrollView()
         self.list_layout = MDBoxLayout(orientation='vertical', spacing=dp(10), adaptive_height=True)
-        
+
         # Render Thẻ Xanh (Hợp lệ) bằng MDBoxLayout (tránh FBO ripple crash)
-        for row in valid_rows:
+        for row in self.valid_rows:
             card = MDBoxLayout(
                 orientation='vertical',
                 md_bg_color=[0.9, 1.0, 0.9, 1.0],
@@ -1250,43 +1443,78 @@ class ImportStep2Modal(ModalView):
             title_text = f"[{row.get('kind', 'CLASS')}] {row.get('course_code', '')} {row.get('title', '')}".strip()
             time_text = f"{row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Room: {row.get('room') or 'Unknown'}"
             date_text = f"From {row.get('first_date')} to {row.get('last_date')}"
-            
-            card.add_widget(MDLabel(text=title_text, bold=True, size_hint_y=None, height=dp(24)))
-            card.add_widget(MDLabel(text=time_text, theme_text_color="Secondary", size_hint_y=None, height=dp(20)))
-            card.add_widget(MDLabel(text=date_text, theme_text_color="Hint", size_hint_y=None, height=dp(18)))
+
+            card.add_widget(MDLabel(text=title_text, bold=True, size_hint_y=None, adaptive_height=True))
+            card.add_widget(MDLabel(text=time_text, theme_text_color="Secondary", size_hint_y=None, adaptive_height=True))
+            card.add_widget(MDLabel(text=date_text, theme_text_color="Hint", size_hint_y=None, adaptive_height=True))
             self.list_layout.add_widget(card)
-            
-        # Render Thẻ Vàng (Lỗi) bằng MDBoxLayout
-        for row in invalid_rows:
+
+        # Render Thẻ Vàng (Lỗi) với nút Edit và Skip cho từng dòng
+        for row in self.invalid_rows:
+            line_no = int(row.get("line_number") or 0)
             card = MDBoxLayout(
                 orientation='vertical',
                 md_bg_color=[1.0, 0.95, 0.85, 1.0],
                 size_hint_y=None,
                 adaptive_height=True,
                 padding=dp(10),
-                spacing=dp(4),
+                spacing=dp(6),
                 radius=[dp(8)],
             )
-            card.add_widget(
-                MDLabel(
-                    text=f"[Error] Line {row.get('line_number')}: {row.get('error_message')}",
-                    bold=True,
-                    text_color=[0.8, 0.5, 0, 1],
-                    size_hint_y=None,
-                    height=dp(24),
-                )
+            lbl_err = MDLabel(
+                text=f"[Error] Line {line_no}: {row.get('error_message')}",
+                bold=True,
+                theme_text_color="Custom",
+                text_color=[0.8, 0.45, 0, 1],
+                size_hint_y=None,
+                adaptive_height=True,
             )
-            card.add_widget(
-                MDLabel(
-                    text=f"Raw: {row.get('raw_text')}",
-                    theme_text_color="Hint",
-                    size_hint_y=None,
-                    height=dp(22),
-                )
+            lbl_err.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+            lbl_raw = MDLabel(
+                text=f"Raw: {row.get('raw_text')}",
+                theme_text_color="Hint",
+                size_hint_y=None,
+                adaptive_height=True,
             )
-            self.list_layout.add_widget(card)
+            lbl_raw.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
 
-        if not valid_rows and not invalid_rows:
+            action_row = MDBoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(32))
+            btn_edit = Button(
+                text="EDIT",
+                font_size=dp(12),
+                bold=True,
+                background_normal='',
+                background_color=[0, 51 / 255, 204 / 255, 1],
+                color=[1, 1, 1, 1],
+                size_hint_x=0.5,
+                on_release=lambda _, r=row: self._open_edit_modal(r),
+            )
+            btn_skip = Button(
+                text="SKIP",
+                font_size=dp(12),
+                bold=True,
+                background_normal='',
+                background_color=[0.75, 0.75, 0.78, 1],
+                color=[0.15, 0.15, 0.15, 1],
+                size_hint_x=0.5,
+                on_release=lambda _, ln=line_no: self._toggle_skip_line(ln),
+            )
+            action_row.add_widget(btn_edit)
+            action_row.add_widget(btn_skip)
+
+            card.add_widget(lbl_err)
+            card.add_widget(lbl_raw)
+            card.add_widget(action_row)
+            self.list_layout.add_widget(card)
+            self._invalid_card_refs[line_no] = {
+                "row": row,
+                "card": card,
+                "lbl_err": lbl_err,
+                "lbl_raw": lbl_raw,
+                "btn_skip": btn_skip,
+            }
+
+        if not self.valid_rows and not self.invalid_rows:
             empty_card = MDBoxLayout(
                 orientation='vertical',
                 md_bg_color=[1.0, 0.95, 0.95, 1.0],
@@ -1305,7 +1533,7 @@ class ImportStep2Modal(ModalView):
                 )
             )
             self.list_layout.add_widget(empty_card)
-            
+
         scroll.add_widget(self.list_layout)
         layout.add_widget(scroll)
 
@@ -1357,7 +1585,7 @@ class ImportStep2Modal(ModalView):
         )
         self.lbl_status.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
         layout.add_widget(self.lbl_status)
-        
+
         btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(50))
         self.btn_next = MDButton(
             MDButtonText(text="CONTINUE TO CONFLICT CHECK", text_color=[1, 1, 1, 1]),
@@ -1365,7 +1593,6 @@ class ImportStep2Modal(ModalView):
             md_bg_color=[0, 51/255, 204/255, 1],
             size_hint_x=0.7,
             on_release=self.check_conflicts,
-            disabled=(len(valid_rows) == 0),
         )
         btn_cancel = MDButton(
             MDButtonText(text="CANCEL"),
@@ -1377,23 +1604,164 @@ class ImportStep2Modal(ModalView):
         btn_box.add_widget(btn_cancel)
         layout.add_widget(btn_box)
         self.add_widget(layout)
+        self._refresh_summary_and_button()
 
-    def check_conflicts(self, instance):
-        valid_rows = self.preview_data.get("valid_rows", [])
-        if not valid_rows:
-            self.lbl_status.text = "No valid rows to check conflicts!"
+    def _refresh_summary_and_button(self):
+        unresolved = sum(
+            1
+            for row in self.invalid_rows
+            if int(row.get("line_number") or 0) not in self.corrected_rows
+            and int(row.get("line_number") or 0) not in self.skipped_lines
+        )
+        self.lbl_summary.text = (
+            f"Valid: {len(self.valid_rows)} | Edited: {len(self.corrected_rows)} | "
+            f"Skipped: {len(self.skipped_lines)} | Remaining Errors: {unresolved}"
+        )
+        self.btn_next.disabled = (len(self.valid_rows) + len(self.corrected_rows) == 0)
+
+    def _update_invalid_card_visual(self, line_no):
+        ref = self._invalid_card_refs.get(line_no)
+        if not ref:
+            return
+        row = ref["row"]
+        if line_no in self.skipped_lines:
+            ref["card"].md_bg_color = [0.92, 0.92, 0.94, 1.0]
+            ref["lbl_err"].text = f"[Skipped] Line {line_no}"
+            ref["lbl_err"].text_color = [0.45, 0.45, 0.48, 1]
+            ref["lbl_raw"].text = f"Skipped: {row.get('raw_text')}"
+            ref["btn_skip"].text = "UNDO SKIP"
+        elif line_no in self.corrected_rows:
+            edited = self.corrected_rows[line_no]
+            ref["card"].md_bg_color = [0.89, 0.96, 1.0, 1.0]
+            ref["lbl_err"].text = f"[Edited] Line {line_no}: {edited.get('title')}"
+            ref["lbl_err"].text_color = [0, 51 / 255, 204 / 255, 1]
+            ref["lbl_raw"].text = (
+                f"{edited.get('weekday') or ''} {edited.get('start_time')}-{edited.get('end_time')} | "
+                f"From {edited.get('first_date')} to {edited.get('last_date')} | Room: {edited.get('room') or 'Unknown'}"
+            )
+            ref["btn_skip"].text = "SKIP"
+        else:
+            ref["card"].md_bg_color = [1.0, 0.95, 0.85, 1.0]
+            ref["lbl_err"].text = f"[Error] Line {line_no}: {row.get('error_message')}"
+            ref["lbl_err"].text_color = [0.8, 0.45, 0, 1]
+            ref["lbl_raw"].text = f"Raw: {row.get('raw_text')}"
+            ref["btn_skip"].text = "SKIP"
+
+    def _open_edit_modal(self, invalid_row):
+        line_no = int(invalid_row.get("line_number") or 0)
+        initial = self.corrected_rows.get(line_no) or _default_row_fields(invalid_row)
+        EditImportRowModal(initial_data=initial, on_save=self._on_row_edited).open()
+
+    def _on_row_edited(self, payload):
+        line_no = int(payload["line_number"])
+        self.skipped_lines.discard(line_no)
+        self.corrected_rows[line_no] = payload
+        self.lbl_status.text = ""
+        self._update_invalid_card_visual(line_no)
+        self._refresh_summary_and_button()
+
+    def _toggle_skip_line(self, line_no):
+        if line_no in self.skipped_lines:
+            self.skipped_lines.remove(line_no)
+        else:
+            self.skipped_lines.add(line_no)
+            self.corrected_rows.pop(line_no, None)  # skipped rows must not be submitted as corrected
+        self.lbl_status.text = ""
+        self._update_invalid_card_visual(line_no)
+        self._refresh_summary_and_button()
+
+    def _apply_batch_dates(self, *args):
+        if not hasattr(self, "tf_batch_first") or not hasattr(self, "tf_batch_last"):
+            return
+        try:
+            first_iso = _normalize_input_date(self.tf_batch_first.text)
+            last_iso = _normalize_input_date(self.tf_batch_last.text)
+        except ValueError as exc:
+            self.lbl_status.text = str(exc)
+            self.lbl_status.theme_text_color = "Error"
+            return
+        if not first_iso or not last_iso:
+            self.lbl_status.text = "Enter both Term First and Term Last dates before applying."
+            self.lbl_status.theme_text_color = "Error"
             return
 
-        self.btn_next.disabled = True
-        self.lbl_status.text = "Checking for schedule conflicts..."
+        applied = 0
+        for row in self.invalid_rows:
+            line_no = int(row.get("line_number") or 0)
+            if line_no in self.skipped_lines:
+                continue
+            if row.get("error_code") in ("EMPTY_FIRST_DATE", "EMPTY_LAST_DATE"):
+                base = dict(self.corrected_rows.get(line_no) or _default_row_fields(row))
+                base["first_date"] = first_iso
+                base["last_date"] = last_iso
+                if not base.get("weekday"):
+                    base["weekday"] = None
+                if not base.get("room"):
+                    base["room"] = None
+                self.corrected_rows[line_no] = base
+                self._update_invalid_card_visual(line_no)
+                applied += 1
+
+        self.lbl_status.text = f"Applied {first_iso} .. {last_iso} to {applied} row(s)." if applied else "No date-missing rows to update."
         self.lbl_status.theme_text_color = "Hint"
+        self._refresh_summary_and_button()
+
+    def check_conflicts(self, instance):
+        if not self.valid_rows and not self.corrected_rows:
+            self.lbl_status.text = "Edit at least one valid row or cancel import."
+            self.lbl_status.theme_text_color = "Error"
+            return
 
         replace_flag = bool(self.chk_replace.active)
         self._replace_previous_imports = replace_flag
+        self.btn_next.disabled = True
 
+        if self.corrected_rows or self.skipped_lines:
+            self.lbl_status.text = "Validating edited/skipped rows..."
+            self.lbl_status.theme_text_color = "Hint"
+            batch_id = self.preview_data.get("import_batch_id", "")
+            api.resolve_preview(
+                import_batch_id=batch_id,
+                valid_rows=self.valid_rows,
+                corrected_rows=list(self.corrected_rows.values()),
+                skipped_line_numbers=sorted(self.skipped_lines),
+                on_success=self.on_resolve_success,
+                on_failure=self.on_resolve_failure,
+                on_error=self.on_check_error,
+            )
+            return
+
+        self._run_conflict_check(self.valid_rows)
+
+    def on_resolve_success(self, req, result):
+        all_valid_rows = result.get("all_valid_rows", []) if isinstance(result, dict) else []
+        if not all_valid_rows:
+            self.lbl_status.text = "No valid rows remain after resolving preview."
+            self.lbl_status.theme_text_color = "Error"
+            self._refresh_summary_and_button()
+            return
+        self._resolved_valid_rows = all_valid_rows
+        self._run_conflict_check(all_valid_rows)
+
+    def on_resolve_failure(self, req, res):
+        self._refresh_summary_and_button()
+        err = "Invalid edited rows"
+        if isinstance(res, dict):
+            detail = res.get("detail")
+            if isinstance(detail, dict):
+                still = detail.get("still_invalid_rows") or []
+                err = "; ".join(still[:3]) if still else detail.get("message", err)
+            elif isinstance(detail, str):
+                err = detail
+        self.lbl_status.text = f"Error: {err}"
+        self.lbl_status.theme_text_color = "Error"
+
+    def _run_conflict_check(self, rows_to_check):
+        self.lbl_status.text = "Checking for schedule conflicts..."
+        self.lbl_status.theme_text_color = "Hint"
         api.check_conflicts(
-            incoming_rows=valid_rows,
-            replace_previous_imports=replace_flag,
+            incoming_rows=rows_to_check,
+            replace_previous_imports=getattr(self, "_replace_previous_imports", False),
             on_success=self.on_check_success,
             on_failure=self.on_check_failure,
             on_error=self.on_check_error,
@@ -1430,7 +1798,7 @@ class ImportStep2Modal(ModalView):
         store.refresh(api)
 
     def on_check_failure(self, req, res):
-        self.btn_next.disabled = False
+        self._refresh_summary_and_button()
         err = "Error checking conflicts"
         if isinstance(res, dict):
             detail = res.get("detail", err)
@@ -1440,9 +1808,8 @@ class ImportStep2Modal(ModalView):
         self.lbl_status.theme_text_color = "Error"
 
     def on_check_error(self, req, err):
-        self.btn_next.disabled = False
+        self._refresh_summary_and_button()
         self.lbl_status.text = f"Network error: {err}"
-        self.lbl_status.theme_text_color = "Error"
         self.lbl_status.theme_text_color = "Error"
 
 

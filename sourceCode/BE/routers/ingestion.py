@@ -81,6 +81,7 @@ class InvalidCsvRowSchema(BaseModel):
     raw_text: str
     error_code: str
     error_message: str
+    prefill: Optional[dict[str, str]] = None
 
 
 class ParsePreviewTextRequest(BaseModel):
@@ -271,6 +272,7 @@ def _invalid_to_schema(row: InvalidCsvRow) -> InvalidCsvRowSchema:
         raw_text=row.raw_text,
         error_code=row.error_code,
         error_message=row.error_message,
+        prefill=row.prefill,
     )
 
 

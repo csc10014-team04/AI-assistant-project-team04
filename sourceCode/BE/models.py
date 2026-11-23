@@ -210,6 +210,7 @@ class InvalidCsvRow:
     raw_text: str
     error_code: str
     error_message: str
+    prefill: Optional[dict[str, str]] = None
 
 
 @dataclass

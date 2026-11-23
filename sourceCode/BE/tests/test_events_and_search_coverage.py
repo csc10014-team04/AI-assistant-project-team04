@@ -9,7 +9,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from database import VN_TZ
-from models import CsvRowKind, EventDomain, EventKind, EventSource, ParsedCsvRow, Weekday
+from models import CsvRowKind, EventDomain, EventKind, EventSource, ParsedCsvRow, Proposal, ProposalStatus, Weekday
 from routers import assistant as assistant_router
 from services import nlu, parser, privacy, rag, search_engine, security, validator
 
@@ -422,3 +422,113 @@ def test_b08_b09_b12_b15_security_rag_and_deadlock_fixes(monkeypatch, tmp_path):
 
     # b-15: runtime ddl helper removed from assistant router
     assert not hasattr(assistant_router, "_ensure_clarification_table")
+
+
+def test_reschedule_afternoon_not_redirected_and_query_does_not_mutate_parent(client, db_session, monkeypatch):
+    u = _register(client, "resched_guard")
+    replies = iter([
+        {"intent": "schedule_task", "title": "play basketball", "duration_minutes": 60, "date_hint": "tomorrow"},
+        {"intent": "query_schedule", "preferred_time_of_day": "afternoon"},
+        {"intent": "schedule_task", "title": "play basketball", "duration_minutes": 60, "date_hint": "tomorrow"},
+        {"intent": "query_schedule"},
+    ])
+    monkeypatch.setattr(
+        nlu.httpx,
+        "Client",
+        lambda *a, **kw: REAL_HTTPX_CLIENT(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(next(replies))}}]})
+            )
+        ),
+    )
+
+    # 1. initial proposal at 8am tomorrow -> rescheduled cleanly by "in the afternoon please" even if llm returned query_schedule
+    p1_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "play basketball 1 hour tomorrow at 8am"},
+    )
+    assert p1_res.status_code == 200
+    p1_id = p1_res.json()["proposal"]["id"]
+
+    resched = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "in the afternoon please", "reschedule_proposal_id": p1_id},
+    )
+    assert resched.status_code == 200
+    r_body = resched.json()
+    assert r_body["redirect_target"] is None
+    assert r_body["nlu"]["intent"] == "reschedule"
+    assert r_body["proposal"] is not None
+    p1_row = db_session.get(Proposal, p1_id)
+    assert p1_row is not None and p1_row.status == ProposalStatus.RESCHEDULED
+
+    # 2. explicit schedule query during reschedule redirects without mutating parent status to RESCHEDULED
+    p2_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "play basketball 1 hour tomorrow at 8am"},
+    )
+    assert p2_res.status_code == 200
+    p2_id = p2_res.json()["proposal"]["id"]
+
+    q_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "tuần này mình có lịch gì?", "reschedule_proposal_id": p2_id},
+    )
+    assert q_res.status_code == 200
+    q_body = q_res.json()
+    assert q_body["redirect_target"] == "search_home"
+    assert q_body["proposal"] is None
+    p2_row = db_session.get(Proposal, p2_id)
+    assert p2_row is not None and p2_row.status == ProposalStatus.PROPOSED
+
+
+def test_parse_preview_prefill_and_resolve_preview_batch_dates(client):
+    hcmus_csv = (
+        "Mã MH,Tên MH,Học Kỳ,Lịch LT,Lịch TH\n"
+        'CSC10008,Mạng máy tính,1/26-27,"T4 07:30-09:10 (C.45)\nT6 07:30-09:10 (I.44)",\n'
+        "BAA00030,Giáo dục quốc phòng - An ninh,1/26-27,,\n"
+    ).encode("utf-8")
+
+    prev = client.post(
+        "/api/v1/ingestion/parse-preview",
+        files={"file": ("tkb_hcmus.csv", hcmus_csv, "text/csv")},
+    )
+    assert prev.status_code == 200, prev.text
+    p_body = prev.json()
+    assert p_body["valid_count"] == 0
+    assert p_body["invalid_count"] == 3
+
+    inv = p_body["invalid_rows"]
+    missing_date_rows = [r for r in inv if r["error_code"] == "EMPTY_FIRST_DATE"]
+    no_sched_rows = [r for r in inv if r["error_code"] == "NO_SCHEDULE_DETECTED"]
+    assert len(missing_date_rows) == 2
+    assert len(no_sched_rows) == 1
+    assert {r["prefill"]["weekday"] for r in missing_date_rows} == {"WED", "FRI"}
+    assert {r["prefill"]["room"] for r in missing_date_rows} == {"C.45", "I.44"}
+
+    corrected = []
+    for r in missing_date_rows:
+        item = dict(r["prefill"])
+        item["line_number"] = r["line_number"]
+        item["first_date"] = "2026-09-28"
+        item["last_date"] = "2026-12-12"
+        corrected.append(item)
+
+    res = client.post(
+        "/api/v1/ingestion/resolve-preview",
+        json={
+            "import_batch_id": p_body["import_batch_id"],
+            "valid_rows": [],
+            "corrected_rows": corrected,
+            "skipped_line_numbers": [r["line_number"] for r in no_sched_rows],
+        },
+    )
+    assert res.status_code == 200, res.text
+    r_body = res.json()
+    assert r_body["total_accepted"] == 2
+    assert {row["weekday"] for row in r_body["all_valid_rows"]} == {"WED", "FRI"}
+    assert {row["room"] for row in r_body["all_valid_rows"]} == {"C.45", "I.44"}
