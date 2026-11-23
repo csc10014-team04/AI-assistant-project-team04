@@ -760,6 +760,11 @@ class ChatAssistantScreen(MDScreen):
         redirect_target = result.get("redirect_target")
         redirect_label = result.get("redirect_button_label") or "Switch tab"
         if redirect_target:
+            pending_resched = getattr(self, "_pending_reschedule_card", None)
+            if pending_resched is not None:
+                pending_resched.show_status("")
+                self._pending_reschedule_card = None
+                self.cancel_reschedule()
             msg = result.get("message") or "You may want to search schedules or query academic regulations."
             self.append_ai_message(msg)
             nav_btn = MDButton(
