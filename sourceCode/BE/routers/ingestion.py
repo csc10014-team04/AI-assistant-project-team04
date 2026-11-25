@@ -3,6 +3,7 @@
 # duty: each assigned pic reads, understands, maintains, and fixes any issues in their respective sections.
 import csv
 import io
+import logging
 import sys
 from dataclasses import asdict
 from datetime import date, datetime, time
@@ -30,6 +31,7 @@ from models import (  # noqa: E402
     User,
     Weekday,
 )
+from services import rag  # noqa: E402
 from services.parser import (  # noqa: E402
     _parse_and_validate_row,
     _split_line_into_cells,
@@ -44,6 +46,7 @@ from services.validator import (  # noqa: E402
     filter_existing_for_conflict_check,
 )
 
+_logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
 
@@ -227,6 +230,7 @@ class EventResponseItem(BaseModel):
 class CommitImportResponse(BaseModel):
     import_batch_id: str
     created_count: int
+    courses_created: int = 0
     events: list[EventResponseItem]
 
 
@@ -638,6 +642,16 @@ def commit_import_endpoint(
         resolved_rows=resolved_domains,
         replace_previous_imports=payload.replace_previous_imports,
     )
+    try:
+        rag.index_timetable_rows(
+            current_user.id,
+            payload.import_batch_id,
+            resolved_domains,
+            replace_previous=payload.replace_previous_imports,
+        )
+    except Exception:
+        _logger.warning("Failed to index timetable batch %s for RAG", payload.import_batch_id, exc_info=True)
+    courses_created = len({ev.course_id for ev in created_domains if ev.course_id is not None})
     items = [
         EventResponseItem(
             id=ev.id,
@@ -661,5 +675,6 @@ def commit_import_endpoint(
     return CommitImportResponse(
         import_batch_id=payload.import_batch_id,
         created_count=len(items),
+        courses_created=courses_created,
         events=items,
     )
