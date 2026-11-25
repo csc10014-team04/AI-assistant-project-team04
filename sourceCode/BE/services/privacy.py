@@ -127,15 +127,15 @@ def decrypt_text(token: str) -> str | None:
     input: token (str) produced by encrypt_text.
     output: original str, or None when the token is corrupted / key mismatched.
     """
-    token_bytes = token.encode("ascii")
     try:
+        token_bytes = token.encode("ascii")
         return _fernet().decrypt(token_bytes).decode("utf-8")
-    except (InvalidToken, ValueError):
+    except (InvalidToken, ValueError, UnicodeEncodeError):
         if os.getenv("ALLOW_LEGACY_SHA256_DECRYPT", "0") == "1":
             secret = os.getenv("DATA_ENCRYPTION_KEY", _DEFAULT_ENCRYPTION_KEY)
             legacy_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
             try:
-                return Fernet(legacy_key).decrypt(token_bytes).decode("utf-8")
-            except (InvalidToken, ValueError):
+                return Fernet(legacy_key).decrypt(token.encode("ascii")).decode("utf-8")
+            except (InvalidToken, ValueError, UnicodeEncodeError):
                 return None
         return None
