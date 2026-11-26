@@ -326,12 +326,12 @@ class APIClient:
     # =========================================================================
     # 1. AUTHENTICATION
     # =========================================================================
-    def register(self, username, display_name, password, email, on_success, on_failure, on_error):
+    def register(self, username, display_name, password, on_success, on_failure, on_error):
+        """Đăng ký tài khoản mới bằng username, display_name và password."""
         payload = {
             "username": username,
             "password": password,
             "display_name": display_name,
-            "email": email
         }
         self._request("/api/v1/auth/register", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)

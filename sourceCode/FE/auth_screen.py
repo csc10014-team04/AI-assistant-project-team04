@@ -431,7 +431,7 @@ class AuthScreen(MDScreen):
             return
 
         api.register(
-            username, display_name, password, "", 
+            username, display_name, password,
             on_success=self.on_register_success, on_failure=self.on_register_failure, on_error=self.on_network_error
         )
 
