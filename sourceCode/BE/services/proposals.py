@@ -81,6 +81,11 @@ def _score(candidate: TimeSlot, prefer: str | None, avoid: str | None) -> float:
     return 1.0 if 8 <= hour < 21 else 2.0
 
 
+def _parse_hhmm_minutes(hhmm: str) -> int:
+    h_str, m_str = hhmm.split(":")
+    return int(h_str) * 60 + int(m_str)
+
+
 def _pick_slot(
     gaps: list[TimeSlot],
     duration: int,
@@ -94,6 +99,8 @@ def _pick_slot(
     explicit = want_start is not None or want_end is not None
     if explicit and (want_start is None or want_end is None):
         return None
+    ws_min = _parse_hhmm_minutes(want_start) if want_start is not None else 0
+    we_min = _parse_hhmm_minutes(want_end) if want_end is not None else 0
 
     best: tuple[float, datetime, TimeSlot] | None = None
     length = timedelta(minutes=duration)
@@ -104,25 +111,52 @@ def _pick_slot(
             cand = TimeSlot(start, start + length)
 
             if explicit:
-                exact = (
-                    f"{cand.start:%H:%M}" == want_start
-                    and f"{cand.end:%H:%M}" == want_end
-                )
-                if not exact:
+                cand_start_min = cand.start.hour * 60 + cand.start.minute
+                cand_end_min = cand.end.hour * 60 + cand.end.minute
+                if cand.end.date() == cand.start.date() and we_min > ws_min:
+                    within_window = cand_start_min >= ws_min and cand_end_min <= we_min
+                else:
+                    within_window = (
+                        f"{cand.start:%H:%M}" == want_start
+                        and f"{cand.end:%H:%M}" == want_end
+                    )
+                if not within_window:
                     start += STEP
                     continue
 
             if not any(cand.overlaps(x) for x in excluded):
-                key = (
-                    -1.0 if explicit else _score(cand, prefer, avoid),
-                    cand.start,
-                )
+                if explicit:
+                    # prefer exact window start first, then time-of-day score and earliest slot
+                    exact_bonus = -2.0 if f"{cand.start:%H:%M}" == want_start else -1.0
+                    key = (exact_bonus, cand.start)
+                else:
+                    key = (_score(cand, prefer, avoid), cand.start)
                 if best is None or key < best[:2]:
                     best = (*key, cand)
 
             start += STEP
 
     return best[2] if best else None
+
+
+def _clip_gaps_to_clock_window(gaps: list[TimeSlot], want_start: str, want_end: str) -> list[TimeSlot]:
+    """clip free gaps to a requested daily clock range [want_start, want_end]."""
+    sh, sm = map(int, want_start.split(":"))
+    eh, em = map(int, want_end.split(":"))
+    clipped: list[TimeSlot] = []
+    for gap in gaps:
+        day = gap.start.date()
+        end_day = gap.end.date()
+        while day <= end_day:
+            ws = datetime.combine(day, time(sh, sm), tzinfo=gap.start.tzinfo)
+            we = datetime.combine(day, time(eh, em), tzinfo=gap.start.tzinfo)
+            if we <= ws:
+                we += timedelta(days=1)
+            cs, ce = max(gap.start, ws), min(gap.end, we)
+            if ce > cs:
+                clipped.append(TimeSlot(cs, ce))
+            day += timedelta(days=1)
+    return clipped
 
 
 def _subtract(gaps: list[TimeSlot], excluded: list[TimeSlot]) -> list[TimeSlot]:
@@ -285,19 +319,21 @@ def create_proposal(
     if explicit_clock:
         if nlu.requested_start is None or nlu.requested_end is None:
             return None
-        if duration > cap:
-            return None
-
-        chosen = _pick_slot(
-            usable_gaps,
-            duration,
-            nlu.preferred_time_of_day,
-            nlu.avoid_time_of_day,
-            [],
-            want_start=nlu.requested_start,
-            want_end=nlu.requested_end,
-        )
-        pieces = [chosen] if chosen else None
+        if duration <= cap:
+            chosen = _pick_slot(
+                usable_gaps,
+                duration,
+                nlu.preferred_time_of_day,
+                nlu.avoid_time_of_day,
+                [],
+                want_start=nlu.requested_start,
+                want_end=nlu.requested_end,
+            )
+            pieces = [chosen] if chosen else None
+        if pieces is None:
+            clipped_gaps = _clip_gaps_to_clock_window(usable_gaps, nlu.requested_start, nlu.requested_end)
+            if clipped_gaps:
+                pieces = split_task(clipped_gaps, duration, cap, min_break=min_break, slot_step=slot_step)
     else:
         if duration <= cap:
             chosen = _pick_slot(

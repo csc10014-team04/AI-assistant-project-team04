@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, active_events_stmt, from_db_to_vn, get_db, to_db_utc
@@ -94,8 +95,19 @@ def upsert_reminder(event_id: int, body: ReminderUpsert, db: Session = Depends(g
     reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
     action = "updated"
     if reminder is None:
-        reminder, action = Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=body.offset_minutes), "created"
-        db.add(reminder)
+        try:
+            with db.begin_nested():
+                reminder = Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=body.offset_minutes)
+                action = "created"
+                db.add(reminder)
+                db.flush()
+        except IntegrityError:
+            reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
+            if reminder is None:
+                raise
+            reminder.offset_minutes = body.offset_minutes
+            reminder.scheduled_on_device_at = reminder.delivered_at = None
+            action = "updated"
     else:
         reminder.offset_minutes = body.offset_minutes
         reminder.scheduled_on_device_at = reminder.delivered_at = None
@@ -106,7 +118,21 @@ def upsert_reminder(event_id: int, body: ReminderUpsert, db: Session = Depends(g
 
 
 def _report(field: str, action: str, event_id: int, body: DeviceReport, db: Session, user: User) -> ReminderOut:
-    reminder = _get_reminder(db, user.id, event_id)
+    if action == "scheduled":
+        _get_event(db, user.id, event_id)
+        reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == user.id))
+        if reminder is None:
+            try:
+                with db.begin_nested():
+                    reminder = Reminder(owner_id=user.id, event_id=event_id, offset_minutes=30)
+                    db.add(reminder)
+                    db.flush()
+            except IntegrityError:
+                reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == user.id))
+        if reminder is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "reminder not found")
+    else:
+        reminder = _get_reminder(db, user.id, event_id)
     setattr(reminder, field, to_db_utc(body.at or datetime.now(UTC_TZ)))
     db.commit()
     db.refresh(reminder)

@@ -41,8 +41,9 @@ BLACK_COLOR = [0,0,0,1]
 # WIDGET THÔNG TIN TÀI KHOẢN (CỐ ĐỊNH DƯỚI CÙNG)
 # ==============================================================================
 class UserAccountWidget(ButtonBehavior, MDBoxLayout):
-    def __init__(self, **kwargs):
+    def __init__(self, sidebar=None, **kwargs):
         super().__init__(**kwargs)
+        self.sidebar = sidebar
         self.orientation = 'vertical'
         self.size_hint_y = None
         self.height = dp(60)
@@ -82,9 +83,27 @@ class UserAccountWidget(ButtonBehavior, MDBoxLayout):
         self.height = dp(100) if is_hidden else dp(60)
 
     def do_logout(self, instance):
+        if self.sidebar is not None:
+            try:
+                self.sidebar.dismiss()
+            except Exception:
+                pass
+        try:
+            from notifier import reminder_scheduler
+            reminder_scheduler.cancel_all()
+        except Exception:
+            pass
+        app = MDApp.get_running_app()
+        if app and app.root:
+            for scr_name, method_name in (("chat_home", "reset_state"), ("search_home", "reset_state"), ("calendar_home", "reset_view")):
+                try:
+                    scr = app.root.get_screen(scr_name)
+                    if hasattr(scr, method_name):
+                        getattr(scr, method_name)()
+                except Exception:
+                    pass
         api.clear_session()
         store.use_demo()
-        app = MDApp.get_running_app()
         if app and app.root:
             app.root.current = "auth_screen" # Chuyển về màn hình đăng nhập
 
@@ -403,7 +422,7 @@ class SchedulePreferencesDialog(ModalView):
         self.size_hint = (0.9, 0.8)
         self.background_color = [0, 0, 0, 0.6]
 
-        self.break_minutes = 30
+        self.break_minutes = 15
         self.max_continuous_minutes = 180
 
         layout = MDBoxLayout(orientation='vertical', padding=dp(20), spacing=dp(15), md_bg_color=WHITE_COLOR, radius=[dp(12)])
@@ -414,15 +433,18 @@ class SchedulePreferencesDialog(ModalView):
 
         # 1. Giờ đi ngủ & thức dậy (Grid 4 cột 15 phút)
         bedtime_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
-        self.btn_start_sleep = MDButton(MDButtonText(text="Sleep: 23:30"), style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("start"))
-        self.btn_end_sleep = MDButton(MDButtonText(text="Wake: 06:30"), style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("end"))
+        self.lbl_start_sleep = MDButtonText(text="Sleep: 23:30")
+        self.lbl_end_sleep = MDButtonText(text="Wake: 06:30")
+        self.btn_start_sleep = MDButton(self.lbl_start_sleep, style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("start"))
+        self.btn_end_sleep = MDButton(self.lbl_end_sleep, style="outlined", size_hint_x=0.5, on_release=lambda x: self.show_time_picker("end"))
         bedtime_box.add_widget(self.btn_start_sleep)
         bedtime_box.add_widget(self.btn_end_sleep)
         content.add_widget(bedtime_box)
 
         # 2. Thời gian nghỉ giữa ca (Grid 5 cột: 0 - 120 phút)
+        self.lbl_break = MDButtonText(text=f"Break: {self.break_minutes} mins")
         self.btn_break = MDButton(
-            MDButtonText(text=f"Break: {self.break_minutes} mins"),
+            self.lbl_break,
             style="outlined",
             size_hint_x=1,
             on_release=self.show_break_picker
@@ -430,8 +452,9 @@ class SchedulePreferencesDialog(ModalView):
         content.add_widget(self.btn_break)
 
         # 3. Thời lượng liên tục tối đa (Grid 5 cột: 30 - 720 phút)
+        self.lbl_max_duration = MDButtonText(text=f"Max block: {self.max_continuous_minutes} mins")
         self.btn_max_duration = MDButton(
-            MDButtonText(text=f"Max block: {self.max_continuous_minutes} mins"),
+            self.lbl_max_duration,
             style="outlined",
             size_hint_x=1,
             on_release=self.show_max_duration_picker
@@ -463,8 +486,8 @@ class SchedulePreferencesDialog(ModalView):
             def text(proxy_self, val):
                 try:
                     proxy_self.parent.break_minutes = int(val)
-                    if hasattr(proxy_self.parent, "btn_break") and proxy_self.parent.btn_break.children:
-                        proxy_self.parent.btn_break.children[0].text = f"Break: {val} mins"
+                    if hasattr(proxy_self.parent, "lbl_break"):
+                        proxy_self.parent.lbl_break.text = f"Break: {val} mins"
                 except Exception:
                     pass
         return _TfProxy(self)
@@ -481,15 +504,15 @@ class SchedulePreferencesDialog(ModalView):
             def text(proxy_self, val):
                 try:
                     proxy_self.parent.max_continuous_minutes = int(val)
-                    if hasattr(proxy_self.parent, "btn_max_duration") and proxy_self.parent.btn_max_duration.children:
-                        proxy_self.parent.btn_max_duration.children[0].text = f"Max block: {val} mins"
+                    if hasattr(proxy_self.parent, "lbl_max_duration"):
+                        proxy_self.parent.lbl_max_duration.text = f"Max block: {val} mins"
                 except Exception:
                     pass
         return _TfProxy(self)
 
     def show_time_picker(self, mode):
-        btn = self.btn_start_sleep if mode == "start" else self.btn_end_sleep
-        btn_text = btn.children[0].text if btn.children else ""
+        lbl = self.lbl_start_sleep if mode == "start" else self.lbl_end_sleep
+        btn_text = lbl.text if lbl else ""
         match = re.search(r"(\d{1,2}:\d{2})", btn_text)
         curr_time = match.group(1) if match else ("23:30" if mode == "start" else "06:30")
         picker = SimpleTimePicker(
@@ -503,9 +526,9 @@ class SchedulePreferencesDialog(ModalView):
     def on_time_save(self, time_obj, mode):
         time_str = time_obj.strftime("%H:%M") if hasattr(time_obj, "strftime") else str(time_obj)
         if mode == "start":
-            self.btn_start_sleep.children[0].text = f"Sleep: {time_str}"
+            self.lbl_start_sleep.text = f"Sleep: {time_str}"
         else:
-            self.btn_end_sleep.children[0].text = f"Wake: {time_str}"
+            self.lbl_end_sleep.text = f"Wake: {time_str}"
 
     def show_break_picker(self, instance):
         picker = DurationGridPickerModal(
@@ -520,8 +543,8 @@ class SchedulePreferencesDialog(ModalView):
 
     def on_break_save(self, val):
         self.break_minutes = int(val)
-        if hasattr(self, 'btn_break') and self.btn_break.children:
-            self.btn_break.children[0].text = f"Break: {self.break_minutes} mins"
+        if hasattr(self, 'lbl_break'):
+            self.lbl_break.text = f"Break: {self.break_minutes} mins"
 
     def show_max_duration_picker(self, instance):
         picker = DurationGridPickerModal(
@@ -536,30 +559,28 @@ class SchedulePreferencesDialog(ModalView):
 
     def on_max_duration_save(self, val):
         self.max_continuous_minutes = int(val)
-        if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
-            self.btn_max_duration.children[0].text = f"Max block: {self.max_continuous_minutes} mins"
+        if hasattr(self, 'lbl_max_duration'):
+            self.lbl_max_duration.text = f"Max block: {self.max_continuous_minutes} mins"
 
     def save_preferences(self, instance):
-        start_txt = self.btn_start_sleep.children[0].text if self.btn_start_sleep.children else "Sleep: 23:30"
-        end_txt = self.btn_end_sleep.children[0].text if self.btn_end_sleep.children else "Wake: 06:30"
+        start_txt = self.lbl_start_sleep.text if hasattr(self, "lbl_start_sleep") else "Sleep: 23:30"
+        end_txt = self.lbl_end_sleep.text if hasattr(self, "lbl_end_sleep") else "Wake: 06:30"
         payload = {
             "sleep_schedule": f"{start_txt} - {end_txt}",
             "min_break_minutes": self.break_minutes,
             "max_continuous_minutes": self.max_continuous_minutes,
         }
+        pref_key = f"user_preferences_{api.user_id or 'guest'}"
         try:
-            api.store.put("user_preferences", **payload)
+            api.store.put(pref_key, **payload)
         except Exception:
             pass
-        api._request(
-            "/api/v1/user/preferences",
-            method="POST",
-            payload=payload,
-            on_success=lambda req, res: print("Đã lưu tùy chọn thành công:", res),
-            on_failure=lambda req, res: print("Server chưa hỗ trợ lưu preferences online, đã lưu cục bộ."),
-            on_error=lambda req, err: print("Lỗi mạng khi lưu tùy chọn, đã lưu cục bộ."),
+        api.save_preferences(
+            payload,
+            on_success=lambda req, res: print("Preferences saved:", res),
+            on_failure=lambda req, res: print("Server rejected preferences, kept locally."),
+            on_error=lambda req, err: print("Offline when saving preferences, kept locally."),
         )
-        print("Đã gửi yêu cầu lưu tùy chọn:", payload)
         self.dismiss()
 
 # ==============================================================================
@@ -576,7 +597,7 @@ class SideBarMenu(ModalView):
         self.size_hint = (1, 1) 
         
         # Giá trị mặc định cho cấu hình xếp lịch
-        self.break_minutes = 30
+        self.break_minutes = 15
         self.max_continuous_minutes = 180 
         
         is_mobile_mode = (platform in ['android', 'ios']) or (Window.width < dp(800))
@@ -690,14 +711,16 @@ class SideBarMenu(ModalView):
             height=dp(20)
         ))
         bedtime_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(42), spacing=dp(8))
+        self.lbl_start_sleep = MDButtonText(text="Sleep: 23:30")
+        self.lbl_end_sleep = MDButtonText(text="Wake: 06:30")
         self.btn_start_sleep = MDButton(
-            MDButtonText(text="Sleep: 23:30"),
+            self.lbl_start_sleep,
             style="outlined",
             size_hint_x=0.5,
             on_release=lambda x: self.show_time_picker("start")
         )
         self.btn_end_sleep = MDButton(
-            MDButtonText(text="Wake: 06:30"),
+            self.lbl_end_sleep,
             style="outlined",
             size_hint_x=0.5,
             on_release=lambda x: self.show_time_picker("end")
@@ -715,8 +738,9 @@ class SideBarMenu(ModalView):
             size_hint_y=None,
             height=dp(20)
         ))
+        self.lbl_break = MDButtonText(text=f"{self.break_minutes} mins")
         self.btn_break = MDButton(
-            MDButtonText(text=f"{self.break_minutes} mins"),
+            self.lbl_break,
             style="outlined",
             size_hint_x=1,
             size_hint_y=None,
@@ -734,8 +758,9 @@ class SideBarMenu(ModalView):
             size_hint_y=None,
             height=dp(20)
         ))
+        self.lbl_max_duration = MDButtonText(text=f"{self.max_continuous_minutes} mins")
         self.btn_max_duration = MDButton(
-            MDButtonText(text=f"{self.max_continuous_minutes} mins"),
+            self.lbl_max_duration,
             style="outlined",
             size_hint_x=1,
             size_hint_y=None,
@@ -770,7 +795,7 @@ class SideBarMenu(ModalView):
         self.scroll.add_widget(self.menu_list)
 
         # 3. THÔNG TIN TÀI KHOẢN (Cố định dưới cùng)
-        self.user_widget = UserAccountWidget()
+        self.user_widget = UserAccountWidget(sidebar=self)
         
         self.main_container.add_widget(self.header)
         self.main_container.add_widget(self.scroll)
@@ -857,9 +882,9 @@ class SideBarMenu(ModalView):
         """Cập nhật nhãn nút giờ ngủ / thức dậy sau khi người dùng chọn mốc thời gian."""
         time_str = time_obj.strftime("%H:%M") if hasattr(time_obj, "strftime") else str(time_obj)
         if mode == "start":
-            self.btn_start_sleep.children[0].text = f"Sleep: {time_str}"
+            self.lbl_start_sleep.text = f"Sleep: {time_str}"
         else:
-            self.btn_end_sleep.children[0].text = f"Wake: {time_str}"
+            self.lbl_end_sleep.text = f"Wake: {time_str}"
 
     def show_break_picker(self, *args):
         """Mở modal chọn thời gian nghỉ giữa ca (Grid 5 cột: 0 - 120 phút, scale 15 phút)."""
@@ -876,8 +901,8 @@ class SideBarMenu(ModalView):
     def on_break_save(self, val):
         """Lưu giá trị thời gian nghỉ giữa ca được chọn."""
         self.break_minutes = int(val)
-        if hasattr(self, 'btn_break') and self.btn_break.children:
-            self.btn_break.children[0].text = f"{self.break_minutes} mins"
+        if hasattr(self, 'lbl_break'):
+            self.lbl_break.text = f"{self.break_minutes} mins"
 
     def show_max_duration_picker(self, *args):
         """Mở modal chọn thời lượng liên tục tối đa (Grid 5 cột: 30 - 720 phút, scale 15 phút)."""
@@ -894,55 +919,61 @@ class SideBarMenu(ModalView):
     def on_max_duration_save(self, val):
         """Lưu giá trị thời lượng liên tục tối đa được chọn."""
         self.max_continuous_minutes = int(val)
-        if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
-            self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} mins"
+        if hasattr(self, 'lbl_max_duration'):
+            self.lbl_max_duration.text = f"{self.max_continuous_minutes} mins"
 
     def save_preferences(self, instance):
         """Lưu cấu hình xếp lịch vào Local Store và gửi cập nhật lên Backend Server."""
-        start_txt = self.btn_start_sleep.children[0].text if self.btn_start_sleep.children else "Sleep: 23:30"
-        end_txt = self.btn_end_sleep.children[0].text if self.btn_end_sleep.children else "Wake: 06:30"
+        start_txt = self.lbl_start_sleep.text if hasattr(self, "lbl_start_sleep") else "Sleep: 23:30"
+        end_txt = self.lbl_end_sleep.text if hasattr(self, "lbl_end_sleep") else "Wake: 06:30"
         payload = {
             "sleep_schedule": f"{start_txt} - {end_txt}",
             "min_break_minutes": self.break_minutes,
             "max_continuous_minutes": self.max_continuous_minutes,
         }
+        pref_key = f"user_preferences_{api.user_id or 'guest'}"
         try:
-            api.store.put("user_preferences", **payload)
+            api.store.put(pref_key, **payload)
         except Exception:
             pass
 
         def on_ok(req, res):
+            self.lbl_pref_status.text_color = [0, 0.6, 0, 1]
             self.lbl_pref_status.text = "Preferences saved successfully!"
             Clock.schedule_once(lambda dt: setattr(self.lbl_pref_status, "text", ""), 3)
 
-        api._request(
-            "/api/v1/user/preferences",
-            method="POST",
-            payload=payload,
+        def on_local_only(req, res_or_err):
+            self.lbl_pref_status.text_color = [0.85, 0.45, 0, 1]
+            self.lbl_pref_status.text = "Saved locally only (server offline)."
+            Clock.schedule_once(lambda dt: setattr(self.lbl_pref_status, "text", ""), 4)
+
+        api.save_preferences(
+            payload,
             on_success=on_ok,
-            on_failure=lambda req, res: on_ok(None, None),
-            on_error=lambda req, err: on_ok(None, None),
+            on_failure=on_local_only,
+            on_error=on_local_only,
         )
 
     def load_preferences(self):
         """Tải cấu hình xếp lịch từ Local Store dự phòng và đồng bộ với Backend Server."""
+        pref_key = f"user_preferences_{api.user_id or 'guest'}"
         try:
-            if api.store.exists("user_preferences"):
-                data = api.store.get("user_preferences")
+            if api.store.exists(pref_key):
+                data = api.store.get(pref_key)
                 sched = data.get("sleep_schedule", "")
                 if " - " in sched:
                     parts = sched.split(" - ")
-                    if len(parts) == 2 and self.btn_start_sleep.children and self.btn_end_sleep.children:
-                        self.btn_start_sleep.children[0].text = parts[0]
-                        self.btn_end_sleep.children[0].text = parts[1]
+                    if len(parts) == 2 and hasattr(self, "lbl_start_sleep") and hasattr(self, "lbl_end_sleep"):
+                        self.lbl_start_sleep.text = parts[0]
+                        self.lbl_end_sleep.text = parts[1]
                 if data.get("min_break_minutes") is not None:
                     self.break_minutes = int(data["min_break_minutes"])
-                    if hasattr(self, 'btn_break') and self.btn_break.children:
-                        self.btn_break.children[0].text = f"{self.break_minutes} mins"
+                    if hasattr(self, 'lbl_break'):
+                        self.lbl_break.text = f"{self.break_minutes} mins"
                 if data.get("max_continuous_minutes") is not None:
                     self.max_continuous_minutes = int(data["max_continuous_minutes"])
-                    if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
-                        self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} mins"
+                    if hasattr(self, 'lbl_max_duration'):
+                        self.lbl_max_duration.text = f"{self.max_continuous_minutes} mins"
         except Exception:
             pass
 
@@ -951,23 +982,21 @@ class SideBarMenu(ModalView):
             if isinstance(res, dict):
                 s_start = res.get("sleep_start", "23:30")
                 s_end = res.get("sleep_end", "06:30")
-                if self.btn_start_sleep.children:
-                    self.btn_start_sleep.children[0].text = f"Sleep: {s_start}"
-                if self.btn_end_sleep.children:
-                    self.btn_end_sleep.children[0].text = f"Wake: {s_end}"
+                if hasattr(self, "lbl_start_sleep"):
+                    self.lbl_start_sleep.text = f"Sleep: {s_start}"
+                if hasattr(self, "lbl_end_sleep"):
+                    self.lbl_end_sleep.text = f"Wake: {s_end}"
                 if "min_break_minutes" in res and res["min_break_minutes"] is not None:
                     self.break_minutes = int(res["min_break_minutes"])
-                    if hasattr(self, 'btn_break') and self.btn_break.children:
-                        self.btn_break.children[0].text = f"{self.break_minutes} mins"
+                    if hasattr(self, 'lbl_break'):
+                        self.lbl_break.text = f"{self.break_minutes} mins"
                 if "max_block_minutes" in res and res["max_block_minutes"] is not None:
                     self.max_continuous_minutes = int(res["max_block_minutes"])
-                    if hasattr(self, 'btn_max_duration') and self.btn_max_duration.children:
-                        self.btn_max_duration.children[0].text = f"{self.max_continuous_minutes} mins"
+                    if hasattr(self, 'lbl_max_duration'):
+                        self.lbl_max_duration.text = f"{self.max_continuous_minutes} mins"
 
         if getattr(api, "token", None):
-            api._request(
-                "/api/v1/user/preferences",
-                method="GET",
+            api.get_preferences(
                 on_success=on_server_pref,
                 on_failure=lambda req, res: None,
                 on_error=lambda req, err: None,

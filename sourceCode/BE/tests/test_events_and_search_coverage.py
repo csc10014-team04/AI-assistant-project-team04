@@ -7,11 +7,14 @@ from pathlib import Path
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import select
 
 from database import VN_TZ
-from models import CsvRowKind, EventDomain, EventKind, EventSource, ParsedCsvRow, Weekday
+from models import CsvRowKind, Event, EventDomain, EventKind, EventSource, ParsedCsvRow, Proposal, ProposalStatus, Reminder, Weekday
 from routers import assistant as assistant_router
 from services import nlu, parser, privacy, rag, search_engine, security, validator
+from services.normalizer import normalize_text
+from services.temporal import resolve_date_hint
 
 
 REAL_HTTPX_CLIENT = httpx.Client
@@ -422,3 +425,243 @@ def test_b08_b09_b12_b15_security_rag_and_deadlock_fixes(monkeypatch, tmp_path):
 
     # b-15: runtime ddl helper removed from assistant router
     assert not hasattr(assistant_router, "_ensure_clarification_table")
+
+
+def test_reschedule_afternoon_not_redirected_and_query_does_not_mutate_parent(client, db_session, monkeypatch):
+    u = _register(client, "resched_guard")
+    replies = iter([
+        {"intent": "schedule_task", "title": "play basketball", "duration_minutes": 60, "date_hint": "tomorrow"},
+        {"intent": "query_schedule", "preferred_time_of_day": "afternoon"},
+        {"intent": "schedule_task", "title": "play basketball", "duration_minutes": 60, "date_hint": "tomorrow"},
+        {"intent": "query_schedule"},
+    ])
+    monkeypatch.setattr(
+        nlu.httpx,
+        "Client",
+        lambda *a, **kw: REAL_HTTPX_CLIENT(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(next(replies))}}]})
+            )
+        ),
+    )
+
+    # 1. initial proposal at 8am tomorrow -> rescheduled cleanly by "in the afternoon please" even if llm returned query_schedule
+    p1_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "play basketball 1 hour tomorrow at 8am"},
+    )
+    assert p1_res.status_code == 200
+    p1_id = p1_res.json()["proposal"]["id"]
+
+    resched = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "in the afternoon please", "reschedule_proposal_id": p1_id},
+    )
+    assert resched.status_code == 200
+    r_body = resched.json()
+    assert r_body["redirect_target"] is None
+    assert r_body["nlu"]["intent"] == "reschedule"
+    assert r_body["proposal"] is not None
+    p1_row = db_session.get(Proposal, p1_id)
+    assert p1_row is not None and p1_row.status == ProposalStatus.RESCHEDULED
+
+    # 2. explicit schedule query during reschedule redirects without mutating parent status to RESCHEDULED
+    p2_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "play basketball 1 hour tomorrow at 8am"},
+    )
+    assert p2_res.status_code == 200
+    p2_id = p2_res.json()["proposal"]["id"]
+
+    q_res = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "tuần này mình có lịch gì?", "reschedule_proposal_id": p2_id},
+    )
+    assert q_res.status_code == 200
+    q_body = q_res.json()
+    assert q_body["redirect_target"] == "search_home"
+    assert q_body["proposal"] is None
+    p2_row = db_session.get(Proposal, p2_id)
+    assert p2_row is not None and p2_row.status == ProposalStatus.PROPOSED
+
+
+def test_parse_preview_prefill_and_resolve_preview_batch_dates(client):
+    hcmus_csv = (
+        "Mã MH,Tên MH,Học Kỳ,Lịch LT,Lịch TH\n"
+        'CSC10008,Mạng máy tính,1/26-27,"T4 07:30-09:10 (C.45)\nT6 07:30-09:10 (I.44)",\n'
+        "BAA00030,Giáo dục quốc phòng - An ninh,1/26-27,,\n"
+    ).encode("utf-8")
+
+    prev = client.post(
+        "/api/v1/ingestion/parse-preview",
+        files={"file": ("tkb_hcmus.csv", hcmus_csv, "text/csv")},
+    )
+    assert prev.status_code == 200, prev.text
+    p_body = prev.json()
+    assert p_body["valid_count"] == 0
+    assert p_body["invalid_count"] == 3
+
+    inv = p_body["invalid_rows"]
+    missing_date_rows = [r for r in inv if r["error_code"] == "EMPTY_FIRST_DATE"]
+    no_sched_rows = [r for r in inv if r["error_code"] == "NO_SCHEDULE_DETECTED"]
+    assert len(missing_date_rows) == 2
+    assert len(no_sched_rows) == 1
+    assert {r["prefill"]["weekday"] for r in missing_date_rows} == {"WED", "FRI"}
+    assert {r["prefill"]["room"] for r in missing_date_rows} == {"C.45", "I.44"}
+
+    corrected = []
+    for r in missing_date_rows:
+        item = dict(r["prefill"])
+        item["line_number"] = r["line_number"]
+        item["first_date"] = "2026-09-28"
+        item["last_date"] = "2026-12-12"
+        corrected.append(item)
+
+    res = client.post(
+        "/api/v1/ingestion/resolve-preview",
+        json={
+            "import_batch_id": p_body["import_batch_id"],
+            "valid_rows": [],
+            "corrected_rows": corrected,
+            "skipped_line_numbers": [r["line_number"] for r in no_sched_rows],
+        },
+    )
+    assert res.status_code == 200, res.text
+    r_body = res.json()
+    assert r_body["total_accepted"] == 2
+    assert {row["weekday"] for row in r_body["all_valid_rows"]} == {"WED", "FRI"}
+    assert {row["room"] for row in r_body["all_valid_rows"]} == {"C.45", "I.44"}
+
+
+def test_event_patch_atomic_deadline_and_reminder_cleanup(client, db_session):
+    u = _register(client, "patch_reg")
+    ev = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "Study Session",
+            "kind": "TASK",
+            "start_time": "2026-11-28T09:00:00+07:00",
+            "end_time": "2026-11-28T10:30:00+07:00",
+            "is_important": True,
+        },
+    ).json()
+    ev_id = ev["id"]
+
+    # arm and deliver reminder, then verify invalid range rolls back atomically
+    assert client.post(f"/api/v1/events/{ev_id}/reminder-audit", headers=u["h"], json={"offset_minutes": 30}).status_code == 200
+    assert client.post(f"/api/v1/reminders/{ev_id}/delivered", headers=u["h"], json={}).status_code == 200
+
+    bad = client.patch(
+        f"/api/v1/events/{ev_id}",
+        headers=u["h"],
+        json={"start_time": "2026-11-28T15:00:00+07:00", "end_time": "2026-11-28T14:00:00+07:00", "title": "ShouldRollback"},
+    )
+    assert bad.status_code == 400
+    ev_row = db_session.get(Event, ev_id)
+    assert ev_row is not None and ev_row.title == "Study Session"
+
+    # disabling importance deletes delivered reminders too
+    off = client.patch(f"/api/v1/events/{ev_id}", headers=u["h"], json={"is_important": False})
+    assert off.status_code == 200
+    assert db_session.scalar(select(Reminder).where(Reminder.event_id == ev_id)) is None
+
+    # deadline time edits remain permitted
+    dl = client.post(
+        "/api/v1/events",
+        headers=u["h"],
+        json={
+            "title": "Submit HW",
+            "kind": "DEADLINE",
+            "start_time": "2026-11-29T23:00:00+07:00",
+            "end_time": "2026-11-29T23:00:00+07:00",
+        },
+    ).json()
+    dl_edit = client.patch(
+        f"/api/v1/events/{dl['id']}",
+        headers=u["h"],
+        json={"start_time": "2026-11-29T21:00:00+07:00", "end_time": "2026-11-29T21:00:00+07:00"},
+    )
+    assert dl_edit.status_code == 200
+
+
+def test_reminder_scheduled_auto_creates_missing_and_preserves_idor(client):
+    u1 = _register(client, "rem_own")
+    u2 = _register(client, "rem_other")
+    ev = client.post(
+        "/api/v1/events",
+        headers=u1["h"],
+        json={
+            "title": "Lab Prep",
+            "kind": "TASK",
+            "start_time": "2026-11-30T09:00:00+07:00",
+            "end_time": "2026-11-30T10:00:00+07:00",
+            "is_important": False,
+        },
+    ).json()
+    ev_id = ev["id"]
+
+    # /delivered still returns 404 before any reminder exists, while /scheduled auto-creates for owner
+    assert client.post(f"/api/v1/reminders/{ev_id}/delivered", headers=u1["h"], json={}).status_code == 404
+    assert client.post(f"/api/v1/reminders/{ev_id}/scheduled", headers=u2["h"], json={}).status_code == 404
+    ok = client.post(f"/api/v1/reminders/{ev_id}/scheduled", headers=u1["h"], json={})
+    assert ok.status_code == 200 and ok.json()["event_id"] == ev_id
+
+
+def test_assistant_reset_wide_window_english_dates_and_normalizer(client, monkeypatch):
+    u = _register(client, "ai_cov")
+
+    # pure english tokens must not be rewritten into vietnamese diacritics
+    assert "gap" in normalize_text("Mind the gap vs other").text.lower()
+    assert nlu.rule_based_understand("play soccer on Friday from 2pm to 5pm for 1 hour").title == "play soccer"
+
+    # english weekday & iso date resolution
+    ref = datetime(2026, 11, 24, 9, 0, tzinfo=VN_TZ)  # tuesday
+    assert resolve_date_hint("Friday", ref).start == date(2026, 11, 27)
+    assert resolve_date_hint("2026-12-18", ref).start == date(2026, 12, 18)
+
+    replies = iter([
+        {"intent": "schedule_task", "title": "học bài", "duration_minutes": None, "date_hint": "tomorrow"},
+        {"intent": "schedule_task", "title": "play soccer", "duration_minutes": 60, "date_hint": "Friday"},
+        {"intent": "schedule_task", "title": None, "duration_minutes": 120, "date_hint": None},
+    ])
+    monkeypatch.setattr(
+        nlu.httpx,
+        "Client",
+        lambda *a, **kw: REAL_HTTPX_CLIENT(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(next(replies))}}]})
+            )
+        ),
+    )
+
+    # 1. ask without duration -> pending clarification, then wide clock window (3h for 1h task -> 60m slot)
+    r1 = client.post("/api/v1/assistant/understand", headers=u["h"], json={"prompt": "Xếp lịch học bài ngày mai"})
+    assert r1.status_code == 200 and r1.json()["nlu"]["needs_clarification"] is True
+
+    rst = client.post("/api/v1/assistant/reset", headers=u["h"])
+    assert rst.status_code == 200
+
+    r_wide = client.post(
+        "/api/v1/assistant/understand",
+        headers=u["h"],
+        json={"prompt": "play soccer on Friday from 2pm to 5pm for 1 hour"},
+    )
+    assert r_wide.status_code == 200
+    prop = r_wide.json()["proposal"]
+    assert prop is not None
+    mins = (datetime.fromisoformat(prop["end_time"]) - datetime.fromisoformat(prop["start_time"])).total_seconds() / 60
+    assert mins == 60
+
+    # reset_context=True discards any leftover clarification before a new request
+    r_dur = client.post("/api/v1/assistant/understand", headers=u["h"], json={"prompt": "2 hours", "reset_context": True})
+    assert r_dur.status_code == 200 and r_dur.json()["proposal"] is None and r_dur.json()["nlu"]["needs_clarification"] is True
+
+
+def test_search_date_word_boundary_ctdl_not_thursday():
+    meta = search_engine.optimize_search_query("ctdl", datetime(2026, 11, 24, 9, 0, tzinfo=VN_TZ))
+    assert meta["date_hint"] is None and meta["window_start"] is None

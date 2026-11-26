@@ -7,7 +7,8 @@ from kivy.storage.jsonstore import JsonStore
 
 from fallback import AI_TIMEOUT_SECONDS
 
-FE_DEBUG_LOG_PATH = Path(__file__).resolve().parent / "fe_http_debug.log"  # local diagnostic log on user/tester machine
+FE_DIR = Path(__file__).resolve().parent
+FE_DEBUG_LOG_PATH = FE_DIR / "fe_http_debug.log"  # local diagnostic log on user/tester machine
 
 
 """
@@ -30,7 +31,7 @@ class APIClient:
     def __init__(self):
         # Thuộc tính instance giúp truy cập qua self.base_url
         # in APIClient.__init__ replace the hard-coded address (8000 is the AI engine, the backend is 8080):
-        self.store = JsonStore("auth_session.json")
+        self.store = JsonStore(str(FE_DIR / "auth_session.json"))
         # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
         saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
         self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://127.0.0.1:8080").rstrip("/")
@@ -106,14 +107,14 @@ class APIClient:
         if header_source:
             return header_source
         if status_code == 404 and isinstance(result, dict) and result.get("detail") == "Not Found":
-            return "FASTAPI_ROUTER_URL_NOT_FOUND: FE goi sai duong dan URL"
+            return "FASTAPI_ROUTER_URL_NOT_FOUND: FE requested an unknown route"
         if status_code == 422:
-            return "PYDANTIC_VALIDATION_ERROR: Du lieu FE gui len chua khop schema BE"
+            return "PYDANTIC_VALIDATION_ERROR: FE payload did not match BE schema"
         if status_code in (401, 403):
-            return "BE_AUTH_GUARD: Loi xac thuc hoac token het han"
+            return "BE_AUTH_GUARD: Authentication failed or token expired"
         if status_code is not None and status_code >= 500:
-            return "BE_UNHANDLED_EXCEPTION: Loi ben trong code BE hoac ket noi DB"
-        return "BE_BUSINESS_RULE_REJECTION: BE tu choi theo quy tac nghiep vu"
+            return "BE_UNHANDLED_EXCEPTION: Internal BE or database error"
+        return "BE_BUSINESS_RULE_REJECTION: Rejected by BE business rules"
 
     @staticmethod
     def _safe_payload_preview(payload):
@@ -298,6 +299,10 @@ class APIClient:
                     ".png": "image/png",
                     ".jpg": "image/jpeg",
                     ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".bmp": "image/bmp",
+                    ".tif": "image/tiff",
+                    ".tiff": "image/tiff",
                     ".csv": "text/csv",
                     ".txt": "text/plain",
                     ".md": "text/markdown",
@@ -466,9 +471,19 @@ class APIClient:
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
-        from urllib.parse import quote
-        endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
-        self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
+        from urllib.parse import urlencode
+        params = {"q": query or ""}
+        if start_date:
+            params["start_from"] = start_date
+        if end_date:
+            params["end_until"] = end_date
+        self._request(
+            f"/api/v1/search/events?{urlencode(params)}",
+            method="GET",
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
 
     def search_events_query(self, query_text, on_success, on_failure=None, on_error=None, top_k=50):
         """Schedule Search: Hybrid SQL + Vector search over user's events."""
@@ -492,15 +507,33 @@ class APIClient:
             on_success=on_success,
             on_failure=on_failure,
             on_error=on_error,
+            timeout=12,
         )
 
 
     # new method, next to the other calls:
-    def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
-        payload = {"prompt": prompt, "reschedule_proposal_id": reschedule_proposal_id}
+    def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None, reset_context=False):
+        payload = {
+            "prompt": prompt,
+            "reschedule_proposal_id": reschedule_proposal_id,
+            "reset_context": bool(reset_context),
+        }
         # strict client-side timeout (P1-9): on expiry on_error is called and the chat opens the manual picker
         self._request("/api/v1/assistant/understand", method="POST", payload=payload,
                 on_success=on_success, on_failure=on_failure, on_error=on_error, timeout=AI_TIMEOUT_SECONDS)
+
+    def reset_assistant_context(self, on_success=None, on_failure=None, on_error=None):
+        """clear server-side pending scheduling state for the current user."""
+        self._request("/api/v1/assistant/reset", method="POST", payload={},
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def get_preferences(self, on_success=None, on_failure=None, on_error=None):
+        self._request("/api/v1/user/preferences", method="GET",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def save_preferences(self, payload, on_success=None, on_failure=None, on_error=None):
+        self._request("/api/v1/user/preferences", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
     def get_free_slots(self, window_start, window_end, duration_minutes, on_success, on_failure, on_error,
                    respect_preferences=True):
         payload = {"window_start": window_start, "window_end": window_end,

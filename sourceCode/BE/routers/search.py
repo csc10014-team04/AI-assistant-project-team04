@@ -98,6 +98,7 @@ class AcademicRagResponse(BaseModel):
     query: str
     normalized_query: str
     answer: str
+    message: str | None = None
     citations: list[AcademicCitationOut]
     fallback_mode: bool
     redirect_target: str | None = None
