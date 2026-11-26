@@ -372,6 +372,13 @@ class Task(Base):
     )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    def __init__(self, **kw: Any) -> None:
+        # populate column defaults immediately so unsaved Task objects work in sort_queue
+        kw.setdefault("priority", int(PriorityLevel.LOW))
+        kw.setdefault("priority_source", PrioritySource.DEFAULT)
+        kw.setdefault("status", TaskStatus.PENDING)
+        super().__init__(**kw)
+
     owner: Mapped[User] = relationship(back_populates="tasks")
     proposals: Mapped[list[Proposal]] = relationship(
         back_populates="task", cascade="all, delete-orphan"

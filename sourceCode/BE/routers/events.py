@@ -6,6 +6,7 @@ from datetime import datetime, time, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import UTC_TZ, VN_TZ, active_events_stmt, from_db_to_vn, get_db, to_db_utc
@@ -131,21 +132,23 @@ def patch_event(
     current_user: User = Depends(get_current_user),
 ) -> EventOut:
     event = _get_event(db, current_user.id, event_id)
+    start_changed = False
     if body.start_time is not None or body.end_time is not None:
-        if event.is_hard:
+        if event.is_hard and event.kind != EventKind.DEADLINE:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "cannot edit time of hard events (CLASS/EXAM)")
-        if body.start_time is not None:
-            event.start_time = to_db_utc(_parse_aware_dt(body.start_time))
-        if body.end_time is not None:
-            event.end_time = to_db_utc(_parse_aware_dt(body.end_time))
+        cand_start = to_db_utc(_parse_aware_dt(body.start_time)) if body.start_time is not None else event.start_time
+        cand_end = to_db_utc(_parse_aware_dt(body.end_time)) if body.end_time is not None else event.end_time
         if event.kind == EventKind.DEADLINE:
             # keep deadline zero duration regardless of whether only start or end was supplied
             if body.start_time is not None:
-                event.end_time = event.start_time
+                cand_end = cand_start
             else:
-                event.start_time = event.end_time
-        elif event.end_time <= event.start_time:
+                cand_start = cand_end
+        elif cand_end <= cand_start:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "end_time must be strictly after start_time")
+        start_changed = cand_start != event.start_time
+        event.start_time = cand_start
+        event.end_time = cand_end
 
     if body.is_important is not None:
         event.is_important = bool(body.is_important)
@@ -153,14 +156,25 @@ def patch_event(
             db.query(Reminder).filter(
                 Reminder.event_id == event_id,
                 Reminder.owner_id == current_user.id,
-                Reminder.delivered_at.is_(None),
             ).delete(synchronize_session=False)
         else:
             existing_rem = db.scalar(
                 select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id)
             )
             if existing_rem is None:
-                db.add(Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=30))
+                try:
+                    with db.begin_nested():
+                        db.add(Reminder(owner_id=current_user.id, event_id=event_id, offset_minutes=30))
+                        db.flush()
+                except IntegrityError:
+                    pass
+    elif start_changed:
+        existing_rem = db.scalar(
+            select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id)
+        )
+        if existing_rem is not None:
+            existing_rem.scheduled_on_device_at = None
+            existing_rem.delivered_at = None
 
     if body.title is not None and body.title.strip():
         event.title = body.title.strip()
@@ -197,17 +211,29 @@ def reminder_audit(
     reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
     scheduled_at = to_db_utc(_parse_aware_dt(body.scheduled_on_device_at or datetime.now(UTC_TZ)))
     if reminder is None:
-        reminder = Reminder(
-            owner_id=current_user.id,
-            event_id=event_id,
-            offset_minutes=body.offset_minutes,
-            scheduled_on_device_at=scheduled_at,
-        )
-        db.add(reminder)
+        try:
+            with db.begin_nested():
+                reminder = Reminder(
+                    owner_id=current_user.id,
+                    event_id=event_id,
+                    offset_minutes=body.offset_minutes,
+                    scheduled_on_device_at=scheduled_at,
+                )
+                db.add(reminder)
+                db.flush()
+        except IntegrityError:
+            reminder = db.scalar(select(Reminder).where(Reminder.event_id == event_id, Reminder.owner_id == current_user.id))
+            if reminder is not None:
+                reminder.offset_minutes = body.offset_minutes
+                reminder.scheduled_on_device_at = scheduled_at
+                reminder.delivered_at = None
     else:
         reminder.offset_minutes = body.offset_minutes
         reminder.scheduled_on_device_at = scheduled_at
+        reminder.delivered_at = None
 
+    if reminder is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to persist reminder")
     db.commit()
     db.refresh(reminder)
     _audit("scheduled", reminder, current_user.id)

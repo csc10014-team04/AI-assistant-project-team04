@@ -66,6 +66,7 @@ def register_user(
     """
     existing_identity = db.scalar(
         select(AuthIdentity).where(
+            AuthIdentity.provider == AuthProvider.PASSWORD,
             AuthIdentity.provider_user_id == payload.username,
         )
     )
@@ -154,6 +155,7 @@ def update_username(
     """
     existing_identity = db.scalar(
         select(AuthIdentity).where(
+            AuthIdentity.provider == AuthProvider.PASSWORD,
             AuthIdentity.provider_user_id == payload.new_username,
             AuthIdentity.user_id != current_user.id,
         )

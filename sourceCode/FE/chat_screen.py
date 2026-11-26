@@ -1,9 +1,12 @@
 import json
+import uuid
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.clock import Clock
+from kivy.utils import escape_markup
 from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.modalview import ModalView
 from kivy.uix.scrollview import ScrollView
@@ -25,14 +28,14 @@ from kivymd.uix.button import MDIconButton, MDButton, MDButtonText
 # Import module API Client kết nối với máy chủ
 from api_client import api
 from fallback import clip_slot_to_window, is_timeout, parse_request, slice_slots_to_duration
-from notifier import ReminderScheduler
+from notifier import VN_TZ, reminder_scheduler
 from event_store import store
 
 # Import SideBarMenu để tích hợp tính năng menu trượt từ cạnh trái
 from side_bar_menu import SideBarMenu
 from chat_history_sidebar import ChatHistorySideBar
 
-reminder_scheduler = ReminderScheduler(reporter=api)  # one scheduler for the whole app (P2-9)
+FE_DIR = Path(__file__).resolve().parent
 
 # ==============================================================================
 # HẰNG SỐ MÀU SẮC
@@ -266,7 +269,7 @@ class ManualFallbackModal(ModalView):
         self.main_layout.add_widget(self.title_label)
         
         info_box = MDBoxLayout(orientation='vertical', size_hint_y=None, height=dp(50), spacing=dp(5))
-        info_box.add_widget(MDLabel(text=f"Task name: [b]{task_title}[/b]", markup=True))
+        info_box.add_widget(MDLabel(text=f"Task name: [b]{escape_markup(str(task_title))}[/b]", markup=True))
         info_box.add_widget(MDLabel(text=f"Duration: {duration} mins"))
         self.main_layout.add_widget(info_box)
         
@@ -283,17 +286,27 @@ class ManualFallbackModal(ModalView):
         self.main_layout.add_widget(self.scroll)
         
         self.slot_items = []
-        for i, slot in enumerate(available_slots):
-            item = SlotSelectionItem(slot_data=slot, group_name="fallback_slots")
-            if i == 0:
-                item.checkbox.active = True
-            self.slots_box.add_widget(item)
-            self.slot_items.append(item)
+        if available_slots:
+            for i, slot in enumerate(available_slots):
+                item = SlotSelectionItem(slot_data=slot, group_name="fallback_slots")
+                if i == 0:
+                    item.checkbox.active = True
+                self.slots_box.add_widget(item)
+                self.slot_items.append(item)
+        else:
+            self.slots_box.add_widget(MDLabel(
+                text="No matching free slots found in this date range.\nTry another date or adjust your preferences.",
+                theme_text_color="Hint",
+                halign="center",
+                adaptive_height=True,
+                size_hint_y=None,
+            ))
             
         btn_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(45), spacing=dp(10))
-        btn_confirm = MDButton(
+        self.btn_confirm = MDButton(
             MDButtonText(text="CONFIRM", text_color=WHITE_COLOR, font_style="Label", role="small"),
             style="filled", md_bg_color=BLUE_COLOR, size_hint_x=0.6,
+            disabled=(len(self.slot_items) == 0),
             on_release=self.on_confirm
         )
         btn_cancel = MDButton(
@@ -301,7 +314,7 @@ class ManualFallbackModal(ModalView):
             style="outlined", md_bg_color=WHITE_COLOR, size_hint_x=0.4,
             on_release=self.on_cancel_clicked
         )
-        btn_box.add_widget(btn_confirm)
+        btn_box.add_widget(self.btn_confirm)
         btn_box.add_widget(btn_cancel)
         self.main_layout.add_widget(btn_box)
         
@@ -315,6 +328,7 @@ class ManualFallbackModal(ModalView):
                 break
                 
         if selected_slot:
+            self.btn_confirm.disabled = True
             # Server places the task within the selected slot trimmed to requested_window and duration
             slot_start, slot_end = clip_slot_to_window(
                 selected_slot.get("start_time"),
@@ -349,6 +363,8 @@ class ManualFallbackModal(ModalView):
             self.on_canceled()
 
     def _show_error(self, res):
+        if hasattr(self, "btn_confirm"):
+            self.btn_confirm.disabled = (len(self.slot_items) == 0)
         detail = res.get("detail") if isinstance(res, dict) else None
         self.title_label.text = f"(!) Unable to save: {detail or 'unknown error'}"
 
@@ -366,6 +382,8 @@ class ProposalCard(MDBoxLayout):
         self.proposal = proposal_data
         self.chat_screen = chat_screen
         self.buttons = []
+        self._in_flight = False
+        self._permanently_disabled = False
         
         with self.canvas.before:
             Color(*WHITE_COLOR)
@@ -427,31 +445,69 @@ class ProposalCard(MDBoxLayout):
         self.bg_rect.size = self.size
         self.border.rounded_rectangle = [self.x, self.y, self.width, self.height, dp(8)]
 
+    def _set_buttons_disabled(self, disabled):
+        for btn in self.buttons:
+            btn.disabled = disabled
+
+    def _clear_active_reschedule_ref(self):
+        if self.chat_screen.active_reschedule_proposal is self:
+            self.chat_screen._clear_reschedule_banner()
+
     def on_confirm(self, instance):
+        if self._in_flight or self._permanently_disabled:
+            return
+        self._in_flight = True
+        self._set_buttons_disabled(True)
+        self._clear_active_reschedule_ref()
+        self.show_status("Confirming...")
         # POST /proposals/{id}/confirm: server re-validates conflicts before creating events
         pid = self.proposal.get("id")
         api.confirm_proposal(
             pid,
-            on_success=lambda req, res: (reminder_scheduler.schedule_from_confirm(res), store.refresh(api),
-                                         self.disable_card("Confirmed and added to calendar")),
+            on_success=lambda req, res: (
+                setattr(self, "_in_flight", False),
+                reminder_scheduler.schedule_from_confirm(res),
+                store.refresh(api),
+                self.disable_card("Confirmed and added to calendar"),
+            ),
             on_failure=self._handle_action_failure,
-            on_error=lambda req, err: self.show_status("Server connection error. Please try again."),
+            on_error=self._handle_action_error,
         )
 
     def on_reject(self, instance):
+        if self._in_flight or self._permanently_disabled:
+            return
+        self._in_flight = True
+        self._set_buttons_disabled(True)
+        self._clear_active_reschedule_ref()
+        self.show_status("Rejecting...")
         api.reject_proposal(
             self.proposal.get("id"),
-            on_success=lambda req, res: self.disable_card("Rejected"),
+            on_success=lambda req, res: (
+                setattr(self, "_in_flight", False),
+                self.disable_card("Rejected"),
+            ),
             on_failure=self._handle_action_failure,
-            on_error=lambda req, err: self.show_status("Server connection error. Please try again."),
+            on_error=self._handle_action_error,
         )
 
+    def _handle_action_error(self, req, err):
+        self._in_flight = False
+        self._clear_active_reschedule_ref()
+        if not self._permanently_disabled:
+            self._set_buttons_disabled(False)
+        self.show_status("Server connection error. Please try again.")
+
     def _handle_action_failure(self, req, res):
+        self._in_flight = False
+        self._clear_active_reschedule_ref()
         code = getattr(req, "resp_status", None)
         detail = (res.get("detail") if isinstance(res, dict) else "") or ""
         if code == 404 or (code == 409 and detail.lower().startswith("proposal is already")):
             self.disable_card(self._failure_text(res))
             return
+        if not self._permanently_disabled:
+            self._set_buttons_disabled(False)
         if code == 401:
             self.show_status("Session expired. Please log in again, then retry.")
             return
@@ -463,21 +519,34 @@ class ProposalCard(MDBoxLayout):
         return f"Cannot execute: {detail}" if detail else "Error processing proposal"
 
     def on_reschedule(self, instance):
+        if self._in_flight or self._permanently_disabled:
+            return
         self.chat_screen.trigger_reschedule_mode(self)
 
     def show_status(self, status_msg):
         """show feedback without permanently disabling proposal actions."""
         self.status_lbl.text = status_msg
-        self.status_lbl.opacity = 1
+        self.status_lbl.opacity = 1 if status_msg else 0
+        if getattr(self, "_session_msg", None) is not None and not self._permanently_disabled:
+            self._session_msg["status"] = status_msg
+            self.chat_screen.save_current_session()
 
-    def disable_card(self, status_msg):
+    def disable_card(self, status_msg, save=True):
+        self._permanently_disabled = True
+        self._in_flight = False
+        self._clear_active_reschedule_ref()
         self.btn_layout.opacity = 0
         self.btn_layout.height = 0
         self.status_lbl.text = status_msg
         self.status_lbl.opacity = 1
-        for btn in self.buttons: btn.disabled = True
+        self._set_buttons_disabled(True)
         if self in self.chat_screen.active_cards:
             self.chat_screen.active_cards.remove(self)
+        if getattr(self, "_session_msg", None) is not None:
+            self._session_msg["disabled"] = True
+            self._session_msg["status"] = status_msg
+            if save:
+                self.chat_screen.save_current_session()
 
 # ==============================================================================
 # MÀN HÌNH CHÍNH (CHAT ASSISTANT SCREEN)
@@ -489,13 +558,17 @@ class ChatAssistantScreen(MDScreen):
         self.active_reschedule_proposal = None
         self._pending_reschedule_card = None
         self.active_cards = []
+        self._reset_backend_context = False
+        self._last_text = None
         
         # c. Quản lý trạng thái chat và lưu dữ liệu vào database cục bộ JsonStore
-        self.chat_db = JsonStore("chat_history_db.json")
+        self.chat_db = JsonStore(str(FE_DIR / "chat_history_db.json"))
         self.chat_sessions = []
+        self.current_session_id = str(uuid.uuid4())
         self.current_session_title = "New conversation"
         self.current_session_messages = []
         self.is_current_session_saved = False
+        self._loaded_user_key = self._db_user_key()
         self._load_chat_history_from_db()
         self._save_trigger = Clock.create_trigger(self._do_save_chat_history_to_db, 2.0)
         
@@ -504,8 +577,9 @@ class ChatAssistantScreen(MDScreen):
     def _db_user_key(self):
         return f"user_{api.user_id or 'guest'}"
 
-    def _load_chat_history_from_db(self):
-        key = self._db_user_key()
+    def _load_chat_history_from_db(self, user_key=None):
+        key = user_key or self._db_user_key()
+        self._loaded_user_key = key
         if self.chat_db.exists(key):
             try:
                 self.chat_sessions = self.chat_db.get(key).get("sessions", [])
@@ -514,21 +588,73 @@ class ChatAssistantScreen(MDScreen):
         else:
             self.chat_sessions = []
 
-    def _save_chat_history_to_db(self, immediate=False):
+    def _save_chat_history_to_db(self, immediate=False, user_key=None):
         if immediate:
-            self._do_save_chat_history_to_db()
+            self._do_save_chat_history_to_db(user_key=user_key)
         elif hasattr(self, '_save_trigger'):
             self._save_trigger()
 
-    def _do_save_chat_history_to_db(self, *args):
-        key = self._db_user_key()
+    def _do_save_chat_history_to_db(self, *args, user_key=None):
+        key = user_key or self._loaded_user_key or self._db_user_key()
+        if not key:
+            return
         try:
             self.chat_db.put(key, sessions=self.chat_sessions)
         except Exception as e:
-            print("Lỗi lưu chat history vào database:", e)
+            print("Failed to save chat history:", e)
+
+    def _reset_active_chat_ui(self, add_greeting=True):
+        """reset visible chat thread without altering saved chat_sessions."""
+        self.active_reschedule_proposal = None
+        self._pending_reschedule_card = None
+        self.active_cards = []
+        self._last_text = None
+        self.current_session_id = str(uuid.uuid4())
+        self.current_session_title = "New conversation"
+        self.current_session_messages = []
+        self.is_current_session_saved = False
+        if hasattr(self, "reschedule_banner"):
+            self.reschedule_banner.height = 0
+            self.reschedule_banner.opacity = 0
+        if hasattr(self, "chat_history"):
+            self.chat_history.clear_widgets()
+            if add_greeting:
+                self.append_ai_message("Hello! How can I help optimize your schedule this week?")
+
+    def _sync_user_session_storage(self):
+        """switch isolated chat history storage cleanly when the logged-in user changes."""
+        target_key = self._db_user_key()
+        if self._loaded_user_key == target_key:
+            return
+        if self._loaded_user_key:
+            self.save_current_session()
+            self._do_save_chat_history_to_db(user_key=self._loaded_user_key)
+        self._load_chat_history_from_db(user_key=target_key)
+        self._reset_active_chat_ui(add_greeting=True)
+        self._reset_backend_context = False
+
+    def reset_state(self):
+        """flush current user's chat history and reset assistant state on logout."""
+        if hasattr(self, "_save_trigger"):
+            try:
+                self._save_trigger.cancel()
+            except Exception:
+                pass
+        if self._loaded_user_key:
+            self.save_current_session()
+            self._do_save_chat_history_to_db(user_key=self._loaded_user_key)
+        if getattr(api, "access_token", None):
+            try:
+                api.reset_assistant_context()
+            except Exception:
+                pass
+        self._loaded_user_key = None
+        self.chat_sessions = []
+        self._reset_backend_context = False
+        self._reset_active_chat_ui(add_greeting=True)
 
     def on_pre_enter(self, *args):
-        self._load_chat_history_from_db()
+        self._sync_user_session_storage()
 
     def build_ui(self, dt):
         self.main_layout = MDBoxLayout(orientation='vertical', md_bg_color=WHITE_COLOR)
@@ -657,20 +783,35 @@ class ChatAssistantScreen(MDScreen):
         self.reschedule_banner.opacity = 1
         self.txt_input.focus = True
 
-    def cancel_reschedule(self, *args):
+    def _clear_reschedule_banner(self):
         self.active_reschedule_proposal = None
-        self.reschedule_banner.height = 0
-        self.reschedule_banner.opacity = 0
+        if hasattr(self, "reschedule_banner"):
+            self.reschedule_banner.height = 0
+            self.reschedule_banner.opacity = 0
+
+    def _mark_reset_backend_context(self):
+        self._reset_backend_context = True
+        if getattr(api, "access_token", None):
+            try:
+                api.reset_assistant_context()
+            except Exception:
+                pass
+
+    def cancel_reschedule(self, *args):
+        self._clear_reschedule_banner()
+        self._mark_reset_backend_context()
 
     def send_message(self, *args):
         user_text = self.txt_input.text.strip()
-        if not user_text: return
+        if not user_text:
+            return
+        self._sync_user_session_storage()
         
         # Đặt tiêu đề nếu là tin nhắn đầu tiên của user trong đoạn chat này
-        if not any(m['is_user'] for m in self.current_session_messages):
+        if not any(m.get('is_user') for m in self.current_session_messages):
             self.current_session_title = user_text
             
-        self.current_session_messages.append({"text": user_text, "is_user": True})
+        self.current_session_messages.append({"type": "text", "text": user_text, "is_user": True})
         self.chat_history.add_widget(ChatBubble(text=user_text, is_user=True))
         self.save_current_session()
         self.txt_input.text = ""
@@ -680,17 +821,20 @@ class ChatAssistantScreen(MDScreen):
         # 1. Keep reschedule card alive until server returns a replacement proposal
         reschedule_id = None
         self._pending_reschedule_card = None
+        should_reset_ctx = self._reset_backend_context
         if self.active_reschedule_proposal:
             self._pending_reschedule_card = self.active_reschedule_proposal
             reschedule_id = self._pending_reschedule_card.proposal.get("id")
             self._pending_reschedule_card.show_status("Requesting reschedule...")
             self.reschedule_banner.height = 0
             self.reschedule_banner.opacity = 0
+            should_reset_ctx = False
         else:
             for card in self.active_cards[:]:
                 card.disable_card("Canceled due to topic change")
 
         # 2. Gửi request trực tiếp đến Backend Server
+        self._reset_backend_context = False
         self._last_text = user_text  # kept so a timeout can still open the manual picker
         api.understand(
             user_text,
@@ -698,6 +842,7 @@ class ChatAssistantScreen(MDScreen):
             on_failure=self.on_api_failure,
             on_error=self.on_api_error,
             reschedule_proposal_id=reschedule_id,
+            reset_context=should_reset_ctx,
         )
 
     def _redirect_to(self, target_screen):
@@ -764,7 +909,7 @@ class ChatAssistantScreen(MDScreen):
             if pending_resched is not None:
                 pending_resched.show_status("")
                 self._pending_reschedule_card = None
-                self.cancel_reschedule()
+                self._clear_reschedule_banner()
             msg = result.get("message") or "You may want to search schedules or query academic regulations."
             self.append_ai_message(msg)
             nav_btn = MDButton(
@@ -786,17 +931,20 @@ class ChatAssistantScreen(MDScreen):
             print(f"[AI FALLBACK] {nlu.get('fallback_reason')}")
 
         proposal = result.get("proposal")
-        print("[DEBUG FRONTEND PROPOSAL]", repr(proposal))
         pending_resched = getattr(self, "_pending_reschedule_card", None)
         if proposal:  # server found a free slot -> show the Accept / Reject / Reschedule card
             if pending_resched is not None:
                 pending_resched.disable_card("Rescheduled")
                 self._pending_reschedule_card = None
-                self.cancel_reschedule()
+                self._clear_reschedule_banner()
             self.append_ai_message(result.get("message") or "I propose this time slot:")
+            msg_entry = {"type": "proposal", "proposal": dict(proposal), "disabled": False, "status": ""}
             new_card = ProposalCard(proposal_data=proposal, chat_screen=self)
+            new_card._session_msg = msg_entry
+            self.current_session_messages.append(msg_entry)
             self.chat_history.add_widget(new_card)
             self.active_cards.append(new_card)
+            self.save_current_session()
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
             return
 
@@ -813,7 +961,7 @@ class ChatAssistantScreen(MDScreen):
             if pending_resched is not None:
                 pending_resched.show_status("AI busy; you can still Confirm, Reject, or Reschedule.")
                 self._pending_reschedule_card = None
-                self.cancel_reschedule()
+                self._clear_reschedule_banner()
             task_title = nlu.get("title") or "New activity"
             duration = int(nlu.get("duration_minutes") or 60)
             window = (
@@ -831,7 +979,7 @@ class ChatAssistantScreen(MDScreen):
         if pending_resched is not None:
             pending_resched.show_status("No replacement slot found. You can Confirm, Reject, or Reschedule again.")
             self._pending_reschedule_card = None
-            self.cancel_reschedule()
+            self._clear_reschedule_banner()
         self.append_ai_message(result.get("message") or nlu.get("clarification_question")
                                or "I could not fully understand your request. Could you please specify more details?")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
@@ -839,9 +987,14 @@ class ChatAssistantScreen(MDScreen):
     def _open_manual_picker(self, nlu):
         title = nlu.get("title") or "Activity"
         duration = nlu.get("duration_minutes") or 60
-        start = nlu.get("window_start") or datetime.now().date().isoformat()
+        now_vn = datetime.now(VN_TZ)
+        start = nlu.get("window_start") or now_vn.date().isoformat()
         # no explicit end (e.g. offline fallback): show a whole week of free gaps
         end = nlu.get("window_end") or (date.fromisoformat(start) + timedelta(days=6)).isoformat()
+        start_dt = datetime.combine(date.fromisoformat(start), datetime.min.time(), tzinfo=VN_TZ)
+        end_dt = datetime.combine(date.fromisoformat(end), datetime.max.time().replace(microsecond=0), tzinfo=VN_TZ)
+        if end_dt >= now_vn and start_dt < now_vn:
+            start_dt = now_vn.replace(second=0, microsecond=0)
         
         busy = bool(nlu.get("fallback_mode"))
         window = (nlu["requested_start"], nlu["requested_end"]) if nlu.get("requested_start") and nlu.get("requested_end") else None
@@ -850,7 +1003,7 @@ class ChatAssistantScreen(MDScreen):
             self._trigger_fallback_ui(title, duration, slots, busy=busy, window=window)
         
         api.get_free_slots(
-            f"{start}T00:00:00", f"{end}T23:59:59", max(15, min(int(duration), 720)),
+            start_dt.isoformat(), end_dt.isoformat(), max(15, min(int(duration), 720)),
             on_success=lambda r, res: show(res.get("available_slots", []) if isinstance(res, dict) else []),
             on_failure=lambda r, res: show([]),
             on_error=lambda r, err: show([]),
@@ -863,7 +1016,7 @@ class ChatAssistantScreen(MDScreen):
             detail = (result.get("detail") if isinstance(result, dict) else "") or ""
             if code == 404 or (code == 409 and detail.lower().startswith("proposal is already")):
                 pending_resched.disable_card(pending_resched._failure_text(result))
-                self.cancel_reschedule()
+                self._clear_reschedule_banner()
             else:
                 pending_resched.show_status("Reschedule failed. You can still Confirm, Reject, or retry.")
             self._pending_reschedule_card = None
@@ -884,16 +1037,15 @@ class ChatAssistantScreen(MDScreen):
             pending_resched.show_status("Connection error during reschedule. Buttons remain active.")
             self._pending_reschedule_card = None
         if is_timeout(error) and getattr(self, "_last_text", None):
-            # P1-9: the AI request timed out -> go straight to the manual form with offline-parsed values
+            # P1-9: the AI request timed out -> manual picker will append its single busy bubble
             self._open_manual_picker(parse_request(self._last_text))
-            self.append_ai_message("AI Assistant response timed out. Please choose a free slot from the table above!")
             Clock.schedule_once(self.scroll_to_bottom, 0.2)
             return
         self.append_ai_message(f"Cannot connect to server ({api.base_url}). Please check your network connection.")
         Clock.schedule_once(self.scroll_to_bottom, 0.2)
 
     def append_ai_message(self, text):
-        self.current_session_messages.append({"text": text, "is_user": False})
+        self.current_session_messages.append({"type": "text", "text": text, "is_user": False})
         self.chat_history.add_widget(ChatBubble(text=text, is_user=False))
         self.save_current_session()
 
@@ -901,80 +1053,83 @@ class ChatAssistantScreen(MDScreen):
         """Lưu đoạn chat hiện tại vào danh sách lịch sử nếu người dùng đã nhắn tin"""
         if not any(m.get('is_user') for m in self.current_session_messages):
             return
+        if not self._loaded_user_key:
+            self._loaded_user_key = self._db_user_key()
         session_data = {
+            "id": self.current_session_id,
             "title": self.current_session_title,
-            "messages": list(self.current_session_messages)
+            "messages": list(self.current_session_messages),
         }
-        if getattr(self, "is_current_session_saved", False) and self.chat_sessions:
-            self.chat_sessions[-1] = session_data
+        existing_idx = next(
+            (i for i, s in enumerate(self.chat_sessions) if s.get("id") == self.current_session_id),
+            None,
+        )
+        if existing_idx is not None:
+            self.chat_sessions[existing_idx] = session_data
         else:
             self.chat_sessions.append(session_data)
-            self.is_current_session_saved = True
-        self._save_chat_history_to_db()
+        self.is_current_session_saved = True
+        self._save_chat_history_to_db(user_key=self._loaded_user_key)
 
     def start_new_chat(self, *args):
+        self._sync_user_session_storage()
         self.save_current_session()
-        self._save_chat_history_to_db(immediate=True)
-        
-        # Reset dữ liệu và UI
-        self.chat_history.clear_widgets()
-        self.current_session_title = "New conversation"
-        self.current_session_messages = []
-        self.is_current_session_saved = False
-        self.active_cards = []
-        if self.active_reschedule_proposal:
-            self.cancel_reschedule()
-            
-        self.append_ai_message("Hello! How can I help optimize your schedule this week?")
+        self._save_chat_history_to_db(immediate=True, user_key=self._loaded_user_key)
+        self._mark_reset_backend_context()
+        self._reset_active_chat_ui(add_greeting=True)
 
     def load_chat_session(self, index):
         """Được gọi khi người dùng bấm vào 1 đoạn chat trong sidebar"""
+        self._sync_user_session_storage()
         self.save_current_session()
-        self._save_chat_history_to_db(immediate=True)
+        self._save_chat_history_to_db(immediate=True, user_key=self._loaded_user_key)
         
         if 0 <= index < len(self.chat_sessions):
             selected = self.chat_sessions.pop(index)
             self.chat_history.clear_widgets()
+            self.current_session_id = selected.get("id") or str(uuid.uuid4())
+            selected["id"] = self.current_session_id
             self.current_session_title = selected.get("title", "Conversation")
             self.current_session_messages = selected.get("messages", [])
             self.active_cards = []
-            if self.active_reschedule_proposal:
-                self.cancel_reschedule()
+            self._clear_reschedule_banner()
+            self._mark_reset_backend_context()
                 
             for msg in self.current_session_messages:
-                self.chat_history.add_widget(ChatBubble(text=msg["text"], is_user=msg["is_user"]))
+                if msg.get("type") == "proposal" and isinstance(msg.get("proposal"), dict):
+                    card = ProposalCard(proposal_data=msg["proposal"], chat_screen=self)
+                    card._session_msg = msg
+                    self.chat_history.add_widget(card)
+                    if msg.get("disabled"):
+                        card.disable_card(msg.get("status") or "", save=False)
+                    else:
+                        self.active_cards.append(card)
+                        if msg.get("status"):
+                            card.show_status(msg["status"])
+                else:
+                    self.chat_history.add_widget(ChatBubble(text=msg.get("text", ""), is_user=bool(msg.get("is_user"))))
                 
             self.chat_sessions.append(selected)
             self.is_current_session_saved = True
-            self._save_chat_history_to_db()
+            self._save_chat_history_to_db(user_key=self._loaded_user_key)
             Clock.schedule_once(self.scroll_to_bottom, 0.1)
 
     def delete_chat_session(self, index):
         """
-        Xóa một phiên trò chuyện khỏi danh sách và cập nhật trực tiếp vào database cục bộ:
-        - Xóa session tại index trong self.chat_sessions.
-        - Ghi đè cập nhật vào JsonStore ('chat_history_db.json') ngay lập tức.
-        - Nếu phiên bị xóa đang mở trên màn hình thì làm sạch và chuyển về màn hình chat mới.
-        - Cập nhật lại giao diện danh sách lịch sử trong sidebar.
+        Xóa một phiên trò chuyện khỏi danh sách và cập nhật trực tiếp vào database cục bộ.
         """
+        self._sync_user_session_storage()
         if 0 <= index < len(self.chat_sessions):
             deleted = self.chat_sessions.pop(index)
-            self._save_chat_history_to_db(immediate=True)
+            self._save_chat_history_to_db(immediate=True, user_key=self._loaded_user_key)
             
-            # Kiểm tra nếu phiên bị xóa chính là phiên đang hiển thị trên màn hình
             is_active_session = (
-                self.is_current_session_saved and 
-                (self.current_session_title == deleted.get("title") or len(self.chat_sessions) == 0)
+                deleted.get("id") == self.current_session_id
+                or (self.is_current_session_saved and not deleted.get("id") and self.current_session_title == deleted.get("title"))
             )
             if is_active_session:
-                self.chat_history.clear_widgets()
-                self.current_session_title = "New conversation"
-                self.current_session_messages = []
-                self.is_current_session_saved = False
-                self.active_cards = []
-                if self.active_reschedule_proposal:
-                    self.cancel_reschedule()
-                self.append_ai_message("Hello! How can I help optimize your schedule this week?")
+                self._mark_reset_backend_context()
+                self._reset_active_chat_ui(add_greeting=True)
 
             # Tải lại danh sách lịch sử ngay trên menu
             self.history_menu.load_history(

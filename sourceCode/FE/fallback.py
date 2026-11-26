@@ -10,34 +10,50 @@ Pure Python (no Kivy) so it can be unit-tested anywhere.
 import os
 import re
 
-AI_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_AI_TIMEOUT", "5"))
+AI_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_AI_TIMEOUT", "9"))
 
 _DURATION = re.compile(r"(\d+(?:[.,]\d+)?)\s*(tiếng|tieng|giờ|gio|h|phút|phut|p|min|mins|hour|hours)\b", re.IGNORECASE)
 _FILLER = re.compile(
-    r"\b(xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|nhé|nhe|nha|hãy|lịch|lich|please|schedule)\b",
+    r"\b(?:i\s+(?:want|need|would\s+like)\s+to|i'd\s+like\s+to|can\s+you(?:\s+please)?|"
+    r"could\s+you(?:\s+please)?|help\s+me(?:\s+to)?|"
+    r"xếp|xep|sắp xếp|sap xep|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|nhé|nhe|nha|hãy|lịch|lich|"
+    r"please|schedule|plan|book|session|activity|for\s+me|today|tomorrow)\b",
     re.IGNORECASE,
 )
 _MINUTE_UNITS = {"phút", "phut", "p", "min", "mins"}
 
 
-_PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|pm|am)"
+_PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|toi|pm|am)"
 _CLOCK_RANGE = re.compile(
-    r"(?:từ|tu|from)?\s*(\d{1,2})\s*(?:h|giờ|gio|:)\s*(\d{2})?\s*" + _PERIOD + r"?\s*"
-    r"(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})\s*(?:h|giờ|gio|:)?\s*(\d{2})?\s*" + _PERIOD + r"?",
+    r"(?:từ|tu|from|between)?\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?\s*"
+    r"(?:đến|den|tới|toi|to|until|and|-|–)\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)?\s*(\d{2})?)?\s*" + _PERIOD + r"?",
     re.IGNORECASE,
 )
-_CLOCK_POINT = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
+_CLOCK_POINT = re.compile(
+    r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau|by)\s*\d{1,2}(?:\s*(?:h|giờ|gio|:)\s*\d{0,2}\s*(?:am|pm)?|\s*(?:am|pm))",
+    re.IGNORECASE,
+)
 _HOURS_MINUTES = re.compile(r"(\d{1,2})\s*(?:h|giờ|gio|tiếng|tieng)\s*(\d{1,2})\s*(?:phút|phut|p|min)?\b", re.IGNORECASE)
+
+
+def _has_clock_marker(match) -> bool:
+    """require at least one clock separator or time-of-day period so number ranges like '5 to 6 hours' are excluded."""
+    if match.group(3) or match.group(6):
+        return True
+    return bool(re.search(r"(?:h|giờ|gio|:)", match.group(0), re.IGNORECASE))
 
 
 def _strip_clock(text: str) -> str:
     """times of day ("từ 7h đến 18h", "lúc 9h") are not durations"""
-    return _CLOCK_POINT.sub(" ", _CLOCK_RANGE.sub(" ", text))
+    masked = _CLOCK_RANGE.sub(lambda m: " " if _has_clock_marker(m) else m.group(0), text)
+    return _CLOCK_POINT.sub(" ", masked)
 
 
 def _hour24(hour: int, period: str | None) -> int:
     period = (period or "").lower()
-    if period in {"chiều", "chieu", "tối", "pm"} and hour < 12:
+    if period == "am" and hour == 12:
+        return 0
+    if period in {"chiều", "chieu", "tối", "toi", "pm"} and hour < 12:
         return hour + 12
     if period in {"trưa", "trua"} and hour < 11:
         return hour + 12
@@ -46,16 +62,33 @@ def _hour24(hour: int, period: str | None) -> int:
 
 def parse_clock_window(text: str) -> tuple[int, int] | None:
     """"từ 11h sáng đến 5h chiều" -> (660, 1020) minutes after midnight; None if absent or not 15..720 minutes."""
-    m = _CLOCK_RANGE.search(text)
-    if not m or int(m.group(1)) >= 24 or int(m.group(4)) > 24:
-        return None
-    start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
-    if not m.group(3) and not m.group(6) and 1 <= start_h <= 5 and end_h <= 11:
-        start_h, end_h = start_h + 12, end_h + 12  # "từ 3h đến 5h" without a period: nobody studies at 3 a.m.
-    start, end = start_h * 60 + int(m.group(2) or 0), end_h * 60 + int(m.group(5) or 0)
-    if end <= start and not m.group(6) and start_h < 12 and end_h < 12:
-        end += 12 * 60
-    return (start, end) if 15 <= end - start <= 720 else None
+    for m in _CLOCK_RANGE.finditer(text):
+        if not _has_clock_marker(m):
+            continue
+        if int(m.group(1)) >= 24 or int(m.group(4)) > 24:
+            continue
+        start_h, end_h = _hour24(int(m.group(1)), m.group(3)), _hour24(int(m.group(4)), m.group(6))
+        if not m.group(3) and not m.group(6) and 1 <= start_h <= 5 and end_h <= 11:
+            start_h, end_h = start_h + 12, end_h + 12  # "từ 3h đến 5h" without a period: nobody studies at 3 a.m.
+        start, end = start_h * 60 + int(m.group(2) or 0), end_h * 60 + int(m.group(5) or 0)
+        if end <= start and not m.group(6) and start_h < 12 and end_h < 12:
+            end += 12 * 60
+        if 15 <= end - start <= 720:
+            return (start, end)
+    return None
+
+
+def _ceil_15m(dt):
+    """round a datetime up to the next 15-minute wall-clock grid mark."""
+    from datetime import timedelta
+
+    clean = dt.replace(second=0, microsecond=0)
+    if clean < dt:
+        clean += timedelta(minutes=1)
+    rem = clean.minute % 15
+    if rem:
+        clean += timedelta(minutes=15 - rem)
+    return clean
 
 
 def _range_minutes(text: str) -> int | None:
@@ -91,12 +124,15 @@ def clip_slot_to_window(
         except (ValueError, TypeError):
             pass
 
+    gs = _ceil_15m(gs)
     if duration_minutes is not None and duration_minutes > 0:
         target_end = gs + timedelta(minutes=int(duration_minutes))
         if target_end <= ge:
             return gs.isoformat(), target_end.isoformat()
 
-    return gs.isoformat(), ge.isoformat()
+    if gs < ge:
+        return gs.isoformat(), ge.isoformat()
+    return slot_start, slot_end
 
 
 def slice_slots_to_duration(
@@ -126,7 +162,7 @@ def slice_slots_to_duration(
                 we = gs.replace(hour=eh, minute=em, second=0, microsecond=0)
                 if we <= ws:
                     we += timedelta(days=1)
-                cur, bound = max(gs, ws), min(ge, we)
+                cur, bound = _ceil_15m(max(gs, ws)), min(ge, we)
                 while cur + dur_td <= bound and len(windowed) < max_slots:
                     windowed.append({
                         "start_time": cur.isoformat(),
@@ -142,7 +178,7 @@ def slice_slots_to_duration(
     out: list[dict] = []
     for s in slots:
         try:
-            cur = datetime.fromisoformat(s["start_time"])
+            cur = _ceil_15m(datetime.fromisoformat(s["start_time"]))
             ge = datetime.fromisoformat(s["end_time"])
         except (KeyError, TypeError, ValueError):
             continue
@@ -183,7 +219,14 @@ def parse_request(text: str, default_minutes: int = 60) -> dict:
     cleaned = re.sub(r"\b(?:xếp|xep|sắp xếp|sap xep)\s+lịch\b", " ", cleaned, flags=re.IGNORECASE)
     cleaned = _FILLER.sub(" ", cleaned)
     cleaned = re.sub(r"[^\w\s]", " ", cleaned)
-    title = re.sub(r"\s+", " ", cleaned).strip()[:100] or "Activity"
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    while True:
+        updated = re.sub(r"^(?:on|at|in|by|from|to|between|a|an|the)\b\s*", "", cleaned, flags=re.IGNORECASE)
+        updated = re.sub(r"\s*\b(?:on|at|in|by|from|to|between|for)$", "", updated, flags=re.IGNORECASE).strip()
+        if updated == cleaned:
+            break
+        cleaned = updated
+    title = cleaned[:100] or "Activity"
     result = {"title": title, "duration_minutes": duration, "fallback_mode": True}
     window = parse_clock_window(text)
     if window:

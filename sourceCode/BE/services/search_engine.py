@@ -256,10 +256,15 @@ SEMANTIC_CONCEPT_CLUSTERS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_SEARCH_EN_WEEKDAYS = (
+    r"(?:(?:this|next)\s+)?(?:monday|mon|tuesday|tues|tue|wednesday|wed|"
+    r"thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun)"
+)
 _SEARCH_DATE_RE = re.compile(
-    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|ngày mai|ngày kia|tuần này|tuần sau|"
-    r"cuối tuần|cuối tháng|tháng sau|thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|"
-    r"chủ nhật|today|tomorrow|this week|next week)",
+    rf"\b(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[/-]\d{{1,2}}(?:[/-]\d{{2,4}})?|hôm nay|ngày mai|ngày kia|tuần này|tuần sau|"
+    rf"cuối tuần|cuối tháng|tháng sau|(?:this|next)\s+weekend|weekend|{_SEARCH_EN_WEEKDAYS}|"
+    r"thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|"
+    r"chủ nhật|today|tomorrow|this week|next week)\b",
     re.IGNORECASE,
 )
 
@@ -350,14 +355,16 @@ def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
 _SCHEDULING_CMD_RE = re.compile(
     r"\b("
     r"xếp\s+lịch|xep\s+lich|sắp\s+xếp|sap\s+xep|"
-    r"xếp\s+(?:cho\s+mình|cho\s+toi|cho\s+tôi|giúp\s+mình|giup\s+minh|giúp\s+tôi|giup\s+toi)|"
-    r"xep\s+(?:cho\s+minh|cho\s+toi|giup\s+minh|giup\s+toi)|"
+    r"xếp\s+(?:cho\s+mình|cho\s+toi|cho\s+tôi|giúp\s+mình|giup\s+minh|giúp\s+tôi|giup\s+toi|giúp\s+\d|giup\s+\d)|"
+    r"xep\s+(?:cho\s+minh|cho\s+toi|giup\s+minh|giup\s+toi|giup\s+\d)|"
     r"(?:xếp|xep)\s+\d+(?:[.,]\d+)?\s*(?:tiếng|tieng|giờ|gio|h|phút|phut|p|hours?|hrs?|mins?|minutes?)|"
     r"đặt\s+lịch|dat\s+lich|lên\s+lịch|len\s+lich|thêm\s+lịch|them\s+lich|"
     r"dời\s+lịch|doi\s+lich|dời\s+buổi|doi\s+buoi|"
     r"xóa\s+lịch|xoá\s+lịch|xoa\s+lich|xóa\s+buổi|xoá\s+buổi|xoa\s+buoi|"
     r"hủy\s+lịch|huỷ\s+lịch|huy\s+lich|hủy\s+buổi|huỷ\s+buổi|huy\s+buoi|"
-    r"schedule\s+(?:for\s+me|a\s+|an\s+|\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|mins?|minutes?))|"
+    r"(?:i\s+(?:want|need|would\s+like)\s+to|please|help\s+me)\s+(?:schedule|plan|book|study\s+\w+\s+(?:tomorrow|today|from))|"
+    r"schedule\s+(?:for\s+me|a\s+|an\s+|\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|mins?|minutes?)|study|meeting|math)|"
+    r"(?:plan|book)\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|mins?|minutes?)|"
     r"reschedule\s+(?:my\s+|the\s+)?"
     r")\b",
     re.IGNORECASE,
@@ -471,9 +478,9 @@ def optimize_search_query(
     window_start: datetime | None = None
     window_end: datetime | None = None
     if date_hint is not None:
-        resolved = resolve_date_hint(date_hint, reference_now)
+        resolved = resolve_date_hint(date_hint, reference_now, prefer_future=False)
         start_clock, end_clock = _TIME_PERIOD_BOUNDS.get(
-            period or "", (time(0, 0), time(23, 59))
+            period or "", (time(0, 0), time(23, 59, 59))
         )
         window_start = datetime.combine(resolved.start, start_clock, tzinfo=VN_TZ)
         window_end = datetime.combine(resolved.end, end_clock, tzinfo=VN_TZ)
@@ -735,6 +742,16 @@ _KB_ABBREVIATIONS: dict[str, str] = {
     "ktpm": "kỹ thuật phần mềm",
     "tgmt": "thị giác máy tính",
     "khtn": "khoa học tự nhiên",
+    "graduation": "tốt nghiệp",
+    "requirements": "điều kiện chuẩn đầu ra",
+    "credits": "tín chỉ",
+    "lecturer": "giảng viên",
+    "faculty": "khoa",
+    "department": "bộ môn",
+    "prerequisite": "tiên quyết",
+    "regulations": "quy chế học vụ",
+    "tuition": "học phí",
+    "scholarship": "học bổng",
 }
 
 _KB_QUERY_STOPWORDS = {
@@ -977,14 +994,16 @@ def ask_academic_knowledge_base(
             "redirect_button_label": None,
         }
     if is_scheduling_command(clean_query):
+        msg = (
+            "It looks like you want to schedule a task. "
+            "The Search tab is for looking up events and academic information; "
+            "tap 'AI Assistant' to switch to the scheduling assistant."
+        )
         return {
             "query": raw_query,
             "normalized_query": normalized_query,
-            "answer": (
-                "It looks like you want to schedule a task. "
-                "The Search tab is for looking up events and academic information; "
-                "tap 'AI Assistant' to switch to the scheduling assistant."
-            ),
+            "answer": msg,
+            "message": msg,
             "citations": [],
             "fallback_mode": False,
             "redirect_target": "chat_home",

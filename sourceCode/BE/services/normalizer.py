@@ -48,9 +48,30 @@ class NormalizedText:
     changes: list[str] = field(default_factory=list)
 
 
+_AMBIGUOUS_ENGLISH_TOKENS = {"gap", "hop", "lam", "vs", "bai", "hoc"}
+
+
+def _has_vietnamese_context(text: str) -> bool:
+    """avoid rewriting common English words like 'gap' or 'vs' in pure English sentences."""
+    if any(ord(ch) > 127 for ch in text):
+        return True
+    tokens = {tok.lower() for tok in re.findall(r"[a-zA-Z]+", text)}
+    viet_markers = {
+        "xep", "lich", "sap", "tieng", "gio", "phut", "ngay", "tuan", "thu",
+        "buoi", "minh", "giup", "khong", "duoc", "hnay", "hqua", "trc",
+        "hom", "mai", "nhe", "voi", "ko", "dc", "doi", "chuyen", "xoa", "huy",
+    }
+    if tokens & viet_markers:
+        return True
+    return bool(re.search(r"\b(?:hoc bai|lam bai|lam do an|hop nhom|cho toi)\b", text, re.IGNORECASE))
+
+
 def _word_sub(text: str, mapping: dict[str, str], changes: list[str], tag: str) -> str:
     """replace whole words/phrases (case-insensitive), longest keys first, recording each change."""
+    allow_ambiguous = _has_vietnamese_context(text)
     for key in sorted(mapping, key=len, reverse=True):
+        if not allow_ambiguous and key in _AMBIGUOUS_ENGLISH_TOKENS:
+            continue
         value = mapping[key]
         if key == value:
             continue

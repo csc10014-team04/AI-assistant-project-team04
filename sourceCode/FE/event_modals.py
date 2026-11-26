@@ -75,13 +75,33 @@ class ClickableTextField(MDTextField):
         super().__init__(*args, **kwargs)
         self.readonly = True
         self.on_click = on_click
+        self._touch_down_pos = None
 
     def on_touch_down(self, touch):
+        if self.disabled or getattr(touch, "is_mouse_scrolling", False):
+            return False
         if self.collide_point(*touch.pos):
-            if self.on_click:
-                self.on_click()
+            self._touch_down_pos = tuple(touch.pos)
+            touch.grab(self)
             return True
         return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            down_pos = self._touch_down_pos
+            self._touch_down_pos = None
+            if (
+                not self.disabled
+                and down_pos is not None
+                and not getattr(touch, "is_mouse_scrolling", False)
+                and self.collide_point(*touch.pos)
+                and max(abs(touch.x - down_pos[0]), abs(touch.y - down_pos[1])) < dp(10)
+            ):
+                if self.on_click:
+                    self.on_click()
+            return True
+        return super().on_touch_up(touch)
 
 
 class KindPickerModal(ModalView):
@@ -335,10 +355,15 @@ class EditEventTimeModal(ModalView):
     - Bấm 'HỦY BỎ': Đóng popup, không thay đổi bất kỳ dữ liệu nào.
     - Bấm 'LƯU': Kiểm tra trùng lịch; nếu hợp lệ mới cập nhật vào hệ thống.
     """
-    def __init__(self, event, on_saved=None, **kwargs):
+    def __init__(self, event, on_saved=None, offset_minutes=None, **kwargs):
         super().__init__(**kwargs)
         self.event = event
         self.on_saved = on_saved
+        try:
+            raw_offset = offset_minutes if offset_minutes is not None else event.get("offset_minutes", 30)
+            self.offset_minutes = int(raw_offset) if raw_offset is not None else 30
+        except (TypeError, ValueError):
+            self.offset_minutes = 30
         self.size_hint = (0.9, None)
         self.auto_dismiss = False
 
@@ -500,10 +525,10 @@ class EditEventTimeModal(ModalView):
         # Cập nhật vào đối tượng sự kiện
         old_start = self.event.get("start_time")
         old_end = self.event.get("end_time")
+        event_id = self.event.get("id")
+        was_armed = (event_id or 0) in getattr(reminder_scheduler, "_armed", {})
         self.event["start_time"] = new_start_iso
         self.event["end_time"] = new_end_iso
-
-        event_id = self.event.get("id")
 
         # Cập nhật ngay vào store.events cục bộ để cả trang Lịch và Tìm kiếm phản ánh tức thì
         matched = False
@@ -516,21 +541,48 @@ class EditEventTimeModal(ModalView):
         if matched:
             store.set_events(store.events, demo=store.is_demo)
 
-        # Cập nhật lại lịch báo thức cục bộ nếu sự kiện này đang bật thông báo
-        if self.event.get("is_important"):
+        def _parse_vn(iso_str):
+            dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+            return dt.astimezone(VN_TZ) if dt.tzinfo is not None else dt.replace(tzinfo=VN_TZ)
+
+        def _rearm_local(start_iso_val, start_hm):
+            if not self.event.get("is_important"):
+                return
             try:
-                fire_dt = datetime.fromisoformat(new_end_iso) - timedelta(minutes=30)
-                title = self.event.get("title", "Event")
+                fire_dt = _parse_vn(start_iso_val) - timedelta(minutes=self.offset_minutes)
                 reminder_scheduler.schedule(
                     event_id or 0,
                     fire_at=fire_dt.isoformat(),
-                    title=title,
+                    title=self.event.get("title", "Event"),
                     room=self.event.get("room", ""),
-                    start_time_str=self.temp_start_time,
-                    offset_minutes=30
+                    start_time_str=start_hm,
+                    offset_minutes=self.offset_minutes,
+                    report_scheduled=False,
                 )
             except Exception:
                 pass
+
+        # Cập nhật lại lịch báo thức cục bộ nếu sự kiện này đang bật thông báo
+        if self.event.get("is_important"):
+            _rearm_local(new_start_iso, self.temp_start_time)
+
+        def _rollback_local():
+            self.event["start_time"] = old_start
+            self.event["end_time"] = old_end
+            for e in store.events:
+                if (event_id and e.get("id") == event_id) or (e is self.event):
+                    e["start_time"] = old_start
+                    e["end_time"] = old_end
+                    break
+            store.set_events(store.events, demo=store.is_demo)
+            if self.event.get("is_important") and was_armed and old_start:
+                try:
+                    old_hm = _parse_vn(old_start).strftime("%H:%M")
+                except Exception:
+                    old_hm = self.temp_start_time
+                _rearm_local(old_start, old_hm)
+            elif not was_armed:
+                reminder_scheduler.cancel(event_id or 0)
 
         if event_id and getattr(api, "access_token", None):
             self.lbl_conflict.text = "Saving changes to server..."
@@ -544,27 +596,12 @@ class EditEventTimeModal(ModalView):
 
             def on_patch_fail(req, res):
                 err_msg = res.get("detail", "Server rejected time update") if isinstance(res, dict) else str(res)
-                # Nếu máy chủ trả về 404 Not Found (do tiến trình server chưa nạp router /api/v1/events mới)
-                if (req and getattr(req, "resp_status", None) == 404) or "Not Found" in str(err_msg):
-                    # Vẫn giữ cập nhật thời gian cục bộ để người dùng thao tác bình thường
-                    if self.on_saved:
-                        self.on_saved(self.event)
-                    self.dismiss()
-                    return
-
-                # Khôi phục lại thời gian cũ nếu server từ chối vì lý do nghiệp vụ (ví dụ lịch cố định)
-                self.event["start_time"] = old_start
-                self.event["end_time"] = old_end
-                for e in store.events:
-                    if (event_id and e.get("id") == event_id):
-                        e["start_time"] = old_start
-                        e["end_time"] = old_end
-                        break
-                store.set_events(store.events, demo=store.is_demo)
+                _rollback_local()
                 self.lbl_conflict.text = f"Server save error: {err_msg}"
                 self.lbl_conflict.theme_text_color = "Error"
 
             def on_patch_err(req, err):
+                _rollback_local()
                 self.lbl_conflict.text = f"Server connection error: {err}"
                 self.lbl_conflict.theme_text_color = "Error"
 
@@ -833,6 +870,13 @@ class AddEventModal(ModalView):
 
         # Nếu đã đăng nhập và kết nối máy chủ: gửi qua POST /api/v1/events kèm cờ is_important
         if getattr(api, "access_token", None):
+            def on_create_fail(req, res):
+                detail = res.get("detail") if isinstance(res, dict) else res
+                self._set_error(detail or "Could not save event on server.")
+
+            def on_create_err(req, err):
+                self._set_error(f"Connection error: {err}")
+
             api.create_event(
                 title=title,
                 start_time=start_iso,
@@ -840,25 +884,14 @@ class AddEventModal(ModalView):
                 kind=self.selected_kind,
                 room=room or None,
                 is_important=is_imp,
-                on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-                on_failure=lambda req, res: self._fallback_commit_import(incoming_row, title, duration, date_str, start_str, end_str, is_imp, room),
-                on_error=lambda req, err: self._fallback_commit_import(incoming_row, title, duration, date_str, start_str, end_str, is_imp, room),
+                on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str, room=room or ""),
+                on_failure=on_create_fail,
+                on_error=on_create_err,
             )
         else:
             self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration)
 
-    def _fallback_commit_import(self, incoming_row, title, duration, date_str, start_str, end_str, is_imp, room=None):
-        """Fallback qua commit_import nếu endpoint tạo sự kiện trực tiếp gặp lỗi phản hồi."""
-        api.commit_import(
-            import_batch_id="manual",
-            resolved_rows=incoming_row,
-            replace_previous_imports=False,
-            on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-            on_failure=lambda req, res: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
-            on_error=lambda req, err: self._create_manual_fallback(title, duration, date_str, start_str, end_str, is_imp, room),
-        )
-
-    def _on_committed(self, res, title, is_imp, date_str, start_str):
+    def _on_committed(self, res, title, is_imp, date_str, start_str, room=""):
         # Lấy event_id từ kết quả trả về của API (hỗ trợ cả EventOut và CommitImportResponse)
         ev_id = 0
         if isinstance(res, dict):
@@ -868,29 +901,25 @@ class AddEventModal(ModalView):
 
         # Nếu được đánh dấu là sự kiện quan trọng:
         if is_imp:
-            fire_at = f"{date_str}T{start_str}:00+07:00"
-            reminder_scheduler.schedule(ev_id or 0, fire_at=fire_at, title=title, offset_minutes=30)
-            # Nếu phản hồi từ server chưa lưu is_important = True (ví dụ khi đi qua commit_import), gửi patch cập nhật
-            if ev_id and getattr(api, "access_token", None) and (not isinstance(res, dict) or not res.get("is_important")):
-                api.patch_event(ev_id, payload={"is_important": True})
-                api.upsert_reminder(ev_id, offset_minutes=30)
+            try:
+                start_dt = datetime.fromisoformat(f"{date_str}T{start_str}:00").replace(tzinfo=VN_TZ)
+                fire_at = (start_dt - timedelta(minutes=30)).isoformat()
+            except Exception:
+                fire_at = f"{date_str}T{start_str}:00+07:00"
+            reminder_scheduler.schedule(
+                ev_id or 0,
+                fire_at=fire_at,
+                title=title,
+                room=room,
+                start_time_str=start_str,
+                offset_minutes=30,
+                report_scheduled=False,
+            )
+            if ev_id and getattr(api, "access_token", None):
                 api.audit_reminder(ev_id, offset_minutes=30, scheduled_on_device_at=datetime.now(VN_TZ).isoformat())
 
         store.refresh(api)
         self.dismiss()
-
-    def _create_manual_fallback(self, title, duration, date_str, start_str, end_str, is_imp, room=None):
-        start_iso = f"{date_str}T{start_str}:00+07:00"
-        end_iso = start_iso if self.selected_kind == "DEADLINE" else f"{date_str}T{end_str}:00+07:00"
-        api.create_manual_event(
-            title=title,
-            duration_minutes=max(15, duration),
-            slot_start=start_iso,
-            slot_end=end_iso,
-            on_success=lambda req, res: self._on_committed(res, title, is_imp, date_str, start_str),
-            on_failure=lambda req, res: self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration),
-            on_error=lambda req, err: self._save_local_event(title, room, date_str, start_str, end_str, is_imp, duration),
-        )
 
     def _save_local_event(self, title, room, date_str, start_str, end_str, is_imp, duration):
         start_iso = f"{date_str}T{start_str}:00+07:00"
@@ -908,8 +937,12 @@ class AddEventModal(ModalView):
         store.events.append(new_ev)
         store.set_events(store.events, demo=store.is_demo)
         if is_imp:
-            fire_at = start_iso
-            reminder_scheduler.schedule(new_ev["id"], fire_at=fire_at, title=title, offset_minutes=30)
+            try:
+                start_dt = datetime.fromisoformat(start_iso)
+                fire_at = (start_dt - timedelta(minutes=30)).isoformat()
+            except Exception:
+                fire_at = start_iso
+            reminder_scheduler.schedule(new_ev["id"], fire_at=fire_at, title=title, room=room or "", start_time_str=start_str, offset_minutes=30)
         self.dismiss()
 
     def _set_error(self, message):
@@ -1024,7 +1057,7 @@ class ImportStep1Modal(ModalView):
             size_hint_y=None,
         )
         lbl_format_desc = MDLabel(
-            text="Supported: .csv, .txt, .md, .png, .jpg, .jpeg\n(Timetable screenshot or spreadsheet table)",
+            text="Supported: .csv, .txt, .md, .pdf, .png, .jpg, .jpeg, .webp, .bmp, .tif\n(Timetable screenshot, PDF, or spreadsheet table)",
             halign="center",
             theme_text_color="Hint",
             font_style="Body",
@@ -1096,8 +1129,8 @@ class ImportStep1Modal(ModalView):
             preview=True,
         )
         self.file_manager.ext = [
-            ".csv", ".txt", ".md", ".png", ".jpg", ".jpeg",
-            ".CSV", ".TXT", ".MD", ".PNG", ".JPG", ".JPEG",
+            ".csv", ".txt", ".md", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif",
+            ".CSV", ".TXT", ".MD", ".PDF", ".PNG", ".JPG", ".JPEG", ".WEBP", ".BMP", ".TIFF", ".TIF",
         ]
         self.selected_path = None
 
@@ -1327,6 +1360,14 @@ class EditImportRowModal(ModalView):
             "first_date": norm_first,
             "last_date": norm_last,
         }
+        if payload["kind"] == "DEADLINE":
+            if payload["start_time"] and not payload["end_time"]:
+                payload["end_time"] = payload["start_time"]
+            elif payload["end_time"] and not payload["start_time"]:
+                payload["start_time"] = payload["end_time"]
+            if norm_first and not norm_last:
+                norm_last = norm_first
+                payload["last_date"] = norm_last
         if not payload["title"] or not payload["start_time"] or not payload["end_time"] or not norm_first or not norm_last:
             self.lbl_err.text = "Please fill title, start/end time, and first/last date."
             return
@@ -1554,6 +1595,7 @@ class ImportStep2Modal(ModalView):
             pos_hint={'center_y': 0.5},
             color_active=[0, 51/255, 204/255, 1],
         )
+        self.chk_replace.bind(active=lambda *_: self._refresh_summary_and_button())
         desc_box = MDBoxLayout(orientation='vertical', size_hint_x=1, adaptive_height=True, spacing=dp(2))
         lbl_replace_title = MDLabel(
             text="Replace all previously imported schedules",
@@ -1606,18 +1648,22 @@ class ImportStep2Modal(ModalView):
         self.add_widget(layout)
         self._refresh_summary_and_button()
 
-    def _refresh_summary_and_button(self):
-        unresolved = sum(
+    def _unresolved_count(self):
+        return sum(
             1
             for row in self.invalid_rows
             if int(row.get("line_number") or 0) not in self.corrected_rows
             and int(row.get("line_number") or 0) not in self.skipped_lines
         )
+
+    def _refresh_summary_and_button(self):
+        unresolved = self._unresolved_count()
         self.lbl_summary.text = (
             f"Valid: {len(self.valid_rows)} | Edited: {len(self.corrected_rows)} | "
             f"Skipped: {len(self.skipped_lines)} | Remaining Errors: {unresolved}"
         )
-        self.btn_next.disabled = (len(self.valid_rows) + len(self.corrected_rows) == 0)
+        replace_active = bool(getattr(getattr(self, "chk_replace", None), "active", False))
+        self.btn_next.disabled = (unresolved > 0) or (len(self.valid_rows) + len(self.corrected_rows) == 0 and not replace_active)
 
     def _update_invalid_card_visual(self, line_no):
         ref = self._invalid_card_refs.get(line_no)
@@ -1686,12 +1732,17 @@ class ImportStep2Modal(ModalView):
             return
 
         applied = 0
+        skipped_non_class = 0
         for row in self.invalid_rows:
             line_no = int(row.get("line_number") or 0)
             if line_no in self.skipped_lines:
                 continue
             if row.get("error_code") in ("EMPTY_FIRST_DATE", "EMPTY_LAST_DATE"):
                 base = dict(self.corrected_rows.get(line_no) or _default_row_fields(row))
+                row_kind = (base.get("kind") or "CLASS").upper()
+                if first_iso != last_iso and row_kind != "CLASS":
+                    skipped_non_class += 1
+                    continue
                 base["first_date"] = first_iso
                 base["last_date"] = last_iso
                 if not base.get("weekday"):
@@ -1702,17 +1753,32 @@ class ImportStep2Modal(ModalView):
                 self._update_invalid_card_visual(line_no)
                 applied += 1
 
-        self.lbl_status.text = f"Applied {first_iso} .. {last_iso} to {applied} row(s)." if applied else "No date-missing rows to update."
+        if applied:
+            msg = f"Applied {first_iso} .. {last_iso} to {applied} row(s)."
+            if skipped_non_class:
+                msg += f" Skipped {skipped_non_class} non-CLASS row(s) with multi-day range."
+            self.lbl_status.text = msg
+        elif skipped_non_class:
+            self.lbl_status.text = "Multi-day range only applies to CLASS rows; edit non-CLASS rows individually."
+        else:
+            self.lbl_status.text = "No date-missing rows to update."
         self.lbl_status.theme_text_color = "Hint"
         self._refresh_summary_and_button()
 
     def check_conflicts(self, instance):
-        if not self.valid_rows and not self.corrected_rows:
+        unresolved = self._unresolved_count()
+        if unresolved > 0:
+            self.lbl_status.text = f"Edit or skip all remaining invalid rows ({unresolved}) before continuing."
+            self.lbl_status.theme_text_color = "Error"
+            self._refresh_summary_and_button()
+            return
+
+        replace_flag = bool(self.chk_replace.active)
+        if not self.valid_rows and not self.corrected_rows and not replace_flag:
             self.lbl_status.text = "Edit at least one valid row or cancel import."
             self.lbl_status.theme_text_color = "Error"
             return
 
-        replace_flag = bool(self.chk_replace.active)
         self._replace_previous_imports = replace_flag
         self.btn_next.disabled = True
 
@@ -1735,7 +1801,7 @@ class ImportStep2Modal(ModalView):
 
     def on_resolve_success(self, req, result):
         all_valid_rows = result.get("all_valid_rows", []) if isinstance(result, dict) else []
-        if not all_valid_rows:
+        if not all_valid_rows and not getattr(self, "_replace_previous_imports", False):
             self.lbl_status.text = "No valid rows remain after resolving preview."
             self.lbl_status.theme_text_color = "Error"
             self._refresh_summary_and_button()
@@ -1768,34 +1834,33 @@ class ImportStep2Modal(ModalView):
         )
 
     def on_check_success(self, req, result):
-        self.dismiss()
-        batch_id = self.preview_data.get("import_batch_id", "")
+        batch_id = self.preview_data.get("import_batch_id") or "manual_batch"
         conflict_cards = result.get("conflict_cards", [])
         replace_flag = getattr(self, "_replace_previous_imports", False)
 
         if not conflict_cards:
-            # Không có xung đột -> commit trực tiếp các dòng hợp lệ vào DB với cờ replace_previous_imports
+            self.lbl_status.text = "Saving imported schedule..."
+            self.lbl_status.theme_text_color = "Hint"
             api.commit_import(
                 import_batch_id=batch_id,
                 resolved_rows=result.get("non_conflicting_rows", []),
                 replace_previous_imports=replace_flag,
                 on_success=self.on_commit_success,
-                on_failure=lambda r, res: print("Lỗi commit:", res),
-                on_error=lambda r, err: print("Lỗi mạng commit:", err),
+                on_failure=self.on_check_failure,
+                on_error=self.on_check_error,
             )
         else:
             # Có xung đột -> chuyển sang Bước 3, truyền tiếp replace_previous_imports
-            try:
-                ImportStep3Modal(
-                    conflict_data=result,
-                    import_batch_id=batch_id,
-                    replace_previous_imports=replace_flag
-                ).open()
-            except Exception as e:
-                print("Lỗi mở Bước 3:", e)
+            self.dismiss()
+            ImportStep3Modal(
+                conflict_data=result,
+                import_batch_id=batch_id,
+                replace_previous_imports=replace_flag
+            ).open()
 
     def on_commit_success(self, req, res):
         store.refresh(api)
+        self.dismiss()
 
     def on_check_failure(self, req, res):
         self._refresh_summary_and_button()
@@ -1871,9 +1936,10 @@ class ImportStep3Modal(ModalView):
                 MDLabel(
                     text=f"[Conflict] {conf.get('overlap_description')}",
                     bold=True,
+                    theme_text_color="Custom",
                     text_color=[0.9, 0.1, 0.1, 1],
+                    adaptive_height=True,
                     size_hint_y=None,
-                    height=dp(24),
                 )
             )
             opt_a = conf.get('option_a', {})
@@ -1881,16 +1947,18 @@ class ImportStep3Modal(ModalView):
             card.add_widget(
                 MDLabel(
                     text=f"A (New): {opt_a.get('title')} ({opt_a.get('start_time')} - {opt_a.get('end_time')})",
+                    theme_text_color="Custom",
+                    text_color=[0.1, 0.1, 0.1, 1],
+                    adaptive_height=True,
                     size_hint_y=None,
-                    height=dp(20),
                 )
             )
             card.add_widget(
                 MDLabel(
                     text=f"B (Existing): {opt_b.get('title')} ({opt_b.get('start_time')} - {opt_b.get('end_time')})",
                     theme_text_color="Secondary",
+                    adaptive_height=True,
                     size_hint_y=None,
-                    height=dp(20),
                 )
             )
             self.list_layout.add_widget(card)
@@ -1941,16 +2009,23 @@ class ImportStep3Modal(ModalView):
 
     def commit_all(self, instance):
         rows = list(self.conflict_data.get("non_conflicting_rows", []))
+        seen_lines = {r.get("line_number") for r in rows if r.get("line_number") is not None}
         for card in self.conflict_data.get("conflict_cards", []):
-            opt_a = card.get("option_a", {})
-            if opt_a.get("option_type") == "incoming_row":
-                row_copy = dict(opt_a)
-                row_copy.pop("option_type", None)
-                rows.append(row_copy)
+            for opt_key in ("option_a", "option_b"):
+                opt = card.get(opt_key, {})
+                if opt.get("option_type") == "incoming_row":
+                    line_no = opt.get("line_number")
+                    if line_no is not None and line_no in seen_lines:
+                        continue
+                    row_copy = dict(opt)
+                    row_copy.pop("option_type", None)
+                    rows.append(row_copy)
+                    if line_no is not None:
+                        seen_lines.add(line_no)
         self._do_commit(rows)
 
     def _do_commit(self, rows):
-        if not rows:
+        if not rows and not self.replace_previous_imports:
             self.lbl_status.text = "No events to save!"
             return
 
@@ -2020,8 +2095,8 @@ class EventDetailModal(ModalView):
                             h = mins // 60
                             m = mins % 60
                             self.offset_str = f"{h:02d}:{m:02d}"
-                            if hasattr(self, "btn_offset") and self.btn_offset.children:
-                                self.btn_offset.children[0].text = self.offset_str
+                            if hasattr(self, "btn_offset_text"):
+                                self.btn_offset_text.text = self.offset_str
                             break
             api.get_reminders(on_success=on_reminders_loaded)
 
@@ -2120,12 +2195,13 @@ class EventDetailModal(ModalView):
             edit_text = "EDIT TIME" if not self.is_hard else "EDIT TIME (FIXED - LOCKED)"
             btn_disabled = self.is_hard
 
+        self.btn_edit_time_text = MDButtonText(
+            text=edit_text,
+            text_color=[1, 1, 1, 1] if not btn_disabled else [0.5, 0.5, 0.5, 1],
+            font_style="Label", role="small"
+        )
         self.btn_edit_time = MDButton(
-            MDButtonText(
-                text=edit_text,
-                text_color=[1, 1, 1, 1] if not btn_disabled else [0.5, 0.5, 0.5, 1],
-                font_style="Label", role="small"
-            ),
+            self.btn_edit_time_text,
             style="filled",
             md_bg_color=[0, 51/255, 204/255, 1] if not btn_disabled else [0.88, 0.88, 0.88, 1],
             size_hint_x=1,
@@ -2138,13 +2214,14 @@ class EventDetailModal(ModalView):
 
         # 2. Hàng QUAN TRỌNG & Ô chọn "Báo trước:" khi đến end_time
         imp_row = MDBoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(38))
+        self.btn_toggle_important_text = MDButtonText(
+            text="IMPORTANT (!)" if self.is_important else "IMPORTANT",
+            text_color=[1, 1, 1, 1],
+            font_style="Label",
+            role="small"
+        )
         self.btn_toggle_important = MDButton(
-            MDButtonText(
-                text="IMPORTANT (!)" if self.is_important else "IMPORTANT",
-                text_color=[1, 1, 1, 1],
-                font_style="Label",
-                role="small"
-            ),
+            self.btn_toggle_important_text,
             style="filled",
             md_bg_color=[0.9, 0.45, 0, 1] if self.is_important else [0.65, 0.65, 0.65, 1],
             size_hint_x=0.48,
@@ -2163,8 +2240,9 @@ class EventDetailModal(ModalView):
         )
         offset_box.add_widget(lbl_offset)
 
+        self.btn_offset_text = MDButtonText(text=self.offset_str, font_style="Label", role="small")
         self.btn_offset = MDButton(
-            MDButtonText(text=self.offset_str, font_style="Label", role="small"),
+            self.btn_offset_text,
             style="outlined",
             size_hint_x=1,
             pos_hint={"center_y": 0.5},
@@ -2221,7 +2299,8 @@ class EventDetailModal(ModalView):
             return
         EditEventTimeModal(
             event=self.event,
-            on_saved=self._on_time_saved
+            on_saved=self._on_time_saved,
+            offset_minutes=self.offset_minutes,
         ).open()
 
     def _on_time_saved(self, updated_event):
@@ -2244,40 +2323,31 @@ class EventDetailModal(ModalView):
         ).open()
 
     def _on_offset_chosen(self, time_str, minutes):
-        """Cập nhật mốc thời gian báo trước; lưu lên server và tái lập lịch hẹn nếu đang bật."""
+        """Cập nhật mốc thời gian báo trước; chỉ gọi server nếu đang bật IMPORTANT."""
         self.offset_str = time_str
         self.offset_minutes = minutes
-        if self.btn_offset.children:
-            self.btn_offset.children[0].text = time_str
-
-        # Lưu ngay giá trị offset lên Database Server nếu có event_id
-        if self.event_id and getattr(api, "access_token", None):
-            api.upsert_reminder(
-                self.event_id,
-                offset_minutes=self.offset_minutes,
-                on_success=lambda req, res: setattr(self.lbl_status, "text", f"Reminder offset ({time_str}) saved to server!"),
-                on_failure=lambda req, res: setattr(self.lbl_status, "text", "Error: Could not save reminder offset to server."),
-                on_error=lambda req, err: setattr(self.lbl_status, "text", "Connection error while saving reminder offset."),
-            )
+        if hasattr(self, "btn_offset_text"):
+            self.btn_offset_text.text = time_str
 
         if self.is_important:
             self._arm_alarm()
+        else:
+            self.lbl_status.text = f"Reminder offset set to {time_str}. Enable IMPORTANT to arm."
 
     def _arm_alarm(self):
-        """Tính toán thời gian thông báo = [end_time] - [báo trước], lên lịch hẹn và đồng bộ server."""
+        """calculate fire_at = start_time - offset_minutes and persist in a single reminder audit call."""
         try:
-            end_dt = datetime.fromisoformat(self.event["end_time"])
+            start_dt = datetime.fromisoformat(str(self.event["start_time"]).replace("Z", "+00:00"))
+            start_dt = start_dt.astimezone(VN_TZ) if start_dt.tzinfo is not None else start_dt.replace(tzinfo=VN_TZ)
         except Exception:
-            end_dt = datetime.now()
-        # Thời gian thông báo sẽ là: [end_time] - [báo trước]
-        fire_dt = end_dt - timedelta(minutes=self.offset_minutes)
+            start_dt = datetime.now(VN_TZ)
+        fire_dt = start_dt - timedelta(minutes=self.offset_minutes)
         fire_at_iso = fire_dt.isoformat()
 
         title = self.event.get("title", "Event")
         room = self.event.get("room", "")
         try:
-            st = datetime.fromisoformat(self.event["start_time"])
-            start_str = st.strftime("%H:%M")
+            start_str = start_dt.strftime("%H:%M")
         except Exception:
             start_str = self.event.get("start_time", "")
 
@@ -2287,31 +2357,25 @@ class EventDetailModal(ModalView):
             title=title,
             room=room,
             start_time_str=start_str,
-            offset_minutes=self.offset_minutes
+            offset_minutes=self.offset_minutes,
+            report_scheduled=False,
         )
 
         if self.event_id and getattr(api, "access_token", None):
-            # 1. Cập nhật is_important = True trong bảng events trên server
-            api.patch_event(
-                self.event_id,
-                payload={"is_important": True},
-                on_success=lambda req, res: store.refresh(api),
-                on_failure=lambda req, res: None,
-                on_error=lambda req, err: None,
-            )
-            # 2. Lưu bản ghi reminder với mốc offset vào bảng reminders trên server
-            api.upsert_reminder(
-                self.event_id,
-                offset_minutes=self.offset_minutes,
-                on_success=lambda req, res: (store.refresh(api), setattr(self.lbl_status, "text", f"Alarm set for {self.offset_str} before!")),
-                on_failure=lambda req, res: setattr(self.lbl_status, "text", f"Local alarm armed ({self.offset_str})."),
-                on_error=lambda req, err: setattr(self.lbl_status, "text", f"Local alarm armed ({self.offset_str})."),
-            )
-            # 3. Ghi vết audit lên server
+            def on_audit_ok(req, res):
+                store.refresh(api)
+                self.lbl_status.text = f"Alarm set for {self.offset_str} before!"
+
+            def on_audit_fail_or_err(req, res_or_err):
+                self.lbl_status.text = f"Local alarm armed ({self.offset_str})."
+
             api.audit_reminder(
                 self.event_id,
                 offset_minutes=self.offset_minutes,
                 scheduled_on_device_at=datetime.now(VN_TZ).isoformat(),
+                on_success=on_audit_ok,
+                on_failure=on_audit_fail_or_err,
+                on_error=on_audit_fail_or_err,
             )
         else:
             self.lbl_status.text = f"Local alarm armed ({self.offset_str})."
@@ -2320,6 +2384,8 @@ class EventDetailModal(ModalView):
         """Bật / tắt đánh dấu sự kiện quan trọng và đồng bộ trạng thái xuống Database Server."""
         self.is_important = not self.is_important
         self.event["is_important"] = self.is_important
+        if isinstance(self.raw_event_ref, dict):
+            self.raw_event_ref["is_important"] = self.is_important
 
         # Cập nhật ngay trong danh sách store cục bộ
         if self.event_id:
@@ -2327,19 +2393,22 @@ class EventDetailModal(ModalView):
                 if e.get("id") == self.event_id:
                     e["is_important"] = self.is_important
                     break
+        store.set_events(store.events, demo=store.is_demo)
+        if self.on_event_updated:
+            self.on_event_updated(self.event)
 
         if self.is_important:
             self.lbl_imp_status.text = "Important Event: ON (!)"
             self.lbl_imp_status.text_color = [0.9, 0.4, 0, 1]
-            if self.btn_toggle_important.children:
-                self.btn_toggle_important.children[0].text = "IMPORTANT (!)"
+            if hasattr(self, "btn_toggle_important_text"):
+                self.btn_toggle_important_text.text = "IMPORTANT (!)"
             self.btn_toggle_important.md_bg_color = [0.9, 0.45, 0, 1]
             self._arm_alarm()
         else:
             self.lbl_imp_status.text = "Important Event: OFF"
             self.lbl_imp_status.text_color = [0.5, 0.5, 0.5, 1]
-            if self.btn_toggle_important.children:
-                self.btn_toggle_important.children[0].text = "IMPORTANT"
+            if hasattr(self, "btn_toggle_important_text"):
+                self.btn_toggle_important_text.text = "IMPORTANT"
             self.btn_toggle_important.md_bg_color = [0.65, 0.65, 0.65, 1]
 
             # Hủy báo thức cục bộ

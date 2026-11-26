@@ -32,6 +32,9 @@ class EventOut(BaseModel):
     title: str
     start_time: str
     end_time: str
+    source: str | None = None
+    task_id: int | None = None
+    room: str | None = None
 
 
 class ReminderOut(BaseModel):
@@ -65,8 +68,15 @@ def proposal_out(p: Proposal) -> ProposalOut:
 
 def _confirm_out(result: svc.ConfirmResult) -> ConfirmResponse:
     def ev(e: Event) -> EventOut:
-        return EventOut(event_id=e.id, title=e.title, start_time=from_db_to_vn(e.start_time).isoformat(),
-                        end_time=from_db_to_vn(e.end_time).isoformat())
+        return EventOut(
+            event_id=e.id,
+            title=e.title,
+            start_time=from_db_to_vn(e.start_time).isoformat(),
+            end_time=from_db_to_vn(e.end_time).isoformat(),
+            source=e.source.value if hasattr(e.source, "value") else str(e.source),
+            task_id=e.task_id,
+            room=e.room,
+        )
 
     def rem(r: Reminder, e: Event) -> ReminderOut:
         fire = from_db_to_vn(e.start_time) - timedelta(minutes=r.offset_minutes)
