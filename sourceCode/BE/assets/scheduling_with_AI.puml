@@ -1,0 +1,46 @@
+@startuml scheduling_with_AI
+left to right direction
+actor Student
+rectangle "UI (Kivy)" as UI
+rectangle "Backend API\n+ Auth guard (JWT)" as API
+rectangle "Scheduling Orchestrator\n(FIFO queue + timeout 3s\n+ PendingClarification 10m TTL)" as ORC
+rectangle "AI Processing (NLU)\nschema + literal-text guard\n+ deadline_hint + clock range" as AI
+rectangle "AI Model Service\n(Llama 3.1 via vLLM)" as LLM
+rectangle "Scheduling Engine\nfree slots (<200ms)\n+ slot scorer + task splitting" as ENG
+rectangle "Fallback Handler\nrule-based NLU + 15m-aligned free slots" as FB
+database "MySQL\nevents, tasks, proposals,\npending_clarifications,\npreferences, ai_error_logs" as DB
+
+Student --> UI : 1. prompt / reset / Confirm / Reject / Reschedule
+UI --> API : 2. HTTP request
+API --> ORC : 3. scheduling request (or POST /reset)
+ORC --> DB : 4. load events, preferences,\nPendingClarification, excluded_slots (rejection memory)
+ORC --> AI : 5. sanitized text + context
+AI --> LLM : 6. few-shot prompt
+LLM --> AI : 7. raw JSON output
+AI --> ORC : 8. validated NluResult
+
+' Branch 8a: Misrouted search question -> redirect to Search tab
+ORC ..> API : [8a: query_schedule intent]\nredirect_target = search_home
+
+' Branch 8b: Missing required info -> ask user to clarify
+ORC ..> API : [8b: missing title/duration or vague date]\nsave PendingClarification + needs_clarification = true
+
+' Branch 8c: Complete info -> deterministic slot search, save draft proposal, return card
+ORC --> ENG : [8c: valid intent]\nwindow <= deadline, clock range,\nevents, preferences, excluded_slots
+ENG --> ORC : 9. top-scored slot / split blocks
+ORC --> DB : 10. save draft Task (PENDING)\n+ Proposal (PROPOSED) (mark parent RESCHEDULED only on success)
+ORC --> API : 11. proposal card (with proposal_id & rationale)
+
+' Branch 8d: AI timeout / crash / invalid JSON -> deterministic fallback
+ORC ..> FB : [8d: error / timeout / invalid JSON]\nlog AiErrorLog
+FB ..> ENG : 9d. find 15m-aligned free slots
+FB ..> API : 10d. fallback_mode = true + available_slots (scheduling intents only)
+
+API --> UI : 12. display proposal card /\nclarification / redirect / manual picker
+
+' Follow-up user action on displayed Proposal Card
+API --> DB : [13: on Confirm]\ncheck_hard_conflict -> CONFIRMED + create Event (AI_CREATED) + Reminder
+
+' Session / Thread reset
+API ..> DB : [on /reset]\ndelete PendingClarification + mark waiting proposals ABANDONED
+@enduml
