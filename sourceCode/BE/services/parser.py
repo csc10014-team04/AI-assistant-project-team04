@@ -58,35 +58,52 @@ from models import (
 # Standard mapping to normalize weekday names across various input styles
 WEEKDAY_LOOKUP: dict[str, Weekday] = {
     "MON": Weekday.MON,
+    "MON.": Weekday.MON,
     "MONDAY": Weekday.MON,
+    "TUES": Weekday.TUE,
+    "WED.": Weekday.WED,
+    "THURS": Weekday.THU,
+    "THUR": Weekday.THU,
     "T2": Weekday.MON,
     "THU 2": Weekday.MON,
     "THỨ 2": Weekday.MON,
+    "THỨ HAI": Weekday.MON,
+    "THU HAI": Weekday.MON,
     "TUE": Weekday.TUE,
     "TUESDAY": Weekday.TUE,
     "T3": Weekday.TUE,
     "THU 3": Weekday.TUE,
     "THỨ 3": Weekday.TUE,
+    "THỨ BA": Weekday.TUE,
+    "THU BA": Weekday.TUE,
     "WED": Weekday.WED,
     "WEDNESDAY": Weekday.WED,
     "T4": Weekday.WED,
     "THU 4": Weekday.WED,
     "THỨ 4": Weekday.WED,
+    "THỨ TƯ": Weekday.WED,
+    "THU TU": Weekday.WED,
     "THU": Weekday.THU,
     "THURSDAY": Weekday.THU,
     "T5": Weekday.THU,
     "THU 5": Weekday.THU,
     "THỨ 5": Weekday.THU,
+    "THỨ NĂM": Weekday.THU,
+    "THU NAM": Weekday.THU,
     "FRI": Weekday.FRI,
     "FRIDAY": Weekday.FRI,
     "T6": Weekday.FRI,
     "THU 6": Weekday.FRI,
     "THỨ 6": Weekday.FRI,
+    "THỨ SÁU": Weekday.FRI,
+    "THU SAU": Weekday.FRI,
     "SAT": Weekday.SAT,
     "SATURDAY": Weekday.SAT,
     "T7": Weekday.SAT,
     "THU 7": Weekday.SAT,
     "THỨ 7": Weekday.SAT,
+    "THỨ BẢY": Weekday.SAT,
+    "THU BAY": Weekday.SAT,
     "SUN": Weekday.SUN,
     "SUNDAY": Weekday.SUN,
     "CN": Weekday.SUN,
@@ -97,6 +114,11 @@ WEEKDAY_LOOKUP: dict[str, Weekday] = {
 # Header aliases used by common university timetable exports. These aliases
 # are only used to map a table into the existing ParsedCsvRow contract.
 _TABLE_HEADER_ALIASES: dict[str, str] = {
+    "ma": "course_code",
+    "code": "course_code",
+    "ma lop": "course_code",
+    "malop": "course_code",
+    "lop hp": "course_code",
     "ma mh": "course_code",
     "mamh": "course_code",
     "ma mon": "course_code",
@@ -127,6 +149,16 @@ _TABLE_HEADER_ALIASES: dict[str, str] = {
     "subject name": "title",
     "subjectname": "title",
     "title": "title",
+    "mon": "title",
+    "mon hoc": "title",
+    "ten": "title",
+    "ten su kien": "title",
+    "su kien": "title",
+    "noi dung": "title",
+    "subject": "title",
+    "course": "title",
+    "event": "title",
+    "name": "title",
     "thu": "weekday",
     "thu hoc": "weekday",
     "ngay trong tuan": "weekday",
@@ -137,18 +169,42 @@ _TABLE_HEADER_ALIASES: dict[str, str] = {
     "start time": "start_time",
     "gio ket thuc": "end_time",
     "end time": "end_time",
+    "tu gio": "start_time",
+    "bat dau": "start_time",
+    "start": "start_time",
+    "den gio": "end_time",
+    "ket thuc": "end_time",
+    "end": "end_time",
     "phong": "room",
     "phong hoc": "room",
     "room": "room",
     "classroom": "room",
+    "dia diem": "room",
+    "location": "room",
+    "co so": "room",
+    "phong thi": "room",
+    "giang duong": "room",
+    "place": "room",
     "ngay bat dau": "first_date",
     "tu ngay": "first_date",
     "first date": "first_date",
     "start date": "first_date",
+    "from": "first_date",
+    "from date": "first_date",
+    "begin date": "first_date",
+    "ngay mo": "first_date",
+    "bat dau ngay": "first_date",
     "ngay ket thuc": "last_date",
     "den ngay": "last_date",
     "last date": "last_date",
     "end date": "last_date",
+    "to": "last_date",
+    "to date": "last_date",
+    "finish date": "last_date",
+    "ket thuc ngay": "last_date",
+    "date range": "date_range",
+    "khoang ngay": "date_range",
+    "thoi gian hoc": "date_range",
     "kind": "kind",
     "loai": "kind",
     "loai lich": "kind",
@@ -173,18 +229,30 @@ _TABLE_HEADER_ALIASES: dict[str, str] = {
     "lich hoc": "schedule",
     "lichhoc": "schedule",
     "thoi khoa bieu": "schedule",
+    "time range": "schedule_time_range",
+    "time": "schedule_time_range",
+    "time slot": "schedule_time_range",
+    "period": "schedule_time_range",
+    "gio": "schedule_time_range",
+    "gio hoc": "schedule_time_range",
+    "khung gio": "schedule_time_range",
+    "thoi gian": "schedule_time_range",
     "schedule": "schedule",
     "timetable": "schedule",
 }
 
 _SCHEDULE_WEEKDAY_RE = re.compile(
     r"(?<![A-Z0-9])(?:THỨ\s*[2-7]|THU\s*[2-7]|T\s*[2-7]|CN|CHỦ\s*NHẬT|CHU\s*NHAT|"
+    r"THỨ\s*HAI|THU\s*HAI|THỨ\s*BA|THU\s*BA|THỨ\s*TƯ|THU\s*TU|THỨ\s*NĂM|THU\s*NAM|THỨ\s*SÁU|THU\s*SAU|THỨ\s*BẢY|THU\s*BAY|"
     r"MONDAY|MON|TUESDAY|TUE|WEDNESDAY|WED|THURSDAY|THU|FRIDAY|FRI|"
     r"SATURDAY|SAT|SUNDAY|SUN)(?![A-Z0-9])",
     re.IGNORECASE,
 )
 _TIME_RANGE_RE = re.compile(
-    r"(?<!\d)(\d{1,2}[:.]\d{2})\s*[-–—]\s*(\d{1,2}[:.]\d{2})(?!\d)"
+    r"(?<!\d)((?:\d{1,2}(?:[:.]\d{2}|[hHgG]\d{0,2}))\s*(?:AM|PM)?)"
+    r"\s*[-–—]\s*"
+    r"((?:\d{1,2}(?:[:.]\d{2}|[hHgG]\d{0,2}))\s*(?:AM|PM)?)(?!\d)",
+    re.IGNORECASE,
 )
 
 
@@ -265,17 +333,116 @@ def _is_header_row(cells: list[str]) -> bool:
 
 
 def _parse_time_cell(value: str) -> time:
-    """Parse a strict 24-hour wall-clock HH:MM cell without timezone suffixes.
+    """Normalize common 24-hour, Vietnamese, or AM/PM clock text to one time value.
 
-    Input: a time cell such as '08:00' or '08:00:00'.
+    Input: a time cell such as '08:00', '7h30', '07.30', or '1:30 PM'.
     Output: a naive time value.
     Edge Cases Handled: Rejects ISO timezone suffixes ('08:00Z', '08:00+07:00') with ValueError
     so callers isolate malformed rows instead of crashing or stripping offsets.
     """
-    parsed_time = time.fromisoformat(value.strip())
+    normalized_value = value.strip()
+    if re.search(r"(?:Z|[+-]\d{2}(?::?\d{2})?)$", normalized_value, re.IGNORECASE):
+        raise ValueError(f"Timezone suffix is not allowed in time cell: {value!r}")
+
+    am_pm_match = re.fullmatch(r"(\d{1,2}):(\d{2})\s*(AM|PM)", normalized_value, re.IGNORECASE)
+    if am_pm_match is not None:
+        hour, minute, meridiem = am_pm_match.groups()
+        hour_value = int(hour) % 12
+        if meridiem.upper() == "PM":
+            hour_value += 12
+        return time(hour_value, int(minute))
+
+    clock_match = re.fullmatch(r"(\d{1,2})[:.](\d{2})", normalized_value)
+    if clock_match is not None:
+        hour, minute = clock_match.groups()
+        return time(int(hour), int(minute))
+
+    vietnamese_match = re.fullmatch(r"(\d{1,2})\s*[hHgG]\s*(\d{0,2})", normalized_value)
+    if vietnamese_match is not None:
+        hour, minute = vietnamese_match.groups()
+        return time(int(hour), int(minute or "0"))
+
+    parsed_time = time.fromisoformat(normalized_value)
     if parsed_time.tzinfo is not None:
         raise ValueError(f"Timezone suffix is not allowed in time cell: {value!r}")
     return parsed_time
+
+
+def _parse_date_cell(value: str) -> date:
+    """Parse supported ISO or day-first date formats into the shared date type."""
+    normalized_value = value.strip()
+
+    year_first_match = re.fullmatch(r"(\d{4})([-/])(\d{2})\2(\d{2})", normalized_value)
+    if year_first_match is not None:
+        year_text, _separator, month_text, day_text = year_first_match.groups()
+        return date(int(year_text), int(month_text), int(day_text))
+
+    day_first_match = re.fullmatch(
+        r"(\d{1,2})([/.-])(\d{1,2})\2(\d{4})",
+        normalized_value,
+    )
+    if day_first_match is not None:
+        day_text, _separator, month_text, year_text = day_first_match.groups()
+        return date(int(year_text), int(month_text), int(day_text))
+
+    raise ValueError("Unsupported date format")
+
+
+def _parse_date_range_cell(value: str) -> tuple[date, date] | None:
+    parts = re.split(r"\s*(?:->|–|—|\s+-\s+|\s+to\s+|\s+đến\s+)\s*", value.strip(), maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) != 2:
+        return None
+    try:
+        first, last = (_parse_date_cell(part) for part in parts)
+    except ValueError:
+        return None
+    return (first, last) if first <= last else (last, first)
+
+
+def _is_parseable_date_or_range(value: str) -> bool:
+    return _parse_date_range_cell(value) is not None or _can_parse_date(value)
+
+
+def _normalize_room_cell(value: str) -> str:
+    normalized = value.strip()
+    normalized = re.sub(
+        r"^\s*(?:ph[oò]ng\s+|P\.\s*|@\s*)",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized.strip()
+
+
+def _can_parse_date(value: str) -> bool:
+    try:
+        _parse_date_cell(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _normalize_kind_token(value: str) -> Optional[CsvRowKind]:
+    normalized = _normalize_header_label(value)
+    aliases = {
+        "class": CsvRowKind.CLASS, "lt": CsvRowKind.CLASS, "th": CsvRowKind.CLASS,
+        "ly thuyet": CsvRowKind.CLASS, "thuc hanh": CsvRowKind.CLASS,
+        "hoc": CsvRowKind.CLASS, "mon hoc": CsvRowKind.CLASS, "lecture": CsvRowKind.CLASS,
+        "lab": CsvRowKind.CLASS, "practice": CsvRowKind.CLASS, "seminar": CsvRowKind.CLASS,
+        "exam": CsvRowKind.EXAM, "thi": CsvRowKind.EXAM, "kiem tra": CsvRowKind.EXAM,
+        "kt": CsvRowKind.EXAM, "giua ky": CsvRowKind.EXAM, "cuoi ky": CsvRowKind.EXAM,
+        "midterm": CsvRowKind.EXAM, "final": CsvRowKind.EXAM, "quiz": CsvRowKind.EXAM,
+        "test": CsvRowKind.EXAM,
+        "deadline": CsvRowKind.DEADLINE, "han nop": CsvRowKind.DEADLINE,
+        "nop bai": CsvRowKind.DEADLINE, "due": CsvRowKind.DEADLINE,
+        "submission": CsvRowKind.DEADLINE,
+        "event": CsvRowKind.EVENT, "su kien": CsvRowKind.EVENT,
+        "hoat dong": CsvRowKind.EVENT, "hop": CsvRowKind.EVENT, "clb": CsvRowKind.EVENT,
+        "meeting": CsvRowKind.EVENT, "activity": CsvRowKind.EVENT,
+    }
+    if not normalized:
+        return None
+    return aliases.get(normalized)
 
 
 def _parse_and_validate_row(
@@ -299,7 +466,7 @@ def _parse_and_validate_row(
         - DEADLINE rows with non-matching start/end time or differing dates.
         - CLASS rows with missing weekday or reversed times/dates.
         - EXAM and EVENT rows spanning multiple days or with reversed times.
-        - Invalid time (HH:MM) or date (YYYY-MM-DD) formatting.
+        - Invalid time (HH:MM) or unsupported date formatting.
     """
     # Expected 9-column schema:
     # 0: course_code, 1: title, 2: weekday, 3: start_time, 4: end_time,
@@ -317,7 +484,7 @@ def _parse_and_validate_row(
     weekday_raw = cells[2].strip().upper()
     start_time_raw = cells[3].strip()
     end_time_raw = cells[4].strip()
-    room_raw = cells[5].strip()
+    room_raw = _normalize_room_cell(cells[5])
     first_date_raw = cells[6].strip()
     last_date_raw = cells[7].strip()
     kind_raw = cells[8].strip().upper()
@@ -343,42 +510,30 @@ def _parse_and_validate_row(
             prefill=dict(prefill),
         )
 
-    # 1. Validate title against CsvRowKind
-    if not title:
-        return _invalid("EMPTY_TITLE", "Title cannot be empty")
-
-    # 2. Validate kind against CsvRowKind
-    if not kind_raw:
-        return _invalid("EMPTY_KIND", "Kind cannot be empty")
-
-    try:
-        row_kind = CsvRowKind(kind_raw)
-    except ValueError:
-        return _invalid(
-            "INVALID_KIND",
-            f"Invalid kind '{cells[8]}'. Must be one of CLASS, EXAM, DEADLINE, EVENT",
+    if kind_raw and row_kind is None:
+        return None, InvalidCsvRow(
+            line_number=line_number,
+            raw_text=raw_text,
+            error_code="INVALID_KIND",
+            error_message=(
+                f"Invalid kind '{kind_raw}'. Use CLASS, EXAM, DEADLINE, EVENT, "
+                "or a recognized equivalent"
+            ),
         )
 
-    # 3. Validate weekday
+    # 2. Validate weekday using the same tolerant normalizer for every input route.
     parsed_weekday: Optional[Weekday] = None
     if weekday_raw:
-        if weekday_raw in WEEKDAY_LOOKUP:
-            parsed_weekday = WEEKDAY_LOOKUP[weekday_raw]
-            prefill["weekday"] = parsed_weekday.value
-        else:
-            return _invalid(
-                "INVALID_WEEKDAY",
-                f"Invalid weekday '{cells[2]}'. Expected one of MON, TUE, WED, THU, FRI, SAT, SUN",
+        parsed_weekday = _parse_weekday_token(weekday_raw)
+        if parsed_weekday is None:
+            return None, InvalidCsvRow(
+                line_number=line_number,
+                raw_text=raw_text,
+                error_code="INVALID_WEEKDAY",
+                error_message=f"Invalid weekday '{cells[2]}'. Expected one of MON, TUE, WED, THU, FRI, SAT, SUN",
             )
 
-    # CLASS requires a valid weekday because it recurs weekly on that day
-    if row_kind == CsvRowKind.CLASS and parsed_weekday is None:
-        return _invalid(
-            "MISSING_WEEKDAY",
-            "CLASS row requires a valid weekday (e.g. MON, TUE, WED, THU, FRI, SAT, SUN)",
-        )
-
-    # 4. Handle DEADLINE special rule: set start_time = end_time if start_time is omitted
+    # 3. Handle DEADLINE special rule: set start_time = end_time if start_time is omitted
     # Why: Deadlines are point-in-time milestones with 0 duration in our unified events table
     if row_kind == CsvRowKind.DEADLINE:
         if not start_time_raw and end_time_raw:
@@ -399,17 +554,21 @@ def _parse_and_validate_row(
     try:
         parsed_start_time = _parse_time_cell(start_time_raw)
     except ValueError:
-        return _invalid(
-            "INVALID_START_TIME",
-            f"Invalid start_time '{start_time_raw}'. Expected 24-hour format HH:MM",
+        return None, InvalidCsvRow(
+            line_number=line_number,
+            raw_text=raw_text,
+            error_code="INVALID_START_TIME",
+            error_message=f"Invalid start_time '{start_time_raw}'. Use a valid 24-hour or AM/PM time.",
         )
 
     try:
         parsed_end_time = _parse_time_cell(end_time_raw)
     except ValueError:
-        return _invalid(
-            "INVALID_END_TIME",
-            f"Invalid end_time '{end_time_raw}'. Expected 24-hour format HH:MM",
+        return None, InvalidCsvRow(
+            line_number=line_number,
+            raw_text=raw_text,
+            error_code="INVALID_END_TIME",
+            error_message=f"Invalid end_time '{end_time_raw}'. Use a valid 24-hour or AM/PM time.",
         )
 
     # 6. Validate presence of date values
@@ -419,22 +578,43 @@ def _parse_and_validate_row(
     if not last_date_raw:
         return _invalid("EMPTY_LAST_DATE", "Last date cannot be empty")
 
-    # Parse YYYY-MM-DD date
+    # Accept the existing ISO format and common user-entered day-first dates.
     try:
-        parsed_first_date = date.fromisoformat(first_date_raw)
+        parsed_first_date = _parse_date_cell(first_date_raw)
     except ValueError:
-        return _invalid(
-            "INVALID_FIRST_DATE",
-            f"Invalid first_date '{first_date_raw}'. Expected format YYYY-MM-DD",
+        return None, InvalidCsvRow(
+            line_number=line_number,
+            raw_text=raw_text,
+            error_code="INVALID_FIRST_DATE",
+            error_message=(
+                f"Invalid first_date '{first_date_raw}'. Expected YYYY-MM-DD, YYYY/MM/DD, "
+                "DD/MM/YYYY, D/M/YYYY, DD-MM-YYYY, D-M-YYYY, DD.MM.YYYY, or D.M.YYYY"
+            ),
         )
 
     try:
-        parsed_last_date = date.fromisoformat(last_date_raw)
+        parsed_last_date = _parse_date_cell(last_date_raw)
     except ValueError:
-        return _invalid(
-            "INVALID_LAST_DATE",
-            f"Invalid last_date '{last_date_raw}'. Expected format YYYY-MM-DD",
+        return None, InvalidCsvRow(
+            line_number=line_number,
+            raw_text=raw_text,
+            error_code="INVALID_LAST_DATE",
+            error_message=(
+                f"Invalid last_date '{last_date_raw}'. Expected YYYY-MM-DD, YYYY/MM/DD, "
+                "DD/MM/YYYY, D/M/YYYY, DD-MM-YYYY, D-M-YYYY, DD.MM.YYYY, or D.M.YYYY"
+            ),
         )
+
+    if row_kind is None:
+        if parsed_weekday is not None or parsed_first_date != parsed_last_date:
+            row_kind = CsvRowKind.CLASS
+        elif parsed_start_time == parsed_end_time:
+            row_kind = CsvRowKind.DEADLINE
+        else:
+            row_kind = CsvRowKind.EVENT
+
+    if row_kind == CsvRowKind.CLASS and parsed_weekday is None:
+        parsed_weekday = list(Weekday)[parsed_first_date.weekday()]
 
     # Room is optional; store None if empty
     parsed_room: Optional[str] = room_raw if room_raw else None
@@ -557,12 +737,15 @@ def _table_header_is_supported(header_map: dict[str, int]) -> bool:
     """
     has_schedule_cell = any(
         field_name in header_map
-        for field_name in ("lecture_schedule", "practice_schedule", "schedule")
+        for field_name in (
+            "lecture_schedule", "practice_schedule", "schedule", "schedule_time_range"
+        )
     )
     has_split_time = all(
         field_name in header_map for field_name in ("weekday", "start_time", "end_time")
     )
-    return "title" in header_map and (has_schedule_cell or has_split_time)
+    has_weekday_and_range = "weekday" in header_map and "schedule_time_range" in header_map
+    return "title" in header_map and (has_schedule_cell or has_split_time or has_weekday_and_range)
 
 
 def _table_cell(row: list[str], header_map: dict[str, int], field_name: str) -> str:
@@ -585,9 +768,20 @@ def _parse_weekday_token(token: str) -> Optional[Weekday]:
     Output: Weekday enum value, or None when the token is not recognized.
     Edge Cases Handled: T 2 spacing, accented Vietnamese names, and common abbreviations.
     """
-    normalized = re.sub(r"\s+", " ", token.strip().upper())
+    normalized = re.sub(r"\s+", " ", token.strip().upper()).rstrip(".")
     if re.fullmatch(r"T\s*[2-7]", normalized):
         normalized = normalized.replace(" ", "")
+    if normalized in {"2", "3", "4", "5", "6", "7", "8"}:
+        normalized = str(int(normalized) - 1)
+        return {
+            "1": Weekday.MON,
+            "2": Weekday.TUE,
+            "3": Weekday.WED,
+            "4": Weekday.THU,
+            "5": Weekday.FRI,
+            "6": Weekday.SAT,
+            "7": Weekday.SUN,
+        }[normalized]
     return WEEKDAY_LOOKUP.get(normalized)
 
 
@@ -618,18 +812,26 @@ def _schedule_entries_from_text(
         weekday = _parse_weekday_token(weekday_match.group(0))
         time_match = _TIME_RANGE_RE.search(segment)
         room_match = re.search(r"\(([^()]*)\)", segment)
-        room = room_match.group(1).strip() if room_match else None
+        if room_match:
+            room = room_match.group(1).strip()
+        else:
+            labelled_room = re.search(
+                r"(?:\bph[oò]ng\s+|\bP\.\s*|@\s*)([A-Za-z0-9][A-Za-z0-9.-]*)",
+                segment,
+                re.IGNORECASE,
+            )
+            room = labelled_room.group(1).strip() if labelled_room else None
 
         if time_match is None:
             entries.append((weekday, "", "", room, "No HH:MM-HH:MM time range was found for this weekday."))
             continue
 
-        raw_start = time_match.group(1).replace(".", ":")
-        raw_end = time_match.group(2).replace(".", ":")
-        start_hour, start_minute = raw_start.split(":", maxsplit=1)
-        end_hour, end_minute = raw_end.split(":", maxsplit=1)
-        start_text = f"{int(start_hour):02d}:{start_minute}"
-        end_text = f"{int(end_hour):02d}:{end_minute}"
+        try:
+            start_text = _parse_time_cell(time_match.group(1)).strftime("%H:%M")
+            end_text = _parse_time_cell(time_match.group(2)).strftime("%H:%M")
+        except ValueError as error:
+            entries.append((weekday, "", "", room, str(error)))
+            continue
         entries.append((weekday, start_text, end_text, room, None))
 
     return entries
@@ -640,6 +842,8 @@ def _parse_timetable_table_rows(
     import_batch_id: str,
     line_number_start: int = 1,
     low_confidence_cells: Optional[set[tuple[int, int]]] = None,
+    default_first_date: str = "",
+    default_last_date: str = "",
 ) -> Optional[ParseBatchResult]:
     """Convert an aliased timetable table into the existing parser result contract.
 
@@ -666,9 +870,46 @@ def _parse_timetable_table_rows(
     if _is_canonical_nine_column_header(table_rows[header_position]):
         return None
 
+    neutral_date_columns: list[int] = []
+    if "first_date" not in header_map and "last_date" not in header_map:
+        mapped_columns = set(header_map.values())
+        neutral_groups: dict[str, list[int]] = {}
+        for column_index, heading in enumerate(table_rows[header_position]):
+            if column_index in mapped_columns:
+                continue
+            normalized_heading = _normalize_header_label(heading)
+            neutral_match = re.fullmatch(r"(date|moc|khung ngay) ([12ab])", normalized_heading)
+            if neutral_match:
+                neutral_groups.setdefault(neutral_match.group(1), []).append(column_index)
+        named_neutral_pair = next(
+            (columns for columns in neutral_groups.values() if len(columns) == 2),
+            None,
+        )
+        if named_neutral_pair is not None:
+            neutral_date_columns = named_neutral_pair
+
+        for column_index, heading in enumerate(table_rows[header_position]):
+            if column_index in mapped_columns or neutral_date_columns:
+                continue
+            nonempty_values = [
+                row[column_index].strip()
+                for row in table_rows[header_position + 1:]
+                if column_index < len(row) and row[column_index].strip()
+            ]
+            if not nonempty_values:
+                continue
+            valid_date_count = sum(
+                1 for value in nonempty_values
+                if _is_parseable_date_or_range(value)
+            )
+            if valid_date_count / len(nonempty_values) >= 0.8:
+                neutral_date_columns.append(column_index)
+
     has_schedule_columns = any(
         field_name in header_map
-        for field_name in ("lecture_schedule", "practice_schedule", "schedule")
+        for field_name in (
+            "lecture_schedule", "practice_schedule", "schedule", "schedule_time_range"
+        )
     )
     valid_rows: list[ParsedCsvRow] = []
     invalid_rows: list[InvalidCsvRow] = []
@@ -708,7 +949,7 @@ def _parse_timetable_table_rows(
         first_date = _table_cell(table_row, header_map, "first_date")
         last_date = _table_cell(table_row, header_map, "last_date")
         room = _table_cell(table_row, header_map, "room") or None
-        kind = _table_cell(table_row, header_map, "kind") or "CLASS"
+        kind = _table_cell(table_row, header_map, "kind")
         raw_text = " | ".join(cell.strip() for cell in table_row)
 
         schedule_entries: list[
@@ -719,6 +960,18 @@ def _parse_timetable_table_rows(
                 schedule_cell = _table_cell(table_row, header_map, field_name)
                 if schedule_cell:
                     schedule_entries.extend(_schedule_entries_from_text(schedule_cell))
+            time_range_cell = _table_cell(table_row, header_map, "schedule_time_range")
+            if time_range_cell:
+                weekday_text = _table_cell(table_row, header_map, "weekday")
+                if weekday_text:
+                    schedule_entries.extend(
+                        _schedule_entries_from_text(f"{weekday_text} {time_range_cell}")
+                    )
+                else:
+                    schedule_entries.extend(
+                        (None, match.group(1), match.group(2), None, None)
+                        for match in _TIME_RANGE_RE.finditer(time_range_cell)
+                    )
         else:
             weekday_text = _table_cell(table_row, header_map, "weekday")
             start_text = _table_cell(table_row, header_map, "start_time")
@@ -731,14 +984,74 @@ def _parse_timetable_table_rows(
                 combined_schedule = f"{weekday_text} {start_text}-{end_text}".strip()
                 schedule_entries.extend(_schedule_entries_from_text(combined_schedule))
 
+        if not first_date and not last_date:
+            date_range_text = _table_cell(table_row, header_map, "date_range")
+            if date_range_text:
+                date_range = _parse_date_range_cell(date_range_text)
+                if date_range is None:
+                    invalid_rows.append(InvalidCsvRow(
+                        line_number=next_line_number,
+                        raw_text=raw_text,
+                        error_code="INVALID_DATE_RANGE_VALUE",
+                        error_message="Date range must contain two supported dates.",
+                    ))
+                    next_line_number += 1
+                    continue
+                first_date, last_date = (item.isoformat() for item in date_range)
+
+        if len(neutral_date_columns) > 2 and schedule_entries:
+            invalid_rows.append(InvalidCsvRow(
+                line_number=next_line_number,
+                raw_text=raw_text,
+                error_code="AMBIGUOUS_DATE_COLUMNS",
+                error_message="More than two unlabelled date columns were found; label first_date and last_date explicitly.",
+            ))
+            next_line_number += 1
+            continue
+        if len(neutral_date_columns) == 2 and not first_date and not last_date:
+            date_values = [
+                table_row[column_index].strip() if column_index < len(table_row) else ""
+                for column_index in neutral_date_columns
+            ]
+            nonempty_dates = [value for value in date_values if value]
+            if len(nonempty_dates) == 1:
+                invalid_rows.append(InvalidCsvRow(
+                    line_number=next_line_number,
+                    raw_text=raw_text,
+                    error_code="AMBIGUOUS_SINGLE_DATE",
+                    error_message="Only one unlabelled date was found. Enter the missing boundary date or label the columns first_date and last_date.",
+                ))
+                next_line_number += 1
+                continue
+            if len(nonempty_dates) == 2:
+                try:
+                    parsed_dates = sorted(_parse_date_cell(value) for value in nonempty_dates)
+                except ValueError:
+                    invalid_rows.append(InvalidCsvRow(
+                        line_number=next_line_number,
+                        raw_text=raw_text,
+                        error_code="INVALID_DATE_FORMAT",
+                        error_message="Both unlabelled date cells must use a supported date format.",
+                    ))
+                    next_line_number += 1
+                    continue
+                first_date, last_date = (item.isoformat() for item in parsed_dates)
+
+        first_date = first_date or default_first_date
+        last_date = last_date or default_last_date
+
         if not schedule_entries:
             invalid_rows.append(InvalidCsvRow(
                 line_number=next_line_number,
                 raw_text=raw_text,
-                error_code="NO_SCHEDULE_DETECTED",
+                error_code=(
+                    "NO_SCHEDULE_PUBLISHED" if title or course_code
+                    else "NO_SCHEDULE_DETECTED"
+                ),
                 error_message=(
-                    "This course row has no recognizable weekday and time. "
-                    "Check the schedule cells or skip the row if the course has no published time."
+                    "This course has no published schedule. It can be skipped during import."
+                    if title or course_code
+                    else "No recognizable schedule data was found in this row."
                 ),
                 prefill={
                     "course_code": course_code,
@@ -780,7 +1093,7 @@ def _parse_timetable_table_rows(
 
             normalized_cells = [
                 course_code,
-                title,
+                " ".join(title.split()),
                 weekday.value if weekday is not None else "",
                 start_text,
                 end_text,
@@ -840,6 +1153,8 @@ def _table_rows_from_text(raw_content: str) -> Optional[list[list[str]]]:
 def _parse_positional_table_rows(
     table_rows: list[list[str]],
     import_batch_id: str,
+    default_first_date: str = "",
+    default_last_date: str = "",
 ) -> ParseBatchResult:
     """Validate already-parsed rows using the locked nine-column field order.
 
@@ -856,11 +1171,15 @@ def _parse_positional_table_rows(
         if _is_header_row(cells):
             continue
 
-        raw_text = _table_rows_to_csv([cells]).rstrip("\r\n")
+        normalized_cells = list(cells)
+        if len(normalized_cells) == 9:
+            normalized_cells[6] = normalized_cells[6].strip() or default_first_date
+            normalized_cells[7] = normalized_cells[7].strip() or default_last_date
+        raw_text = _table_rows_to_csv([normalized_cells]).rstrip("\r\n")
         valid_row, invalid_row = _parse_and_validate_row(
             row_number,
             raw_text,
-            cells,
+            normalized_cells,
         )
         if valid_row is not None:
             valid_rows.append(valid_row)
@@ -877,6 +1196,8 @@ def _parse_positional_table_rows(
 def _parse_headered_text_table(
     raw_content: str,
     import_batch_id: str,
+    default_first_date: str = "",
+    default_last_date: str = "",
 ) -> Optional[ParseBatchResult]:
     """Recognize common non-canonical CSV/Markdown headers before line parsing.
 
@@ -891,16 +1212,30 @@ def _parse_headered_text_table(
     for candidate_row in table_rows[:6]:
         if _is_canonical_nine_column_header(candidate_row):
             # Keep legacy semantics while reusing cells already read by csv.reader.
-            return _parse_positional_table_rows(table_rows, import_batch_id)
+            return _parse_positional_table_rows(
+                table_rows, import_batch_id, default_first_date, default_last_date
+            )
 
-    structured_result = _parse_timetable_table_rows(table_rows, import_batch_id)
+    structured_result = _parse_timetable_table_rows(
+        table_rows,
+        import_batch_id,
+        default_first_date=default_first_date,
+        default_last_date=default_last_date,
+    )
     if structured_result is not None:
         return structured_result
 
-    return _parse_positional_table_rows(table_rows, import_batch_id)
+    return _parse_positional_table_rows(
+        table_rows, import_batch_id, default_first_date, default_last_date
+    )
 
 
-def parse_timetable_content(raw_content: str, filename: str = "") -> ParseBatchResult:
+def parse_timetable_content(
+    raw_content: str,
+    filename: str = "",
+    default_first_date: str = "",
+    default_last_date: str = "",
+) -> ParseBatchResult:
     """
     Input:
         raw_content (str): The raw text, CSV, or Markdown content of a student timetable file.
@@ -912,14 +1247,16 @@ def parse_timetable_content(raw_content: str, filename: str = "") -> ParseBatchR
         - Completely empty or whitespace-only files (returns empty lists with generated batch_id).
         - Markdown tables with header rows and divider lines (| --- | --- |).
         - CSV files with or without standard header row.
-        - Malformed rows (bad column count, invalid time HH:MM, invalid date YYYY-MM-DD).
+        - Malformed rows (bad column count, invalid time, or unsupported date formats).
         - DEADLINE rows with missing start_time (automatically matched to end_time).
         - Never crashes the entire batch when encountering malformed lines (error isolation).
     """
     # Generate unique 16-character hex identifier for this import batch
     import_batch_id: str = uuid.uuid4().hex[:16]
 
-    structured_result = _parse_headered_text_table(raw_content, import_batch_id)
+    structured_result = _parse_headered_text_table(
+        raw_content, import_batch_id, default_first_date, default_last_date
+    )
     if structured_result is not None:
         return structured_result
 
@@ -952,6 +1289,10 @@ def parse_timetable_content(raw_content: str, filename: str = "") -> ParseBatchR
         # 3. Skip header lines (e.g., 'course_code,title,...')
         if _is_header_row(cells):
             continue
+
+        if len(cells) == 9:
+            cells[6] = cells[6].strip() or default_first_date
+            cells[7] = cells[7].strip() or default_last_date
 
         # 4. Parse and validate the data cells
         valid_row, invalid_row = _parse_and_validate_row(line_idx, line, cells)
@@ -1345,17 +1686,39 @@ def _read_delimited_table(raw_content: str) -> list[list[str]]:
     Edge Cases Handled: UTF-8 BOM, quoted commas/newlines, and unknown dialects.
     """
     sample = raw_content[:8192]
+    candidate_delimiters = [",", "\t", ";"]
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        detected = csv.Sniffer().sniff(sample, delimiters=",;\t").delimiter
+        candidate_delimiters.remove(detected)
+        candidate_delimiters.insert(0, detected)
     except csv.Error:
-        dialect = csv.excel
+        pass
 
-    try:
-        reader = csv.reader(io.StringIO(raw_content), dialect, strict=True)
-        return [[cell.strip().lstrip("\ufeff") for cell in row] for row in reader]
-    except csv.Error:
-        # Let the established line parser isolate malformed quote syntax by source line.
-        return []
+    candidates: list[tuple[tuple[int, float, int], list[list[str]]]] = []
+    had_parse_error = False
+    for delimiter in candidate_delimiters:
+        try:
+            reader = csv.reader(io.StringIO(raw_content), delimiter=delimiter, strict=True)
+            rows = [[cell.strip().lstrip("\ufeff") for cell in row] for row in reader]
+        except csv.Error:
+            had_parse_error = True
+            continue
+        nonempty_widths = [len(row) for row in rows if any(cell for cell in row)]
+        if not nonempty_widths:
+            return rows
+        counts = {width: nonempty_widths.count(width) for width in set(nonempty_widths)}
+        common_width, common_count = max(counts.items(), key=lambda item: (item[1], item[0]))
+        consistency = common_count / len(nonempty_widths)
+        score = (int(common_width > 1), consistency, common_width)
+        candidates.append((score, rows))
+
+    if candidates:
+        best_score, best_rows = max(candidates, key=lambda candidate: candidate[0])
+        if had_parse_error and best_score[2] == 1:
+            return []
+        return best_rows
+    # Let the established line parser isolate malformed quote syntax by source line.
+    return []
 
 
 def _table_rows_to_csv(table_rows: list[list[str]]) -> str:
@@ -1440,7 +1803,12 @@ def _no_timetable_result(import_batch_id: str, filename: str) -> ParseBatchResul
     )
 
 
-def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
+def _parse_pdf_timetable(
+    file_bytes: bytes,
+    filename: str,
+    default_first_date: str = "",
+    default_last_date: str = "",
+) -> ParseBatchResult:
     """Parse PDF tables, text, or scanned pages into the existing row contract.
 
     Input: file_bytes and filename for one uploaded PDF.
@@ -1484,12 +1852,16 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                     parsed_table = _parse_timetable_table_rows(
                         table_rows,
                         import_batch_id,
+                        default_first_date=default_first_date,
+                        default_last_date=default_last_date,
                     )
                     if parsed_table is not None:
                         page_results.append(parsed_table)
                     else:
                         page_results.append(
-                            _parse_positional_table_rows(table_rows, import_batch_id)
+                            _parse_positional_table_rows(
+                                table_rows, import_batch_id, default_first_date, default_last_date
+                            )
                         )
 
                 if page_had_table:
@@ -1497,7 +1869,9 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
 
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    page_results.append(parse_timetable_content(page_text, filename))
+                    page_results.append(parse_timetable_content(
+                        page_text, filename, default_first_date, default_last_date
+                    ))
                     continue
 
                 if not _OCR_AVAILABLE:
@@ -1524,6 +1898,8 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                             table_rows,
                             import_batch_id,
                             low_confidence_cells=low_confidence_cells,
+                            default_first_date=default_first_date,
+                            default_last_date=default_last_date,
                         )
                         if parsed_table is not None:
                             page_results.append(parsed_table)
@@ -1531,13 +1907,17 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
                         table_result = _parse_positional_table_rows(
                             table_rows,
                             import_batch_id,
+                            default_first_date,
+                            default_last_date,
                         )
                         if _result_has_rows(table_result):
                             page_results.append(table_result)
                             continue
 
-                    page_ocr_text = _ocr_with_lang_fallback(pytesseract.image_to_string, page_image)
-                    page_results.append(parse_timetable_content(page_ocr_text, filename))
+                    page_ocr_text = pytesseract.image_to_string(page_image, lang="vie+eng")
+                    page_results.append(parse_timetable_content(
+                        page_ocr_text, filename, default_first_date, default_last_date
+                    ))
                 except Exception:
                     page_results.append(ParseBatchResult(
                         import_batch_id=import_batch_id,
@@ -1582,7 +1962,12 @@ def _parse_pdf_timetable(file_bytes: bytes, filename: str) -> ParseBatchResult:
     return _no_timetable_result(import_batch_id, filename)
 
 
-def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
+def parse_timetable_file(
+    file_bytes: bytes,
+    filename: str,
+    default_first_date: str = "",
+    default_last_date: str = "",
+) -> ParseBatchResult:
     """Parse one uploaded timetable file through its format-specific reader.
 
     Input: file_bytes and filename for one CSV, TXT, Markdown, PDF, or image file.
@@ -1594,7 +1979,9 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
     import_batch_id = uuid.uuid4().hex[:16]
 
     if extension == ".pdf":
-        return _parse_pdf_timetable(file_bytes, filename)
+        return _parse_pdf_timetable(
+            file_bytes, filename, default_first_date, default_last_date
+        )
 
     if extension in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"):
         if not _OCR_AVAILABLE:
@@ -1618,10 +2005,14 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
                 table_rows,
                 import_batch_id,
                 low_confidence_cells=low_confidence_cells,
+                default_first_date=default_first_date,
+                default_last_date=default_last_date,
             )
             if structured_result is not None:
                 return structured_result
-            table_result = _parse_positional_table_rows(table_rows, import_batch_id)
+            table_result = _parse_positional_table_rows(
+                table_rows, import_batch_id, default_first_date, default_last_date
+            )
             if table_result.valid_rows:
                 return table_result
             if any(row.error_code != "INVALID_COLUMN_COUNT" for row in table_result.invalid_rows):
@@ -1631,7 +2022,9 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
                 return table_result
 
         extracted_text = _extract_text_from_image(file_bytes)
-        result = parse_timetable_content(extracted_text, filename)
+        result = parse_timetable_content(
+            extracted_text, filename, default_first_date, default_last_date
+        )
         if result.valid_rows:
             return result
         if any(row.error_code != "INVALID_COLUMN_COUNT" for row in result.invalid_rows):
@@ -1641,4 +2034,6 @@ def parse_timetable_file(file_bytes: bytes, filename: str) -> ParseBatchResult:
         return _no_timetable_result(import_batch_id, filename)
 
     extracted_text = extract_raw_text_from_file(file_bytes, filename)
-    return parse_timetable_content(extracted_text, filename)
+    return parse_timetable_content(
+        extracted_text, filename, default_first_date, default_last_date
+    )

@@ -153,6 +153,95 @@ if __name__ == "__main__":
         check("Test 9c: export contains data row", "CSC101" in csv_str)
 
     # ------------------------------------------------------------------
+    # Test 10: Date formats, neutral date headers, and batch defaults
+    # ------------------------------------------------------------------
+    date_formats = [
+        "2026-09-28", "2026/09/28", "28/09/2026", "5/9/2026",
+        "28-09-2026", "5-9-2026", "28.09.2026", "5.9.2026",
+    ]
+    date_rows = [
+        f"CSC{index},Math,MON,08:00,09:00,A1,{date_text},2026-12-12,CLASS"
+        for index, date_text in enumerate(date_formats)
+    ]
+    date_format_result = parse_timetable_content("\n".join(date_rows), "dates.csv")
+    check("Test 10a: all supported ISO and DMY date formats parse",
+          len(date_format_result.valid_rows) == len(date_formats)
+          and not date_format_result.invalid_rows)
+    us_date_result = parse_timetable_content(
+        "CSC900,No MDY,MON,08:00,09:00,A1,09/28/2026,12/12/2026,CLASS\n",
+        "no_mdy.csv",
+    )
+    check("Test 10a2: ambiguous US month-first dates are not accepted",
+          any(row.error_code == "INVALID_FIRST_DATE" for row in us_date_result.invalid_rows))
+
+    neutral_dates = (
+        "Mã MH,Tên MH,Lịch LT,date_1,date_2,Giảng viên\n"
+        "CSC101,Math,T2 7h30-9h10 - Phòng C.45,12/12/2026,28/09/2026,Teacher\n"
+    )
+    neutral_result = parse_timetable_content(neutral_dates, "neutral_dates.csv")
+    check("Test 10b: neutral date columns map by content and sort boundaries",
+          len(neutral_result.valid_rows) == 1
+          and neutral_result.valid_rows[0].first_date.isoformat() == "2026-09-28"
+          and neutral_result.valid_rows[0].last_date.isoformat() == "2026-12-12")
+
+    one_neutral_date = (
+        "Mã MH,Tên MH,Lịch LT,date_1,date_2\n"
+        "CSC102,Physics,T3 08:00-09:00,28/09/2026,\n"
+    )
+    one_date_result = parse_timetable_content(one_neutral_date, "one_date.csv")
+    check("Test 10c: one unlabelled date is flagged as ambiguous",
+          any(row.error_code == "AMBIGUOUS_SINGLE_DATE" for row in one_date_result.invalid_rows))
+
+    date_range_table = (
+        "Mã MH,Tên MH,Lịch LT,Khoảng ngày\n"
+        "CSC103,History,T4 10:00-11:00,28.09.2026 - 12.12.2026\n"
+    )
+    date_range_result = parse_timetable_content(date_range_table, "date_range.csv")
+    check("Test 10d: combined date range column is split",
+          len(date_range_result.valid_rows) == 1)
+
+    batch_defaults = parse_timetable_content(
+        "A,Math,MON,08:00,09:00,A1,,,CLASS\n",
+        "batch.csv",
+        default_first_date="2026-09-01",
+        default_last_date="2026-12-20",
+    )
+    check("Test 10e: batch dates fill missing positional date cells",
+          len(batch_defaults.valid_rows) == 1
+          and batch_defaults.valid_rows[0].first_date.isoformat() == "2026-09-01")
+
+    # ------------------------------------------------------------------
+    # Test 11: Time, weekday, kind, room, and published-schedule handling
+    # ------------------------------------------------------------------
+    flexible_values = (
+        ",Discrete Math,T 2,7h30,9.10,P.C45,28/09/2026,12/12/2026,Lý thuyết\n"
+        ",Final Exam,,8:00 AM,1:30 PM,@ I.44,2026-12-15,2026-12-15,Thi\n"
+    )
+    flexible_result = parse_timetable_content(flexible_values, "flexible.csv")
+    check("Test 11a: tolerant weekday, time, kind, and room values parse",
+          len(flexible_result.valid_rows) == 2
+          and flexible_result.valid_rows[0].weekday == Weekday.MON
+          and flexible_result.valid_rows[0].room == "C45"
+          and flexible_result.valid_rows[1].kind == CsvRowKind.EXAM)
+
+    inferred_weekday_kind = parse_timetable_content(
+        ",Weekly Class,,07:30,09:00,A1,2026-09-07,2026-12-14,\n",
+        "inferred.csv",
+    )
+    check("Test 11b: blank kind and weekday infer CLASS from recurring dates",
+          len(inferred_weekday_kind.valid_rows) == 1
+          and inferred_weekday_kind.valid_rows[0].kind == CsvRowKind.CLASS
+          and inferred_weekday_kind.valid_rows[0].weekday == Weekday.MON)
+
+    unscheduled = (
+        "Mã MH,Tên MH,Lịch LT,Lịch TH\n"
+        "BAA00030,Giáo dục quốc phòng - An ninh,,\n"
+    )
+    unscheduled_result = parse_timetable_content(unscheduled, "unscheduled.csv")
+    check("Test 11c: course without a published schedule is marked for skip",
+          any(row.error_code == "NO_SCHEDULE_PUBLISHED" for row in unscheduled_result.invalid_rows))
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     print(f"\n{'='*50}")

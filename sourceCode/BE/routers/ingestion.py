@@ -33,6 +33,7 @@ from models import (  # noqa: E402
 )
 from services import rag  # noqa: E402
 from services.parser import (  # noqa: E402
+    _parse_date_cell,
     _parse_and_validate_row,
     _split_line_into_cells,
     export_valid_rows_to_csv,
@@ -454,7 +455,35 @@ async def parse_preview(
         ),
     ),
     raw_content: Optional[str] = Form(default=None, description="Alternative: paste raw timetable text"),
+    default_first_date: Optional[str] = Form(default=None),
+    default_last_date: Optional[str] = Form(default=None),
 ) -> ParsePreviewResponse:
+    has_default_first = bool(default_first_date and default_first_date.strip())
+    has_default_last = bool(default_last_date and default_last_date.strip())
+    if has_default_first != has_default_last:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide both default_first_date and default_last_date, or leave both empty.",
+        )
+    normalized_default_first = ""
+    normalized_default_last = ""
+    if has_default_first and has_default_last:
+        try:
+            parsed_default_first = _parse_date_cell(default_first_date)
+            parsed_default_last = _parse_date_cell(default_last_date)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid batch date: {error}",
+            ) from error
+        if parsed_default_first > parsed_default_last:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="default_first_date must be on or before default_last_date.",
+            )
+        normalized_default_first = parsed_default_first.isoformat()
+        normalized_default_last = parsed_default_last.isoformat()
+
     # 1. Resolve content source: file upload takes priority over raw_content form field
     if file is not None:
         filename = file.filename or ""  # must be set before extraction (it picks the parser by extension)
@@ -468,7 +497,12 @@ async def parse_preview(
             )
 
         try:
-            batch_result = parse_timetable_file(file_bytes, filename)
+            batch_result = parse_timetable_file(
+                file_bytes,
+                filename,
+                normalized_default_first,
+                normalized_default_last,
+            )
         except ValueError as extraction_err:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -481,7 +515,11 @@ async def parse_preview(
             )
 
     elif raw_content is not None and raw_content.strip():
-        batch_result = parse_timetable_content(raw_content)
+        batch_result = parse_timetable_content(
+            raw_content,
+            default_first_date=normalized_default_first,
+            default_last_date=normalized_default_last,
+        )
 
     else:
         raise HTTPException(
