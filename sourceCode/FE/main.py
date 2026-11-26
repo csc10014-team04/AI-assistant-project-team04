@@ -8,6 +8,7 @@ from kivy.uix.label import Label
 from kivy.utils import platform
 from kivymd.app import MDApp
 
+from notifier import request_android_notification_permission
 from screen_manager import AppScreenManager
 
 
@@ -23,9 +24,10 @@ class MainApp(MDApp):
         self._exit_toast: Label | None = None
 
         # Cấu hình hành vi bàn phím ảo riêng cho Android để không che ô nhập liệu
-        # (AuthScreen, ChatAssistantScreen)
+        # (AuthScreen, ChatAssistantScreen) và xin quyền thông báo Android 13+
         if platform == "android":
             Window.softinput_mode = "below_target"
+            request_android_notification_permission()
 
         # Khởi tạo hệ thống quản lý màn hình
         self.sm = AppScreenManager()
