@@ -1452,8 +1452,9 @@ class ImportStep2Modal(ModalView):
             text="",
             theme_text_color="Hint",
             size_hint_y=None,
-            height=dp(24),
+            adaptive_height=True,
         )
+        self.lbl_summary.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
         layout.add_widget(self.lbl_summary)
 
         # quick batch-date bar when any row is missing first_date or last_date
@@ -1516,9 +1517,14 @@ class ImportStep2Modal(ModalView):
             time_text = f"{row.get('weekday') or ''} {row.get('start_time')} - {row.get('end_time')} | Room: {row.get('room') or 'Unknown'}"
             date_text = f"From {row.get('first_date')} to {row.get('last_date')}"
 
-            card.add_widget(MDLabel(text=title_text, bold=True, size_hint_y=None, adaptive_height=True))
-            card.add_widget(MDLabel(text=time_text, theme_text_color="Secondary", size_hint_y=None, adaptive_height=True))
-            card.add_widget(MDLabel(text=date_text, theme_text_color="Hint", size_hint_y=None, adaptive_height=True))
+            for lbl_kwargs in (
+                {"text": title_text, "bold": True},
+                {"text": time_text, "theme_text_color": "Secondary"},
+                {"text": date_text, "theme_text_color": "Hint"},
+            ):
+                lbl = MDLabel(size_hint_y=None, adaptive_height=True, **lbl_kwargs)
+                lbl.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+                card.add_widget(lbl)
             self.list_layout.add_widget(card)
 
         # Render Thẻ Vàng (Lỗi) với nút Edit và Skip cho từng dòng
@@ -1595,15 +1601,15 @@ class ImportStep2Modal(ModalView):
                 padding=dp(12),
                 radius=[dp(8)],
             )
-            empty_card.add_widget(
-                MDLabel(
-                    text="No events detected in file.\nPlease verify file format or image clarity.",
-                    theme_text_color="Error",
-                    halign="center",
-                    size_hint_y=None,
-                    height=dp(45),
-                )
+            lbl_empty = MDLabel(
+                text="No events detected in file.\nPlease verify file format or image clarity.",
+                theme_text_color="Error",
+                halign="center",
+                size_hint_y=None,
+                adaptive_height=True,
             )
+            lbl_empty.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+            empty_card.add_widget(lbl_empty)
             self.list_layout.add_widget(empty_card)
 
         scroll.add_widget(self.list_layout)
@@ -1634,15 +1640,19 @@ class ImportStep2Modal(ModalView):
             font_style="Body",
             role="medium",
             theme_text_color="Primary",
+            size_hint_y=None,
             adaptive_height=True,
         )
+        lbl_replace_title.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
         lbl_replace_desc = MDLabel(
             text="When checked: Clears previously imported schedules not in this file. Manual & AI events are untouched.",
             font_style="Label",
             role="small",
             theme_text_color="Hint",
+            size_hint_y=None,
             adaptive_height=True,
         )
+        lbl_replace_desc.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
         desc_box.add_widget(lbl_replace_title)
         desc_box.add_widget(lbl_replace_desc)
 
@@ -1661,18 +1671,33 @@ class ImportStep2Modal(ModalView):
 
         btn_box = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(50))
         self.btn_next = MDButton(
-            MDButtonText(text="CONTINUE TO CONFLICT CHECK", text_color=[1, 1, 1, 1]),
+            MDButtonText(text="CHECK CONFLICTS", text_color=[1, 1, 1, 1]),
             style="filled",
             md_bg_color=[0, 51/255, 204/255, 1],
-            size_hint_x=0.7,
+            size_hint_x=0.65,
             on_release=self.check_conflicts,
         )
         btn_cancel = MDButton(
             MDButtonText(text="CANCEL"),
             style="outlined",
-            size_hint_x=0.3,
+            size_hint_x=0.35,
             on_release=self.dismiss,
         )
+
+        # Tự động chuyển bố cục nút sang dọc khi cửa sổ hẹp để nút CANCEL không bị tràn mép phải
+        def _sync_btn_box_layout(inst, width):
+            if width < dp(340):
+                inst.orientation = 'vertical'
+                inst.height = dp(104)
+                self.btn_next.size_hint_x = 1
+                btn_cancel.size_hint_x = 1
+            else:
+                inst.orientation = 'horizontal'
+                inst.height = dp(50)
+                self.btn_next.size_hint_x = 0.65
+                btn_cancel.size_hint_x = 0.35
+
+        btn_box.bind(width=_sync_btn_box_layout)
         btn_box.add_widget(self.btn_next)
         btn_box.add_widget(btn_cancel)
         layout.add_widget(btn_box)
