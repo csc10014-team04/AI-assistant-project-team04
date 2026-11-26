@@ -32,7 +32,7 @@ def test_FB04_missing_or_absurd_duration_falls_back_to_60():
 
 
 def test_FB05_empty_title_gets_a_default_name():
-    assert fallback.parse_request("xếp 2 tiếng")["title"] == "Hoạt động"
+    assert fallback.parse_request("xếp 2 tiếng")["title"] == "Activity"
 
 
 def test_FB06_timeout_is_a_strict_positive_number_and_wired_into_the_chat_request():

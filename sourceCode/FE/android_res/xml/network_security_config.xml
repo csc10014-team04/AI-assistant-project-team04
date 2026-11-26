@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cấu hình bảo mật mạng cho Android 9+ (API 28 trở lên).
+  Mặc định Android chặn kết nối HTTP không mã hóa (cleartext).
+  File này cho phép ứng dụng kết nối tới Backend FastAPI nội bộ qua HTTP
+  (ví dụ: http://192.168.1.x:8080 hoặc http://10.0.2.2:8080 trên Android Emulator).
+
+  Lưu ý khi phát hành Production:
+  - Nên chuyển Backend sang HTTPS và đổi cleartextTrafficPermitted="false",
+    hoặc chỉ mở ngoại lệ cho từng domain/IP nội bộ cụ thể bằng thẻ <domain-config>.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

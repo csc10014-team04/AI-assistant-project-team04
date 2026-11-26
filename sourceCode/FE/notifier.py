@@ -230,6 +230,9 @@ class ReminderScheduler:
         if delay < -LATE_GRACE.total_seconds():
             return False  # long gone; do not wake the user for the past
         self._armed[event_id] = self.timer(max(delay, 0), lambda: self._fire(event_id, title, room, start_time_str, offset_minutes))
+        # Trên Android: đăng ký thêm báo thức native qua AlarmManager để vẫn nhắc khi app bị đóng
+        if delay > 0:
+            android_alarm(event_id, int(when.timestamp() * 1000), title)
         if report_scheduled and self.reporter:
             try:
                 self.reporter.report_reminder_scheduled(event_id)
@@ -244,6 +247,9 @@ class ReminderScheduler:
         self.cancel(event_id)
         self._delivered_reported.discard(event_id)
         self._armed[event_id] = self.timer(delay_seconds, lambda: self._fire(event_id, title, room, start_time_str, offset_minutes=mins))
+        # Trên Android: đăng ký thêm báo thức snooze với AlarmManager
+        fire_epoch_ms = int((self.now().timestamp() + delay_seconds) * 1000)
+        android_alarm(event_id, fire_epoch_ms, title)
 
     @staticmethod
     def _format_start_time(raw_start: str | None) -> str:
@@ -275,8 +281,10 @@ class ReminderScheduler:
 
     def cancel(self, event_id: int) -> bool:
         handle = self._armed.pop(event_id, None)
+        # Hủy báo thức native trên Android (nếu có) song song với timer trong app
+        android_cancelled = cancel_android_alarm(event_id)
         if handle is None:
-            return False
+            return android_cancelled
         if hasattr(handle, "cancel"):
             handle.cancel()
         return True
@@ -391,6 +399,20 @@ except Exception:
     pass
 
 
+def request_android_notification_permission() -> bool:
+    """
+    Chỉ chạy trên Android 13+ (API 33+): xin quyền POST_NOTIFICATIONS lúc runtime.
+    Trả về False nếu chạy trên PC hoặc không có module android.permissions.
+    """
+    try:
+        from android.permissions import Permission, request_permissions  # type: ignore
+
+        request_permissions([Permission.POST_NOTIFICATIONS])
+        return True
+    except Exception:
+        return False
+
+
 def android_alarm(event_id: int, fire_epoch_ms: int, title: str) -> bool:
     """
     Android only: register an exact alarm with AlarmManager so it survives the app being closed. Needs a
@@ -399,17 +421,64 @@ def android_alarm(event_id: int, fire_epoch_ms: int, title: str) -> bool:
     """
     try:
         from jnius import autoclass  # type: ignore
+
+        Context = autoclass("android.content.Context")
+        Intent = autoclass("android.content.Intent")
+        PendingIntent = autoclass("android.app.PendingIntent")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        activity = PythonActivity.mActivity
+        if activity is None:
+            return False
+
+        intent = Intent(activity, activity.getClass())
+        intent.putExtra("event_id", int(event_id))
+        intent.putExtra("title", str(title))
+        pending = PendingIntent.getActivity(
+            activity,
+            int(event_id),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager = activity.getSystemService(Context.ALARM_SERVICE)
+        # Ưu tiên setExactAndAllowWhileIdle (0 = RTC_WAKEUP); nếu Android 12+ từ chối quyền exact alarm
+        # thì tự động hạ về setAndAllowWhileIdle để không crash ứng dụng.
+        try:
+            manager.setExactAndAllowWhileIdle(0, int(fire_epoch_ms), pending)
+        except Exception:
+            manager.setAndAllowWhileIdle(0, int(fire_epoch_ms), pending)
+        return True
     except Exception:
         return False
-    Context = autoclass("android.content.Context")
-    Intent = autoclass("android.content.Intent")
-    PendingIntent = autoclass("android.app.PendingIntent")
-    PythonActivity = autoclass("org.kivy.android.PythonActivity")
-    activity = PythonActivity.mActivity
-    intent = Intent(activity, activity.getClass())
-    intent.putExtra("event_id", event_id)
-    intent.putExtra("title", title)
-    pending = PendingIntent.getActivity(activity, event_id, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)
-    manager = activity.getSystemService(Context.ALARM_SERVICE)
-    manager.setExactAndAllowWhileIdle(0, fire_epoch_ms, pending)  # 0 = RTC_WAKEUP
-    return True
+
+
+def cancel_android_alarm(event_id: int) -> bool:
+    """
+    Hủy báo thức AlarmManager đã đăng ký trước đó trên Android theo event_id.
+    Trả về False khi chạy trên PC hoặc khi không tìm thấy PendingIntent.
+    """
+    try:
+        from jnius import autoclass  # type: ignore
+
+        Context = autoclass("android.content.Context")
+        Intent = autoclass("android.content.Intent")
+        PendingIntent = autoclass("android.app.PendingIntent")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        activity = PythonActivity.mActivity
+        if activity is None:
+            return False
+
+        intent = Intent(activity, activity.getClass())
+        pending = PendingIntent.getActivity(
+            activity,
+            int(event_id),
+            intent,
+            PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE,
+        )
+        if pending is None:
+            return False
+        manager = activity.getSystemService(Context.ALARM_SERVICE)
+        manager.cancel(pending)
+        pending.cancel()
+        return True
+    except Exception:
+        return False
