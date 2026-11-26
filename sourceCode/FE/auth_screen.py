@@ -1,8 +1,9 @@
 from pathlib import Path
 from kivy.uix.button import Button
 from kivy.metrics import dp
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import ScreenManager, SlideTransition
 from kivy.uix.image import Image
 from kivy.uix.boxlayout import BoxLayout
@@ -12,6 +13,7 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText, MDTextFieldTrailingIcon
 from kivymd.uix.label import MDLabel
 from api_client import api
@@ -101,6 +103,96 @@ class CustomButton(Button):
     def update_border(self, *args):
         self.line.rectangle = (self.x, self.y, self.width, self.height)
 
+
+class ServerConfigModal(ModalView):
+    """
+    Hộp thoại cho phép người dùng đổi địa chỉ IP / URL của Backend FastAPI
+    trực tiếp trên điện thoại mà không cần biên dịch lại APK.
+    """
+
+    def __init__(self, on_saved=None, **kwargs):
+        super().__init__(**kwargs)
+        self.on_saved = on_saved
+        self.size_hint = (0.9, None)
+        self.height = dp(265)
+        self.background_color = [0, 0, 0, 0]
+        self.auto_dismiss = True
+
+        container = MDBoxLayout(
+            orientation="vertical",
+            padding=dp(18),
+            spacing=dp(12),
+            md_bg_color=WHITE_COLOR,
+        )
+        with container.canvas.before:
+            Color(*WHITE_COLOR)
+            self._bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[dp(14)])
+        container.bind(
+            pos=lambda inst, val: setattr(self._bg, "pos", val),
+            size=lambda inst, val: setattr(self._bg, "size", val),
+        )
+
+        title = MDLabel(
+            text="Server Settings (Backend URL)",
+            bold=True,
+            font_style="Title",
+            role="medium",
+            size_hint_y=None,
+            height=dp(28),
+        )
+        hint = MDLabel(
+            text="Example: LAN: http://192.168.1.10:8080\nEmulator: http://10.0.2.2:8080",
+            theme_text_color="Hint",
+            font_style="Body",
+            role="small",
+            size_hint_y=None,
+            height=dp(34),
+        )
+
+        self.url_field = MDTextField(
+            MDTextFieldHintText(text="http://<server-ip>:8080"),
+            mode="outlined",
+            text=api.base_url,
+            size_hint_x=1,
+        )
+
+        self.err_lbl = MDLabel(
+            text="",
+            theme_text_color="Custom",
+            text_color=RED_COLOR,
+            font_style="Body",
+            role="small",
+            size_hint_y=None,
+            height=dp(18),
+        )
+
+        btn_row = BoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(42))
+        btn_save = CustomButton(text="SAVE", bg_color=BLUE_COLOR, size_hint_x=0.5)
+        btn_save.bind(on_release=self._save_url)
+        btn_cancel = CustomButton(text="CANCEL", is_outlined=True, size_hint_x=0.5)
+        btn_cancel.bind(on_release=lambda *_: self.dismiss())
+        btn_row.add_widget(btn_save)
+        btn_row.add_widget(btn_cancel)
+
+        container.add_widget(title)
+        container.add_widget(hint)
+        container.add_widget(self.url_field)
+        container.add_widget(self.err_lbl)
+        container.add_widget(btn_row)
+        self.add_widget(container)
+
+    def _save_url(self, *args):
+        """Kiểm tra định dạng URL hợp lệ rồi lưu vào api_client (auth_session.json)."""
+        new_url = (self.url_field.text or "").strip().rstrip("/")
+        if not new_url.startswith(("http://", "https://")) or len(new_url) <= 8:
+            self.err_lbl.text = "URL start with http:// or https://"
+            return
+        api.set_base_url(new_url)
+        if callable(self.on_saved):
+            self.on_saved(api.base_url)
+        self.dismiss()
+
+
 # ==============================================================================
 # 3. LỚP MÀN HÌNH CHÍNH
 # ==============================================================================
@@ -140,7 +232,39 @@ class AuthScreen(MDScreen):
         self.register_container.bind(minimum_height=self.update_sm_height)
         self.oauth_container.bind(minimum_height=self.update_sm_height)
 
+        # Nhãn hiển thị URL Backend hiện tại ngay dưới form đăng nhập
+        self.server_url_label = MDLabel(
+            text=f"Server: {api.base_url}",
+            halign="center",
+            theme_text_color="Hint",
+            font_style="Body",
+            role="small",
+            size_hint_y=None,
+            height=dp(20),
+        )
+        self.main_container.add_widget(self.server_url_label)
+
+        # Nút bánh răng ở góc trên phải để mở hộp thoại đổi IP Server
+        top_right = AnchorLayout(anchor_x="right", anchor_y="top", padding=[dp(8), dp(8)])
+        btn_server = MDIconButton(
+            icon="cog-outline",
+            theme_icon_color="Custom",
+            icon_color=DARK_GRAY,
+            on_release=self.open_server_config,
+        )
+        top_right.add_widget(btn_server)
+        self.add_widget(top_right)
+
         self.update_main_container_width()
+
+    def open_server_config(self, *args):
+        """Mở hộp thoại cấu hình IP/URL Backend."""
+        ServerConfigModal(on_saved=self._on_server_saved).open()
+
+    def _on_server_saved(self, new_url: str):
+        """Cập nhật nhãn hiển thị URL sau khi người dùng lưu cấu hình mới."""
+        if hasattr(self, "server_url_label"):
+            self.server_url_label.text = f"Server: {new_url}"
 
     def on_enter(self, *args):
         self.clear_error()

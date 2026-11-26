@@ -7,6 +7,7 @@ from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
 from kivy.metrics import dp
 from kivy.utils import platform
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.scrollview import ScrollView
@@ -1143,10 +1144,40 @@ class ImportStep1Modal(ModalView):
             ]
 
     def open_file_manager(self, instance):
+        """
+        Mở trình chọn tệp phù hợp theo nền tảng:
+        - Android: dùng plyer.filechooser (Storage Access Framework) để truy cập được Downloads/Documents.
+        - PC (Windows/Linux/macOS): dùng MDFileManager mặc định của KivyMD.
+        """
+        if platform == "android":
+            try:
+                from plyer import filechooser
+
+                filechooser.open_file(
+                    on_selection=self._on_android_file_selected,
+                    filters=[
+                        "*.csv", "*.txt", "*.md", "*.pdf",
+                        "*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.tif", "*.tiff",
+                    ],
+                )
+                return
+            except Exception as exc:
+                self.lbl_file.text = f"Cannot open Android picker: {exc}"
+                self.lbl_file.theme_text_color = "Error"
+
         start_dir = os.path.expanduser("~")
         if not os.path.exists(start_dir):
             start_dir = "."
         self.file_manager.show(start_dir)
+
+    def _on_android_file_selected(self, selection):
+        """
+        Callback nhận danh sách đường dẫn từ plyer.filechooser trên Android.
+        Đẩy việc cập nhật giao diện về luồng chính bằng Clock.schedule_once.
+        """
+        if selection and len(selection) > 0:
+            selected_file = selection[0]
+            Clock.schedule_once(lambda dt: self.select_path(selected_file), 0)
 
     def select_path(self, path: str):
         if not path or os.path.isdir(path):
