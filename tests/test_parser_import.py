@@ -163,10 +163,6 @@ class TestBatchBehaviour:
         res = parse_timetable_content(GOLDEN[0][1] + "\n" + GOLDEN[1][1] + "\n", "nohdr.csv")
         assert len(res.valid_rows) == 2
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "KNOWN DEFECT: parser.extract_raw_text_from_file decodes with 'utf-8', not 'utf-8-sig', so a CSV exported by "
-        "Excel ('CSV UTF-8', which starts with a BOM) shows its header row as an INVALID_KIND error in the preview. "
-        "Remove this xfail once the decoder strips the BOM."))
     def test_utf8_bom_is_tolerated(self):
         res = parse_timetable_file(("﻿" + HEADER + "\n" + GOLDEN[0][1] + "\n").encode("utf-8"), "bom.csv")
         assert len(res.valid_rows) == 1 and not res.invalid_rows
@@ -243,19 +239,12 @@ class TestFuzz:
 class TestKnownDefects:
     """Reproductions of defects found by fuzzing. strict xfail: the test turns red (XPASS) the day the bug is fixed."""
 
-    @pytest.mark.xfail(strict=True, raises=TypeError, reason=(
-        "KNOWN DEFECT: a time cell with a timezone suffix on only ONE side ('08:00Z', '08:00+07:00') makes "
-        "parser.py:467 compare a naive and an aware time -> TypeError that aborts the WHOLE file instead of "
-        "isolating the row as INVALID_START_TIME. Violates AGENTS.md section 5 (never crash on a bad line)."))
     @pytest.mark.parametrize("start,end", [("08:00Z", "10:00"), ("08:00", "10:00Z"), ("08:00+07:00", "10:00")])
     def test_mixed_timezone_suffix_must_not_crash(self, start, end):
         line = f"CSC1,A,MON,{start},{end},B1,2026-09-07,2026-12-14,CLASS"
         res = parse_timetable_content(f"{HEADER}\n{line}\n", "tz.csv")
         assert len(res.valid_rows) + len(res.invalid_rows) == 1
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "KNOWN DEFECT: when BOTH times carry a timezone suffix ('08:00Z','10:00Z') the row is accepted as valid, "
-        "although the schema says HH:MM only. Decide: reject as INVALID_START_TIME (recommended)."))
     def test_timezone_suffix_on_both_sides_should_be_rejected(self):
         res = parse_timetable_content(f"{HEADER}\nCSC1,A,MON,08:00Z,10:00Z,B1,2026-09-07,2026-12-14,CLASS\n", "tz.csv")
         assert len(res.invalid_rows) == 1

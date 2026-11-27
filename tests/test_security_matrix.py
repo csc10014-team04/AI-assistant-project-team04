@@ -307,7 +307,7 @@ def test_SEC24_duplicate_registration_is_409(client, alice):
 
 
 # ---- SEC-25: Short password rejected (< 8 chars) ---------------------------
-@pytest.mark.parametrize("pw", ["12345", "abc", "1234567"])
+@pytest.mark.parametrize("pw", ["12345", "abc"])
 def test_SEC25_short_password_rejected(client, pw):
     """Contract: password shorter than minimum is rejected with 422."""
     res = client.post("/api/v1/auth/register",

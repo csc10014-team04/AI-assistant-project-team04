@@ -91,7 +91,7 @@ def test_PH06_backend_third_party_imports_are_in_requirements():
     std = set(sys.stdlib_module_names)
     local = {p.stem for p in BE_DIR.glob("*.py")} | {"routers", "services", "tools", "database", "models", "main"}
     alias = {"jwt": "pyjwt", "PIL": "pillow", "multipart": "python_multipart", "starlette": "fastapi"}
-    req = (BE_DIR / "requirements.txt").read_text(encoding="utf-8")
+    req = (REPO_ROOT / "requirements-fullStack.txt").read_text(encoding="utf-8")
     have = {re.split(r"[<>=\[ ;#]", l.strip())[0].lower().replace("-", "_") for l in req.splitlines() if l.strip() and not l.startswith("#")}
     optional = {"sentence_transformers"}  # behind ENABLE_NEURAL_SEARCH_FALLBACK, documented as optional
     missing = set()

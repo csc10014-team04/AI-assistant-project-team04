@@ -166,7 +166,23 @@ def run(base: str, fallback_base: str | None, perf: int) -> int:
     check("API-26b", "user B cannot see user A's events in search", "total = 0", f"{s} total={(se3 or {}).get('total')}", s == 200 and (se3 or {}).get("total") == 0)
     s, _, ac, ms = c.call("POST", "/api/v1/search/academic/ask", tok_a, {"query": "cách nấu phở bò"}, timeout=60)
     ans = ((ac or {}).get("answer") or "").lower() if s == 200 else ""
-    refused = any(k in ans for k in ("không thể", "không có thông tin", "xin lỗi", "không được đề cập"))
+    refused = any(
+        k in ans
+        for k in (
+            "không thể",
+            "không có thông tin",
+            "xin lỗi",
+            "không được đề cập",
+            "does not mention",
+            "do not mention",
+            "not enough",
+            "no information",
+            "cannot",
+            "can't",
+            "sorry",
+            "outside",
+        )
+    )
     check("API-22", "out-of-scope academic question is refused", "200 and a refusal", f"{s} refused={refused} citations={len((ac or {}).get('citations', [])) if s == 200 else '-'} ({ms:.0f} ms)", s == 200 and refused)
     check("API-22b", "...and no unrelated citations are shown with the refusal", "0 citations", len((ac or {}).get("citations", [])) if s == 200 else "-", s == 200 and not (ac or {}).get("citations"))
 

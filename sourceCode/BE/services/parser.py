@@ -509,7 +509,7 @@ def _parse_and_validate_row(
             error_message=error_message,
             prefill=dict(prefill),
         )
-
+    row_kind: Optional[CsvRowKind] = _normalize_kind_token(kind_raw) if kind_raw else None
     if kind_raw and row_kind is None:
         return None, InvalidCsvRow(
             line_number=line_number,

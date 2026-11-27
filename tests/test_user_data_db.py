@@ -24,7 +24,7 @@ def test_UD01_creates_exactly_the_user_tables_and_the_log_tables(db_file):
 
 
 def test_UD02_user_tables_are_the_ones_describing_a_student():
-    assert set(cud.USER_TABLES) == {"users", "auth_identities", "user_preferences", "courses", "tasks", "proposals", "events", "reminders"}
+    assert set(cud.USER_TABLES) == {"users", "auth_identities", "user_preferences", "courses", "tasks", "proposals", "events", "reminders", "pending_clarifications"}
     assert not any(t.startswith("kb_") for t in cud.USER_TABLES + cud.LOG_TABLES)  # public knowledge base is a different database
 
 
@@ -116,7 +116,7 @@ def test_UD09_schema_has_every_init_sql_table_is_rerunnable_and_parses_as_mysql(
     assert re.findall(r"CREATE TABLE(?! IF NOT EXISTS)", sql) == [] and "DROP " not in sql.upper()
     assert sql.count("CHARSET=utf8mb4") == len(cud.USER_TABLES) + len(cud.LOG_TABLES)
     sqlglot = pytest.importorskip("sqlglot")
-    assert len([s for s in sqlglot.parse(sql, read="mysql") if s]) == 13  # CREATE DATABASE + USE + 11 tables
+    assert len([s for s in sqlglot.parse(sql, read="mysql") if s]) == 14  # CREATE DATABASE + USE + 11 tables
 
 
 def test_UD10_schema_file_contains_no_data_and_no_secrets():
@@ -127,8 +127,8 @@ def test_UD10_schema_file_contains_no_data_and_no_secrets():
 
 def test_UD11_statements_are_split_cleanly_for_execution():
     statements = cud.schema_statements()
-    assert len(statements) == 13 and all(s and not s.startswith("--") for s in statements)
-    assert sum(s.startswith("CREATE TABLE IF NOT EXISTS") for s in statements) == 11
+    assert len(statements) == 14 and all(s and not s.startswith("--") for s in statements)
+    assert sum(s.startswith("CREATE TABLE IF NOT EXISTS") for s in statements) == 12
 
 
 def test_UD12_mysql_helpers_refuse_a_sqlite_url_and_reset_is_not_offered_for_mysql(monkeypatch, capsys):

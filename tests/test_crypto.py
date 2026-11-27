@@ -12,9 +12,11 @@ import random
 import string
 import sys
 from pathlib import Path
+import token
 
 import pytest
 from cryptography.fernet import Fernet
+
 
 BE_ROOT = next(p / "sourceCode" / "BE" for p in Path(__file__).resolve().parents if (p / "sourceCode" / "BE" / "models.py").is_file())  # works wherever this file is placed
 if str(BE_ROOT) not in sys.path:
@@ -22,7 +24,7 @@ if str(BE_ROOT) not in sys.path:
 
 from services import privacy  # noqa: E402
 from services.privacy import decrypt_text, encrypt_text  # noqa: E402
-from services.rag import VectorIndex  # noqa: E402
+from services.rag import IndexDecryptionError, VectorIndex  # noqa: E402
 
 DEFAULT_DEV_SECRET = "dev-encryption-key-change-in-production"
 
@@ -93,7 +95,8 @@ class TestIntegrityAndKeys:
 
     def test_key_is_derived_from_sha256_of_secret(self):
         """characterization: documents the derivation so a change (e.g. to a salted KDF) is a conscious decision."""
-        key = base64.urlsafe_b64encode(hashlib.sha256(b"qa-test-key-A").digest())
+        raw = hashlib.pbkdf2_hmac("sha256", b"qa-test-key-A", privacy._KDF_SALT, privacy._KDF_ITERATIONS, dklen=32)
+        key = base64.urlsafe_b64encode(raw)
         assert Fernet(key).decrypt(encrypt_text("derive").encode("ascii")).decode() == "derive"
 
 
@@ -103,8 +106,8 @@ class TestKnownRisks:
     def test_missing_env_falls_back_to_public_dev_key(self, monkeypatch):
         monkeypatch.delenv("DATA_ENCRYPTION_KEY", raising=False)
         token = encrypt_text("looks encrypted")
-        key = base64.urlsafe_b64encode(hashlib.sha256(DEFAULT_DEV_SECRET.encode()).digest())
-        # anyone who reads the repository can decrypt data written while the variable was unset
+        raw = hashlib.pbkdf2_hmac("sha256", DEFAULT_DEV_SECRET.encode(), privacy._KDF_SALT, privacy._KDF_ITERATIONS, dklen=32)
+        key = base64.urlsafe_b64encode(raw)
         assert Fernet(key).decrypt(token.encode("ascii")).decode() == "looks encrypted"
 
     def test_key_derivation_has_no_salt_or_iterations(self):
@@ -148,16 +151,13 @@ class TestEncryptedVectorIndex:
         assert len(self.make(tmp_path)) == 0
 
     def test_wrong_key_then_write_overwrites_old_data(self, tmp_path, monkeypatch):
-        """
-        known risk: after a key change, the next replace_source() starts from an empty list and overwrites the file,
-        so previously indexed documents are lost for good, not just unreadable.
-        """
         self.make(tmp_path).replace_source("doc1", ["tài liệu 1"])
         monkeypatch.setenv("DATA_ENCRYPTION_KEY", "another-key")
         idx = self.make(tmp_path)
-        idx.replace_source("doc2", ["tài liệu 2"])
+        with pytest.raises(IndexDecryptionError):
+            idx.replace_source("doc2", ["tài liệu 2"])
         monkeypatch.setenv("DATA_ENCRYPTION_KEY", "qa-test-key-A")
-        assert len(self.make(tmp_path)) == 0  # original data cannot be recovered with the original key
+        assert len(self.make(tmp_path)) == 1
 
     def test_stored_vectors_are_512_floats(self, tmp_path):
         idx = self.make(tmp_path)

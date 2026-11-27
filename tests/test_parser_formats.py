@@ -216,7 +216,7 @@ class TestAliasedTables:
 
     def test_row_without_any_schedule_is_flagged_not_dropped(self):
         text = "Mã MH,Tên MH,Lịch LT,Ngày bắt đầu,Ngày kết thúc\nCSC10001,Nhập môn,,2026-09-07,2026-12-14\n"
-        assert codes(parse(text)) == ["NO_SCHEDULE_DETECTED"]
+        assert codes(parse(text)) == ["NO_SCHEDULE_PUBLISHED"]
 
     @pytest.mark.parametrize("cell,code", [("T9 07:30-09:30", "UNPARSEABLE_SCHEDULE"), ("T3", "UNPARSEABLE_SCHEDULE"), ("đang cập nhật", "UNPARSEABLE_SCHEDULE")])
     def test_bad_schedule_cells_are_flagged(self, cell, code):

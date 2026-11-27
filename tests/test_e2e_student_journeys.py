@@ -296,7 +296,7 @@ def test_E2E11_manual_event_via_fallback_picker(client, alice):
             "slot_end": end.isoformat(),
         },
     )
-    assert res.status_code == 200
+    assert res.status_code == 201
     data = res.json()
     assert data["events"][0]["source"] == "MANUAL"
 
