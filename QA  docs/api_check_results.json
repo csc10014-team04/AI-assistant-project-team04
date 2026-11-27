@@ -1,0 +1,287 @@
+{
+  "base": "http://127.0.0.1:8080",
+  "measured_at": "2026-11-19T21:03:40",
+  "results": [
+    {
+      "id": "API-01",
+      "desc": "register with a taken username",
+      "expected": 409,
+      "actual": "409",
+      "pass": true
+    },
+    {
+      "id": "API-02",
+      "desc": "password of 5 characters is rejected",
+      "expected": 422,
+      "actual": "422",
+      "pass": true
+    },
+    {
+      "id": "API-03",
+      "desc": "login with a wrong password",
+      "expected": 401,
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "id": "API-04",
+      "desc": "protected endpoint without a token",
+      "expected": 401,
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "id": "API-04b",
+      "desc": "login with the correct password",
+      "expected": 200,
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "id": "API-05",
+      "desc": "create a valid event",
+      "expected": 201,
+      "actual": "201",
+      "pass": true
+    },
+    {
+      "id": "API-06",
+      "desc": "end_time == start_time on a non-deadline event",
+      "expected": 422,
+      "actual": "422",
+      "pass": true
+    },
+    {
+      "id": "API-07a",
+      "desc": "user B patches user A's event (IDOR)",
+      "expected": "404 + BE_BUSINESS_RULE_REJECTION",
+      "actual": "404 BE_BUSINESS_RULE_REJECTION: Co",
+      "pass": true
+    },
+    {
+      "id": "API-07b",
+      "desc": "user B deletes user A's event (IDOR)",
+      "expected": 404,
+      "actual": "404",
+      "pass": true
+    },
+    {
+      "id": "API-09a",
+      "desc": "change the time of a hard (EXAM) event",
+      "expected": 400,
+      "actual": "400",
+      "pass": true
+    },
+    {
+      "id": "API-09b",
+      "desc": "rename / mark important on a hard event is allowed",
+      "expected": 200,
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "id": "API-08a",
+      "desc": "soft delete an event",
+      "expected": 204,
+      "actual": "204",
+      "pass": true
+    },
+    {
+      "id": "API-08b",
+      "desc": "delete the same event again",
+      "expected": 404,
+      "actual": "404",
+      "pass": true
+    },
+    {
+      "id": "API-10",
+      "desc": "unknown route",
+      "expected": "404 + FASTAPI_ROUTER_URL_NOT_FOUND",
+      "actual": "404 FASTAPI_ROUTER_URL_NOT_FOUND: FE g",
+      "pass": true
+    },
+    {
+      "id": "API-11",
+      "desc": "diagnostic headers on every response",
+      "expected": "X-Request-ID (8 hex) and X-Process-Time-Ms",
+      "actual": "83268881 0.69",
+      "pass": true
+    },
+    {
+      "id": "API-12",
+      "desc": "schedule a 2-hour task for tomorrow",
+      "expected": "200 + proposal",
+      "actual": "200 proposal=yes fallback=False",
+      "pass": true
+    },
+    {
+      "id": "API-14",
+      "desc": "confirm the proposal",
+      "expected": "200 + events + reminders",
+      "actual": "200 events=1",
+      "pass": true
+    },
+    {
+      "id": "API-15",
+      "desc": "confirm the same proposal again",
+      "expected": 409,
+      "actual": "409",
+      "pass": true
+    },
+    {
+      "id": "API-16a",
+      "desc": "reject a proposal",
+      "expected": 200,
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "id": "API-16b",
+      "desc": "confirm after reject",
+      "expected": 409,
+      "actual": "409",
+      "pass": true
+    },
+    {
+      "id": "API-13",
+      "desc": "task without a duration asks a clarification",
+      "expected": "needs_clarification and no proposal",
+      "actual": "200 nc=True proposal=False",
+      "pass": true
+    },
+    {
+      "id": "API-20",
+      "desc": "a schedule question typed in the chat box",
+      "expected": "redirect_target = search_home",
+      "actual": "search_home",
+      "pass": true
+    },
+    {
+      "id": "API-25",
+      "desc": "nonsense input: unknown intent, no proposal, and it is not reported as an AI failure",
+      "expected": "200, intent=unknown, fallback_mode=false",
+      "actual": "200 unknown fallback=False",
+      "pass": true
+    },
+    {
+      "id": "API-17",
+      "desc": "manual slot that collides with an existing event",
+      "expected": 409,
+      "actual": "409",
+      "pass": true
+    },
+    {
+      "id": "API-18",
+      "desc": "manual slot start not on the 15-minute grid",
+      "expected": 422,
+      "actual": "422",
+      "pass": true
+    },
+    {
+      "id": "API-17b",
+      "desc": "manual slot in free time",
+      "expected": 201,
+      "actual": "201",
+      "pass": true
+    },
+    {
+      "id": "API-21",
+      "desc": "scheduling command typed in the search box: 'xếp cho mình 2 tiếng học bài'",
+      "expected": "redirect_target = chat_home",
+      "actual": "chat_home",
+      "pass": true
+    },
+    {
+      "id": "API-21b",
+      "desc": "scheduling command typed in the search box: 'xếp 2 tiếng học bài'",
+      "expected": "redirect_target = chat_home",
+      "actual": "None",
+      "pass": false
+    },
+    {
+      "id": "API-21c",
+      "desc": "scheduling command typed in the search box: 'lên lịch học bài ngày mai'",
+      "expected": "redirect_target = chat_home",
+      "actual": "None",
+      "pass": false
+    },
+    {
+      "id": "API-26",
+      "desc": "search finds the user's own event and not another user's",
+      "expected": "own event found",
+      "actual": "200 total=1",
+      "pass": true
+    },
+    {
+      "id": "API-26b",
+      "desc": "user B cannot see user A's events in search",
+      "expected": "total = 0",
+      "actual": "200 total=0",
+      "pass": true
+    },
+    {
+      "id": "API-22",
+      "desc": "out-of-scope academic question is refused",
+      "expected": "200 and a refusal",
+      "actual": "200 refused=True citations=3 (1248 ms)",
+      "pass": true
+    },
+    {
+      "id": "API-22b",
+      "desc": "...and no unrelated citations are shown with the refusal",
+      "expected": "0 citations",
+      "actual": "3",
+      "pass": false
+    },
+    {
+      "id": "API-23",
+      "desc": "a text that is not a timetable",
+      "expected": "422 or 200 with 0 rows",
+      "actual": "422 valid=-",
+      "pass": true
+    },
+    {
+      "id": "API-24a",
+      "desc": "commit a timetable",
+      "expected": "200 and events created",
+      "actual": "200 created=4",
+      "pass": true
+    },
+    {
+      "id": "API-24b",
+      "desc": "replace_previous_imports: old import removed, new present, manual event kept",
+      "expected": "old=0 new>0 manual>=1",
+      "actual": "commit=200 old=0 new=4 manual=1",
+      "pass": true
+    },
+    {
+      "id": "API-19.1",
+      "desc": "AI down: 'xếp 2 tiếng học bài ngày mai'",
+      "expected": "200, fallback_mode=true, available_slots>0, no 500",
+      "actual": "200 fallback=True slots=8 (2326 ms)",
+      "pass": true
+    },
+    {
+      "id": "API-19.2",
+      "desc": "AI down: 'xếp 90 phút ôn thi thứ sáu'",
+      "expected": "200, fallback_mode=true, available_slots>0, no 500",
+      "actual": "200 fallback=True slots=11 (2335 ms)",
+      "pass": true
+    },
+    {
+      "id": "API-19.3",
+      "desc": "AI down: 'xếp 1 tiếng đọc sách hôm nay'",
+      "expected": "200, fallback_mode=true, available_slots>0, no 500",
+      "actual": "200 fallback=True slots=2 (2330 ms)",
+      "pass": true
+    },
+    {
+      "id": "API-19.4",
+      "desc": "AI down: academic question",
+      "expected": "200, fallback_mode=true",
+      "actual": "200 fallback=True",
+      "pass": true
+    }
+  ],
+  "perf": null
+}

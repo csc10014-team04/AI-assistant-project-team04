@@ -1,5 +1,7 @@
 # QA — hướng dẫn nhanh
 
+Bộ tài liệu QA: `QA_Guide.md` (hướng dẫn từng bước), `QA_Report.md` (báo cáo), `BE_QA.md` và `FE_QA.md` (tài liệu của nhóm BE và FE), file này (tóm tắt nhanh).
+
 Tài liệu này dành cho người làm QA của dự án (University Life Assistant). Cập nhật lần cuối: 2026-11-19.
 
 ## 1. Chạy tất cả bằng một lệnh
@@ -27,6 +29,7 @@ Muốn biết test nào fail: `Select-String -Path "QA  docs\last_run\*.log" -Pa
 | Độ chính xác NLU (200 ca) | `sourceCode/BE/tests/data/nlu_eval.jsonl`, `sourceCode/BE/tools/eval_nlu.py` | `cd sourceCode\BE; python tools/eval_nlu.py --rules` (chế độ LLM cần vLLM) |
 | Free-slot (35 ca tay + 2000 ca ngẫu nhiên so với bản vét cạn) | `tests/test_free_slots_accuracy.py` | `python -m pytest tests\test_free_slots_accuracy.py -s` |
 | Parser/import (48 dòng có nhãn + fuzz 3000) | `tests/test_parser_import.py` | `python -m pytest tests\test_parser_import.py -s` |
+| Parser: bảng, PDF, ảnh/OCR, mã hóa file (80 test, tự sinh dữ liệu lúc chạy) | `tests/test_parser_formats.py` | `python -m pytest tests	est_parser_formats.py -q` |
 | Tìm kiếm / RAG (72 truy vấn có nhãn + 12 ngoài phạm vi) | `tests/test_rag_quality.py`, `tests/search_eval.jsonl`, `tests/search_eval_corpus.jsonl` | `python -m pytest tests\test_rag_quality.py -s` |
 | `split_task` | `test_split_task.py` | `python -m pytest test_split_task.py` |
 | Mã hóa Fernet | `test_crypto.py` | `python -m pytest test_crypto.py` |
@@ -37,14 +40,14 @@ Vị trí file có thể đổi khi nhóm sắp xếp lại; các file test tự
 
 ## 3. Known issues (chạy ngày 2026-11-19)
 
-Kết quả hiện tại: bộ chính 717 pass / 17 fail / 23 skip / 5 xfail; FE 44 pass / 2 fail; backend 87 pass / 2 fail (21 test fail, trong đó 1 là lỗi code thật ở mục `PH05`).
+Kết quả hiện tại: bộ chính 797 pass / 17 fail / 23 skip / 5 xfail; FE 44 pass / 2 fail; backend 87 pass / 2 fail (21 test fail, trong đó 1 là lỗi code thật ở mục `PH05`).
 "Test cũ" nghĩa là nhiều khả năng test lỗi thời so với code; "Hỏi PIC" nghĩa là cần người phụ trách quyết định test hay code sai.
 
 | Test | Hiện tượng | Phán đoán |
 |---|---|---|
 | `E2E11`, `PSM27`, 2 test khác | API trả `201` thay vì `200` | Test cũ |
 | `E2E01/03/27`, `PSM15` | Phản hồi thiếu `courses_created`, `source`, `task_id` | Hỏi PIC (FE có dùng không?) |
-| `SEC25[1234567]` | Mật khẩu 7 ký tự được chấp nhận | Hỏi PIC: chốt độ dài tối thiểu (OWASP khuyên ≥ 8) |
+| `SEC25[1234567]` | Mật khẩu 7 ký tự được chấp nhận. `BE_QA.md` ghi quy tắc hiện tại là **tối thiểu 6 ký tự**, test lại kỳ vọng 8 | Test cũ, hoặc nhóm đổi chính sách (OWASP khuyên ≥ 8) |
 | `PRI18` | `Task(...)` chưa lưu thì `priority` là `None` | Test cũ |
 | `UD01`, `UD09`, `UD11` | Schema có thêm bảng `pending_clarifications` (14 câu lệnh) | Test cũ |
 | `ENG18` | Test cho rằng TASK mềm không chặn giờ trống, trái với README | Test cũ (xác nhận với Lâm) |

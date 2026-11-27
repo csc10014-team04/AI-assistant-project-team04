@@ -1,0 +1,222 @@
+{
+  "measured_at": "2026-11-19T20:57:38",
+  "tables": {
+    "kb_sources": {
+      "rows": 146,
+      "review_status": {}
+    },
+    "kb_faculties": {
+      "rows": 4,
+      "review_status": {}
+    },
+    "kb_departments": {
+      "rows": 13,
+      "review_status": {
+        "PENDING": 13
+      }
+    },
+    "kb_lecturers": {
+      "rows": 340,
+      "review_status": {
+        "PENDING": 340
+      }
+    },
+    "kb_programs": {
+      "rows": 17,
+      "review_status": {
+        "PENDING": 17
+      }
+    },
+    "kb_courses": {
+      "rows": 0,
+      "review_status": {}
+    },
+    "kb_course_lecturers": {
+      "rows": 0,
+      "review_status": {}
+    },
+    "kb_achievements": {
+      "rows": 453,
+      "review_status": {
+        "PENDING": 453
+      }
+    }
+  },
+  "checks": {
+    "completeness": {
+      "kb_lecturers.academic_title": {
+        "filled": 340,
+        "n": 340
+      },
+      "kb_lecturers.position": {
+        "filled": 20,
+        "n": 340
+      },
+      "kb_lecturers.bio": {
+        "filled": 41,
+        "n": 340
+      },
+      "kb_lecturers.profile_url": {
+        "filled": 9,
+        "n": 340
+      },
+      "kb_lecturers.department_id": {
+        "filled": 78,
+        "n": 340
+      },
+      "kb_lecturers.source_id": {
+        "filled": 340,
+        "n": 340
+      },
+      "kb_programs.level": {
+        "filled": 17,
+        "n": 17
+      },
+      "kb_programs.description": {
+        "filled": 17,
+        "n": 17
+      },
+      "kb_programs.source_id": {
+        "filled": 17,
+        "n": 17
+      },
+      "kb_departments.description": {
+        "filled": 13,
+        "n": 13
+      },
+      "kb_departments.source_id": {
+        "filled": 13,
+        "n": 13
+      },
+      "kb_faculties.short_name": {
+        "filled": 2,
+        "n": 4
+      },
+      "kb_faculties.home_url": {
+        "filled": 4,
+        "n": 4
+      },
+      "kb_faculties.description": {
+        "filled": 3,
+        "n": 4
+      },
+      "kb_sources.title": {
+        "filled": 146,
+        "n": 146
+      },
+      "kb_sources.markdown_file": {
+        "filled": 146,
+        "n": 146
+      },
+      "kb_sources.content_sha256": {
+        "filled": 146,
+        "n": 146
+      },
+      "kb_achievements.year": {
+        "filled": 438,
+        "n": 453
+      },
+      "kb_achievements.details": {
+        "filled": 414,
+        "n": 453
+      },
+      "kb_achievements.source_id": {
+        "filled": 453,
+        "n": 453
+      }
+    },
+    "uniqueness": {
+      "lecturer_names_repeated": 31,
+      "identical_page_content": 16,
+      "duplicate_achievements": 0
+    },
+    "consistency": {
+      "lecturer_department_orphans": 0,
+      "lecturer_department_faculty_mismatch": 0,
+      "achievements_without_owner": 0,
+      "achievements_year_out_of_range": 0,
+      "rows_without_source": {
+        "kb_lecturers": 0,
+        "kb_programs": 0,
+        "kb_departments": 0,
+        "kb_achievements": 0
+      },
+      "lecturer_profile_url_not_http": 0
+    },
+    "privacy_contact_leaks": {},
+    "grounding": {
+      "kb_lecturers": {
+        "found": 340,
+        "checked": 340,
+        "source_file_missing": 0,
+        "examples_not_found": []
+      },
+      "kb_programs": {
+        "found": 9,
+        "checked": 17,
+        "source_file_missing": 0,
+        "examples_not_found": [
+          "Ngành Khoa học dữ liệu - Chương trình chuẩn",
+          "Ngành Thống kê - Chương trình chuẩn",
+          "Ngành Toán học - Chương trình chuẩn",
+          "Ngành Toán tin - Chương trình chuẩn",
+          "Ngành Toán ứng dụng - Chương trình chuẩn"
+        ]
+      },
+      "kb_departments": {
+        "found": 13,
+        "checked": 13,
+        "source_file_missing": 0,
+        "examples_not_found": []
+      }
+    },
+    "currentness": {
+      "oldest_fetch": "2026-11-09 00:04:51",
+      "newest_fetch": "2026-11-09 01:15:01",
+      "newest_age_days": 10
+    },
+    "coverage": {
+      "pages_per_site": {
+        "fbb": 40,
+        "fit": 47,
+        "hcmus": 19,
+        "math": 40
+      },
+      "faculties": [
+        {
+          "site_id": "fit",
+          "name": "Khoa CÃ´ng nghá»‡ ThÃ´ng tin",
+          "lecturers": 270,
+          "programs": 6,
+          "courses": 0
+        },
+        {
+          "site_id": "fbb",
+          "name": "Khoa Sinh há»c - CÃ´ng nghá»‡ Sinh há»c",
+          "lecturers": 0,
+          "programs": 0,
+          "courses": 0
+        },
+        {
+          "site_id": "chemistry",
+          "name": "Khoa HÃ³a há»c",
+          "lecturers": 0,
+          "programs": 0,
+          "courses": 0
+        },
+        {
+          "site_id": "math",
+          "name": "Khoa ToÃ¡n - Tin há»c",
+          "lecturers": 70,
+          "programs": 11,
+          "courses": 0
+        }
+      ]
+    },
+    "review_sample": {
+      "size": 110,
+      "seed": 20261119,
+      "file": "kb_sample_for_review.csv"
+    }
+  }
+}

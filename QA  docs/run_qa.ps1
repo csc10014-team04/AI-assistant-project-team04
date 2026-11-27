@@ -142,12 +142,12 @@ if ($Lint) {
 
 # ---------------------------------------------------------------- 6. optional: latency benchmark
 if ($Bench) {
-    $bench = @((Join-Path $Root "bench_pure.py"), (Join-Path $QaDir "bench_pure.py"), (Join-Path $Root "tests\bench_pure.py")) | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if ($bench) {
+    $benchScript = @((Join-Path $Root "bench_pure.py"), (Join-Path $QaDir "bench_pure.py"), (Join-Path $Root "tests\bench_pure.py")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($benchScript) {
         Write-Host "`n>> latency benchmark ($BenchRuns runs; keep the laptop plugged in and other programs closed)" -ForegroundColor Green
         Push-Location $Be
         $out = Join-Path $QaDir "bench_results.json"
-        & $Py $bench --runs $BenchRuns --json $out 2>&1 | ForEach-Object { Write-Host "   $_" }
+        & $Py $benchScript --runs $BenchRuns --json $out 2>&1 | ForEach-Object { Write-Host "   $_" }
         Pop-Location
     } else { Write-Host "bench_pure.py not found" -ForegroundColor Yellow }
 }
