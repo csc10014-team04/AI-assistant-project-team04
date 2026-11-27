@@ -674,7 +674,8 @@ def verify_and_format_search_results(
 ACADEMIC_KB_OWNER_ID = 0  # shared namespace id for university handbook & syllabus docs
 ACADEMIC_RAG_SYSTEM_PROMPT = (
     "You are a university academic advisor assistant. "
-    "Answer the student's question concisely in Vietnamese using ONLY the provided academic context. "
+    "Answer the student's question concisely in English using ONLY the provided academic context "
+    "(the context may be in Vietnamese). "
     "If the context does not contain enough facts to answer, state clearly that the handbook/documents "
     "do not mention it. Never invent regulations, room numbers, or deadlines."
 )
@@ -965,6 +966,53 @@ def _retrieve_structured_kb_hits(
     return hits[:top_k]
 
 
+def _translate_query_to_vietnamese_keywords(
+    query: str,
+    *,
+    client: httpx.Client | None = None,
+    user_id: int | None = None,
+) -> str:
+    """Translate an English academic query into Vietnamese search keywords via vLLM; returns '' on skip/error."""
+    if not query or re.search(r"[\u00C0-\u1EF9]", query):
+        return ""
+    vllm_endpoint = resolve_vllm_endpoint()
+    model_name = resolve_llm_model()
+    timeout_sec = min(resolve_llm_timeout("academic_rag"), 4.0)
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Translate the university academic question into concise Vietnamese search keywords only. "
+                    "Output only the Vietnamese keywords/phrase, with no explanation."
+                ),
+            },
+            {"role": "user", "content": query},
+        ],
+        "max_tokens": 64,
+        "temperature": 0.0,
+    }
+    try:
+        assert_private_endpoint(vllm_endpoint)
+        if client is not None:
+            response = broker.run(
+                lambda: client.post(vllm_endpoint, json=payload, timeout=timeout_sec),
+                user_id=user_id,
+            )
+        else:
+            with httpx.Client(timeout=timeout_sec) as temp_client:
+                response = broker.run(
+                    lambda: temp_client.post(vllm_endpoint, json=payload, timeout=timeout_sec),
+                    user_id=user_id,
+                )
+        response.raise_for_status()
+        resp_json = response.json()
+        return resp_json["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return ""
+
+
 def ask_academic_knowledge_base(
     raw_query: str,
     *,
@@ -1013,6 +1061,12 @@ def ask_academic_knowledge_base(
     # steps 1, 2, 3: retrieve from structured kb_* sql tables + academic vector store, and collect top-k chunks
     kb_query = _expand_kb_abbreviations(normalized_query)
     vector_query = kb_query if kb_query == normalized_query else f"{normalized_query} {kb_query}"
+    translated_vi = _translate_query_to_vietnamese_keywords(clean_query, client=client, user_id=user_id)
+    if translated_vi:
+        translated_norm = _expand_course_abbreviations(normalize_text(translated_vi).text)
+        if translated_norm:
+            kb_query = f"{kb_query} {translated_norm}"
+            vector_query = f"{vector_query} {translated_norm}"
     kb_dir = _get_academic_kb_dir(directory)
     structured_hits = _retrieve_structured_kb_hits(db, kb_query, top_k=top_k)
     vector_hits = rag.retrieve(ACADEMIC_KB_OWNER_ID, vector_query, k=top_k, directory=kb_dir)
@@ -1046,7 +1100,7 @@ def ask_academic_knowledge_base(
 
     # step 4: pack original question + retrieved chunks into bounded rag prompt
     context_block = _pack_rag_context(hits, MAX_RAG_CONTEXT_CHARS)
-    user_prompt = f"Ngữ cảnh học vụ:\n{context_block}\n\nCâu hỏi: {clean_query}"
+    user_prompt = f"Academic context:\n{context_block}\n\nQuestion: {clean_query}"
 
     vllm_endpoint = resolve_vllm_endpoint()
     model_name = resolve_llm_model()

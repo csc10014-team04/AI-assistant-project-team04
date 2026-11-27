@@ -507,7 +507,7 @@ def test_parse_preview_prefill_and_resolve_preview_batch_dates(client):
 
     inv = p_body["invalid_rows"]
     missing_date_rows = [r for r in inv if r["error_code"] == "EMPTY_FIRST_DATE"]
-    no_sched_rows = [r for r in inv if r["error_code"] == "NO_SCHEDULE_DETECTED"]
+    no_sched_rows = [r for r in inv if r["error_code"] == "NO_SCHEDULE_PUBLISHED"]
     assert len(missing_date_rows) == 2
     assert len(no_sched_rows) == 1
     assert {r["prefill"]["weekday"] for r in missing_date_rows} == {"WED", "FRI"}

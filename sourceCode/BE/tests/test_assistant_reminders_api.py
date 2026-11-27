@@ -339,6 +339,7 @@ def test_clarification_duration_reply_keeps_task_and_no_busy_fallback(client, mo
     import json
 
     class _FakeResp:
+        status_code = 200
         def __init__(self, payload: dict):
             self._payload = payload
 
@@ -349,7 +350,8 @@ def test_clarification_duration_reply_keeps_task_and_no_busy_fallback(client, mo
             return {"choices": [{"message": {"content": json.dumps(self._payload)}}]}
 
     def fake_post(self, *args, **kwargs):
-        sent = kwargs["json"]["messages"][-1]["content"]
+        msgs = (kwargs.get("json") or {}).get("messages") or []
+        sent = msgs[-1]["content"] if msgs else ""
         if "2 tiếng" in sent or "5 tiếng" in sent:
             return _FakeResp({"intent": "schedule_task", "title": "học bài", "duration_minutes": 120})
         return _FakeResp({"intent": "schedule_task", "title": "học bài", "duration_minutes": None})

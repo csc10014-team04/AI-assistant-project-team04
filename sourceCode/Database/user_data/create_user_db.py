@@ -38,7 +38,7 @@ DEFAULT_SQLITE = HERE / "user_data.db"
 if str(BE_DIR) not in sys.path:
     sys.path.insert(0, str(BE_DIR))
 
-USER_TABLES = ["users", "auth_identities", "user_preferences", "courses", "tasks", "proposals", "events", "reminders"]
+USER_TABLES = ["users", "auth_identities", "user_preferences", "courses", "tasks", "proposals", "events", "reminders", "pending_clarifications"]
 LOG_TABLES = ["ai_error_logs", "inference_queue_logs", "telemetry_metric_logs"]
 
 

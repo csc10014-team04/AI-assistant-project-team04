@@ -434,7 +434,7 @@ def test_PSM27_manual_event_has_confirmed_proposal(client, alice, db):
             "slot_end": end.isoformat(),
         },
     )
-    assert res.status_code == 200
+    assert res.status_code == 201
     prop_id = res.json()["proposal"]["id"]
     obj = db.get(Proposal, prop_id)
     assert obj.status == ProposalStatus.CONFIRMED

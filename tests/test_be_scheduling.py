@@ -61,7 +61,7 @@ def test_SC05_long_task_is_split_across_gaps_and_stored_in_extra_slots(client, a
     p = body["proposal"]
     assert p is not None, body
     first = datetime.fromisoformat(p["end_time"]) - datetime.fromisoformat(p["start_time"])
-    assert first == timedelta(minutes=60) and len(p["extra_slots"]) == 1 and "chia thành 2 khối" in p["rationale"]
+    assert first == timedelta(minutes=60) and len(p["extra_slots"]) == 1 and "split into 2 blocks" in p["rationale"].lower()
 
     res = client.post(f"/api/v1/proposals/{p['id']}/confirm", headers=alice.h)
     assert res.status_code == 200, res.text
@@ -102,7 +102,7 @@ def test_SC08_schedule_serves_high_priority_first_and_drops_the_lowest(client, a
     assert res.status_code == 200, res.text
     body = res.json()
     assert [p["task_title"] for p in body["proposals"]] == ["cao", "vừa"]  # priority order
-    assert [u["task"]["title"] for u in body["unscheduled"]] == ["thấp"] and "ưu tiên thấp" in body["unscheduled"][0]["reason"]
+    assert [u["task"]["title"] for u in body["unscheduled"]] == ["thấp"] and "low-priority" in body["unscheduled"][0]["reason"].lower()
     slots = sorted((p["start_time"], p["end_time"]) for p in body["proposals"])
     assert slots[0][1] <= slots[1][0]  # promised blocks never overlap each other
 

@@ -42,7 +42,7 @@ def test_AI01_happy_path_extracts_intent_duration_and_window(client, alice, monk
     n = body["nlu"]
     assert n["intent"] == "schedule_task" and n["duration_minutes"] == 180 and n["source"] == "llm"
     assert n["avoid_time_of_day"] == "evening" and n["window_start"] and n["fallback_mode"] is False
-    assert "đang bận" not in (body["message"] or "")  # no AI-busy notice; a proposal message depends on free slots today
+    assert "busy" not in (body["message"] or "").lower()  # no AI-busy notice; a proposal message depends on free slots today
 
 
 def test_AI02_model_hallucinated_duration_is_overridden_by_the_users_words(client, alice, monkeypatch):
@@ -98,7 +98,7 @@ def test_AI08_profanity_is_flagged_for_the_ui(client, alice):
 
 def test_AI09_missing_duration_triggers_clarifying_question(client, alice):
     n = understand(client, alice, "xếp lịch học bài ngày mai").json()["nlu"]
-    assert n["needs_clarification"] is True and "bao lâu" in n["clarification_question"]
+    assert n["needs_clarification"] is True and "how long" in n["clarification_question"].lower()
 
 
 def test_AI10_vague_date_asks_instead_of_guessing(client, alice):
@@ -214,7 +214,7 @@ def test_AI20_deleted_event_disappears_from_reminder_audit(client, alice, db):
 def test_AI21_other_vague_phrases_also_trigger_a_question(client, alice):
     for sentence in ("xếp 2 tiếng học bài dạo này", "xếp 90 phút đọc sách sắp tới"):
         n = understand(client, alice, sentence).json()["nlu"]
-        assert n["needs_clarification"] is True and "ngày nào" in n["clarification_question"], sentence
+        assert n["needs_clarification"] is True and "which date" in n["clarification_question"].lower(), sentence
 
 
 
@@ -234,7 +234,7 @@ def test_AI22_rules_read_ranges_clock_times_and_compound_durations(sentence, tit
 
 def test_AI23_a_clock_time_alone_is_not_a_duration_so_the_server_asks(client, alice):
     n = understand(client, alice, "xếp lịch họp nhóm lúc 9h ngày mai").json()["nlu"]
-    assert n["duration_minutes"] is None and n["needs_clarification"] is True and "bao lâu" in n["clarification_question"]
+    assert n["duration_minutes"] is None and n["needs_clarification"] is True and "how long" in n["clarification_question"].lower()
 
 
 def test_AI24_range_longer_than_twelve_hours_or_backwards_gives_no_duration():
