@@ -19,10 +19,17 @@ from services.temporal import resolve_date_hint
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
 
+_EXPLICIT_QUERY_CUE_RE = re.compile(
+    r"\b(what|when|where|which|show|list|quy chế|quy định|tín chỉ|học vụ|"
+    r"có lịch gì|lịch gì|khi nào|mấy giờ|ở đâu|xem lịch|tra cứu)\b",
+    re.IGNORECASE,
+)
+
 
 class UnderstandRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     reschedule_proposal_id: int | None = None  # set when the user taps "Reschedule" on a proposal
+    reset_context: bool = False  # set when switching/starting a new chat thread on FE
 
 
 class FallbackSlotOut(BaseModel):
@@ -53,6 +60,12 @@ def _slice_fallback_slots(
                 we = gs.replace(hour=eh, minute=em, second=0, microsecond=0)
                 if we <= ws:
                     we += timedelta(days=1)
+                rem = ws.minute % 15
+                if rem:
+                    ws += timedelta(minutes=15 - rem)
+                we -= timedelta(minutes=we.minute % 15)
+                if we <= ws:
+                    continue
                 cur, bound = max(gs, ws), min(ge, we)
                 while cur + dur_td <= bound and len(out) < limit:
                     out.append(
@@ -125,6 +138,13 @@ def understand(
             db.delete(pending)
             pending = None
 
+    if body.reset_context:
+        if pending is not None:
+            db.delete(pending)
+            db.flush()
+            pending = None
+        context = None
+
     prompt_lower = body.prompt.strip().lower()
 
     is_cancel = bool(
@@ -137,9 +157,12 @@ def understand(
     is_new_topic = bool(
         re.search(
             r"\b(delete|remove|what|when|show|find|check|"
-            r"xóa|xoá|xem|tra cứu|có lịch gì|lịch gì)\b|"
+            r"graduation|credits|regulations|lecturer|prerequisite|"
+            r"xóa|xoá|xem|tra cứu|có lịch gì|lịch gì|"
+            r"quy chế|quy định|tín chỉ|học vụ|tốt nghiệp|giảng viên)\b|"
             r"\b(xếp|xep|sắp xếp|sap xep|đặt|dat|lên|len)\s+"
-            r"(?:lịch|lich|(?:giúp|giup|cho)\s+(?:mình|minh|tôi|toi))\b",
+            r"(?:lịch|lich|(?:giúp|giup|cho)\s+(?:mình|minh|tôi|toi))\b|"
+            r"^(?:please\s+|i\s+want\s+to\s+|can\s+you\s+)?(?:schedule|plan|book)\b",
             prompt_lower,
         )
     )
@@ -220,7 +243,17 @@ def understand(
             ctx_intent = context.get("intent")
             result.intent = ctx_intent if ctx_intent in {"schedule_task", "reschedule"} else "schedule_task"
 
-        if result.intent in {"schedule_task", "reschedule"} and result.duration_minutes is not None and (result.title or parent is not None) and not result.date_assumed:
+        if result.intent == "schedule_task" and not result.title and parent is None:
+            result.needs_clarification = True
+            result.clarification_question = (
+                result.clarification_question or "What activity would you like to schedule?"
+            )
+        elif result.intent in {"schedule_task", "reschedule"} and result.duration_minutes is None and parent is None:
+            result.needs_clarification = True
+            result.clarification_question = (
+                result.clarification_question or "How long would you like to spend on this activity?"
+            )
+        elif result.intent in {"schedule_task", "reschedule"} and result.duration_minutes is not None and (result.title or parent is not None) and not result.date_assumed:
             result.needs_clarification = False
             result.clarification_question = None
 
@@ -245,16 +278,14 @@ def understand(
         )
 
     if is_cancel:
-        result = understand_prompt(
-            body.prompt,
-            now,
-            db=db,
-            user_id=current_user.id,
+        result = NluResult(
+            intent="unknown",
+            title=None,
+            needs_clarification=False,
+            clarification_question=None,
+            fallback_mode=False,
+            source="rules",
         )
-        result.intent = "unknown"
-        result.title = None
-        result.needs_clarification = False
-        result.clarification_question = None
         message = "Clarification cancelled."
     else:
         message = None
@@ -307,8 +338,10 @@ def understand(
     if (
         parent is not None
         and not is_cancel
-        and not result.fallback_mode
-        and result.intent == "unknown"
+        and (
+            result.intent == "unknown"
+            or (result.intent == "query_schedule" and not _EXPLICIT_QUERY_CUE_RE.search(body.prompt))
+        )
     ):
         has_date_cue = result.date_hint is not None or bool(_DATE_HINT_RE.search(body.prompt))
         if (
@@ -333,8 +366,14 @@ def understand(
         message = None
     available_slots: list[FallbackSlotOut] = []
     if result.fallback_mode:
-        message = "AI Assistant is currently busy. Switching to manual slot selection."
-        if result.intent != "query_schedule":
+        should_offer_manual_picker = bool(
+            result.intent in {"schedule_task", "reschedule"}
+            or parent is not None
+            or result.duration_minutes is not None
+            or result.requested_start is not None
+        )
+        if should_offer_manual_picker:
+            message = "AI Assistant is currently busy. Switching to manual slot selection."
             now_vn = now.astimezone(VN_TZ)
             start_date = result.window_start or now_vn.date()
             end_date = result.window_end or (start_date + timedelta(days=6))
@@ -359,7 +398,20 @@ def understand(
                     requested_end=result.requested_end,
                     limit=20,
                 )
-    elif not result.needs_clarification and (result.intent == "schedule_task" or (parent and result.intent != "unknown")):
+        elif result.intent == "delete_event":
+            result.fallback_mode = False
+            message = "To edit or delete an existing event, please open it in the Calendar or Search tab."
+        elif result.intent == "unknown":
+            result.fallback_mode = False
+            message = (
+                "I can help schedule tasks and study sessions. "
+                "Please tell me what activity you want to schedule, its duration, and when."
+            )
+        else:
+            message = "AI Assistant is currently busy."
+    elif not result.needs_clarification and (
+        result.intent == "schedule_task" or (parent is not None and result.intent == "reschedule")
+    ):
         created = proposal_svc.create_proposal(db, current_user.id, result, body.prompt, now, parent)
         print("[DEBUG PROPOSAL]", None if created is None else {
             "start": from_db_to_vn(created.start_time).isoformat(),
@@ -384,7 +436,7 @@ def understand(
 
     redirect_target: str | None = None
     redirect_button_label: str | None = None
-    if result.intent == "query_schedule":  # a calendar / academic question belongs in the search tab
+    if result.intent == "query_schedule" and proposal is None:  # a calendar / academic question belongs in the search tab
         message = (
             "It looks like you want to search your schedule or ask an academic question. "
             "The AI Assistant tab is for scheduling tasks; tap 'Search' to switch to the Search tab."
@@ -401,6 +453,20 @@ def understand(
         redirect_target=redirect_target,
         redirect_button_label=redirect_button_label,
     )
+
+
+@router.post("/reset")
+def reset_assistant_context(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, int | str]:
+    """clear multi-turn clarification state and abandon waiting proposals when user starts a new chat."""
+    pending = db.get(PendingClarification, current_user.id)
+    if pending is not None:
+        db.delete(pending)
+    abandoned = abandon_pending_proposals(db, current_user.id)
+    db.commit()
+    return {"status": "ok", "abandoned_proposals": abandoned}
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024

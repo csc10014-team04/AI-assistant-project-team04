@@ -1,0 +1,44 @@
+@startuml schedule_query
+left to right direction
+actor Student
+rectangle "UI Search Tab\nStep 0: Mode Switch\n(Schedule vs Academic KB)" as UI
+rectangle "Backend API\n+ Auth guard (JWT)" as API
+
+' Mode A components (Schedule Search - Hybrid SQL + 2-Tier Vector, no LLM)
+rectangle "Mode A - Step 1: Query Normalizer\nteencode, course abbr,\nISO/EN/VN dates (\\b guard)" as OPT
+rectangle "Mode A - Step 2: Hybrid Search\nSQL filter (owner_id, active)\n+ 2-Tier Vector Top-K (no LLM)" as HSRCH
+rectangle "Mode A - Step 3: Result Verifier\ntime window (23:59:59), kind,\nroom, +07:00 format" as VER
+database "MySQL\nevents, courses" as DB
+
+' Mode B components (Academic Q&A - 6-Step Hybrid RAG)
+rectangle "Mode B - Step 1-3: Hybrid Retriever\nkb_* SQL + Fernet Vector Index (score >= 0.22)" as RET
+database "Academic Knowledge Base\n(MySQL kb_* tables + Admin Pre-seeded Vector Index)" as KB
+rectangle "Mode B - Step 4-6: RAG Generator\ncontext <= 2400 chars + FIFO queue + Llama 3.1 (8s)" as RAG
+
+Student --> UI : 1. select mode + enter query
+
+' Cross-tab redirect if user types a scheduling command in Search
+API ..> UI : [2x: scheduling command]\nredirect_target = chat_home (AI Assistant)
+
+' Branch Mode A: Personal Schedule Search
+UI --> API : [2a: Schedule mode]\nGET /search/events
+API --> OPT : 3a. raw query
+OPT --> HSRCH : 4a. structured filters + keywords
+HSRCH --> DB : 5a. SQL read-only query
+DB --> HSRCH : 6a. candidate events
+HSRCH ..> HSRCH : [6a-2: Tier 1 < 1 result & neural enabled]\nTier 2 neural embedding fallback (CPU >= 0.42)
+HSRCH --> VER : 7a. Top-K hybrid ranked events
+VER --> API : 8a. verified events (+07:00)
+
+' Branch Mode B: Academic Knowledge Base Q&A
+UI --> API : [2b: Academic mode]\nPOST /search/academic/ask
+API --> RET : 3b. normalized question
+RET --> KB : 4b. SQL kb_* + vector scan
+KB --> RET : 5b. interleaved Top-K chunks + scores
+RET --> RAG : [6b-1: hits found (kb_* / vec >= 0.22)]\ninterleaved Top-K context + citations
+RET ..> API : [6b-2: no hits / score < 0.22]\nabstain message (stop, no LLM)
+RAG --> API : [7b-1: normal]\ngrounded answer + citations (suppress citations if refusal)
+RAG ..> API : [7b-2: AI timeout (>8s) / error]\nfallback_mode = true + raw excerpts & citations
+
+API --> UI : 9. display events or grounded answer
+@enduml

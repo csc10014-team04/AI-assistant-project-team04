@@ -44,14 +44,14 @@ BE_HTTP_ERROR_LOG_PATH = Path(
 def _classify_error_source(status_code: int, payload: object) -> str:
     """classify http error origin so fe/be/testers know which layer raised it."""
     if status_code == 404 and isinstance(payload, dict) and payload.get("detail") == "Not Found":
-        return "FASTAPI_ROUTER_URL_NOT_FOUND: FE goi sai duong dan URL hoac phuong thuc HTTP (chua vao code nghiep vu BE)"
+        return "FASTAPI_ROUTER_URL_NOT_FOUND: Invalid request path or HTTP method"
     if status_code == 422:
-        return "PYDANTIC_VALIDATION_ERROR: Du lieu FE gui len thieu truong hoac sai kieu du lieu so voi schema BE"
+        return "PYDANTIC_VALIDATION_ERROR: Request body or query failed schema validation"
     if status_code in (401, 403):
-        return "BE_AUTH_GUARD: Loi xac thuc hoac phien dang nhap (sai mat khau, thieu token hoac token het han)"
+        return "BE_AUTH_GUARD: Authentication failed or token missing/expired"
     if status_code >= 500:
-        return "BE_UNHANDLED_EXCEPTION: Loi ngoai le chua bat ben trong code BE hoac ket noi DB"
-    return "BE_BUSINESS_RULE_REJECTION: Code nghiep vu BE chu dong tu choi yeu cau theo quy tac he thong"
+        return "BE_UNHANDLED_EXCEPTION: Unhandled backend exception or database connection failure"
+    return "BE_BUSINESS_RULE_REJECTION: Request rejected by backend business rules"
 
 
 def _record_be_error(entry: dict) -> None:
@@ -249,7 +249,7 @@ def health_db(db: Session = Depends(get_db)) -> dict[str, str]:
 
 @app.get("/api/v1/debug/logs", tags=["system"])
 def get_diagnostic_logs(
-    limit: int = Query(default=30, ge=1, le=100, description="so luong ban ghi loi moi nhat can xem"),
+    limit: int = Query(default=30, ge=1, le=100, description="maximum number of recent error records to return"),
 ) -> dict:
     """self-service diagnostics endpoint for testers, fe, and be without asking the host operator."""
     with _DEBUG_LOCK:
@@ -259,11 +259,11 @@ def get_diagnostic_logs(
     recent_ai_calls = read_recent_ai_calls(limit)
     return {
         "summary": (
-            "Cach doc nhanh: "
-            "FASTAPI_ROUTER_URL_NOT_FOUND = FE goi sai URL; "
-            "PYDANTIC_VALIDATION_ERROR = FE gui thieu hoac sai kieu du lieu; "
-            "BE_BUSINESS_RULE_REJECTION = BE tu choi theo logic nghiep vu; "
-            "BE_UNHANDLED_EXCEPTION = loi ben trong code BE (xem truong origin va traceback)."
+            "Quick legend: "
+            "FASTAPI_ROUTER_URL_NOT_FOUND = wrong endpoint URL/method; "
+            "PYDANTIC_VALIDATION_ERROR = missing/invalid request field; "
+            "BE_BUSINESS_RULE_REJECTION = rejected by backend business rule; "
+            "BE_UNHANDLED_EXCEPTION = unhandled backend error (see origin and traceback)."
         ),
         "ai_runtime_config": describe_runtime_ai_config(),
         "http_error_count": len(recent_http),

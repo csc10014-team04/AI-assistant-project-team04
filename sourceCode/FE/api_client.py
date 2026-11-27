@@ -1,5 +1,8 @@
 import os   # at the top of the file
 import json
+import base64
+import hashlib
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from kivy.network.urlrequest import UrlRequest
@@ -7,7 +10,8 @@ from kivy.storage.jsonstore import JsonStore
 
 from fallback import AI_TIMEOUT_SECONDS
 
-FE_DEBUG_LOG_PATH = Path(__file__).resolve().parent / "fe_http_debug.log"  # local diagnostic log on user/tester machine
+FE_DIR = Path(__file__).resolve().parent
+FE_DEBUG_LOG_PATH = FE_DIR / "fe_http_debug.log"  # local diagnostic log on user/tester machine
 
 
 """
@@ -30,7 +34,7 @@ class APIClient:
     def __init__(self):
         # Thuộc tính instance giúp truy cập qua self.base_url
         # in APIClient.__init__ replace the hard-coded address (8000 is the AI engine, the backend is 8080):
-        self.store = JsonStore("auth_session.json")
+        self.store = JsonStore(str(FE_DIR / "auth_session.json"))
         # order: environment variable (desktop) > address saved in the app (phones have no env vars) > localhost
         saved = self.store.get("settings").get("base_url") if self.store.exists("settings") else None
         self.base_url = (os.getenv("ASSISTANT_API_URL") or saved or "http://26.211.52.63:8080").rstrip("/")
@@ -53,22 +57,100 @@ class APIClient:
         self.base_url = url.strip().rstrip("/")
         self.store.put("settings", base_url=self.base_url)
 
+    # Tiền tố nhận diện token đã được mã hóa trong auth_session.json
+    _TOKEN_ENC_PREFIX = "enc:v1:"
+
+    @staticmethod
+    def _derive_token_key() -> bytes:
+        """
+        Tạo khóa đối xứng 32-byte gắn với thiết bị bằng Python thuần (hashlib + uuid).
+        CÁCH HOẠT ĐỘNG:
+        - Lấy định danh thiết bị qua uuid.getnode() kết hợp với salt cố định của ứng dụng.
+        - Băm SHA-256 để tạo khóa gốc 32-byte dùng cho quá trình XOR keystream.
+        """
+        device_id = str(uuid.getnode()).encode("utf-8")
+        return hashlib.sha256(b"ula-fe-session-v1:" + device_id).digest()
+
+    @classmethod
+    def _xor_keystream(cls, data: bytes, key: bytes) -> bytes:
+        """
+        Mã hóa/giải mã đối xứng bằng XOR với dòng khóa (keystream) mở rộng từ SHA-256.
+        CÁCH HOẠT ĐỘNG:
+        - Chia dữ liệu thành từng khối 32-byte; mỗi khối thứ i dùng keystream = SHA-256(key + i).
+        - Phép XOR có tính đối xứng: áp dụng cùng hàm này lần thứ 2 sẽ khôi phục đúng dữ liệu gốc.
+        """
+        out = bytearray(len(data))
+        for offset in range(0, len(data), 32):
+            block_idx = (offset // 32).to_bytes(4, "big")
+            stream = hashlib.sha256(key + block_idx).digest()
+            chunk = data[offset:offset + 32]
+            for i, b in enumerate(chunk):
+                out[offset + i] = b ^ stream[i]
+        return bytes(out)
+
+    @classmethod
+    def _encrypt_token(cls, token: str | None) -> str | None:
+        """Mã hóa access_token sang chuỗi có tiền tố 'enc:v1:' trước khi lưu vào JsonStore."""
+        if not token:
+            return token
+        key = cls._derive_token_key()
+        cipher_bytes = cls._xor_keystream(token.encode("utf-8"), key)
+        encoded = base64.urlsafe_b64encode(cipher_bytes).decode("ascii")
+        return f"{cls._TOKEN_ENC_PREFIX}{encoded}"
+
+    @classmethod
+    def _decrypt_token(cls, stored_value: str | None) -> tuple[str | None, bool]:
+        """
+        Giải mã access_token đọc từ JsonStore.
+        Trả về (token_gốc, cần_nâng_cấp_lại_file):
+        - Nếu có tiền tố 'enc:v1:', giải mã bằng khóa thiết bị. Trả về (None, False) nếu dữ liệu lỗi.
+        - Nếu chưa có tiền tố (file JSON cũ dạng plaintext), giữ nguyên token và báo cần mã hóa lại.
+        """
+        if not stored_value or not isinstance(stored_value, str):
+            return None, False
+        if not stored_value.startswith(cls._TOKEN_ENC_PREFIX):
+            return stored_value, True
+        try:
+            b64_part = stored_value[len(cls._TOKEN_ENC_PREFIX):]
+            cipher_bytes = base64.urlsafe_b64decode(b64_part.encode("ascii"))
+            plain_bytes = cls._xor_keystream(cipher_bytes, cls._derive_token_key())
+            return plain_bytes.decode("utf-8"), False
+        except Exception:
+            return None, False
+
     def _load_session(self):
-        """Khôi phục token và thông tin người dùng từ lần đăng nhập trước"""
+        """Khôi phục token (tự động giải mã) và thông tin người dùng từ lần đăng nhập trước"""
         if self.store.exists("auth"):
             data = self.store.get("auth")
-            self.access_token = data.get("access_token")
+            raw_token = data.get("access_token")
+            token, needs_migration = self._decrypt_token(raw_token)
+            self.access_token = token
             self.user_id = data.get("user_id")
             self.display_name = data.get("display_name")
             self.username = data.get("username")
+            # Tự động mã hóa lại nếu file auth_session.json cũ đang lưu token dạng plaintext
+            if needs_migration and token:
+                self.store.put(
+                    "auth",
+                    access_token=self._encrypt_token(token),
+                    user_id=self.user_id,
+                    display_name=self.display_name,
+                    username=self.username,
+                )
 
     def save_session(self, token, user_id, display_name, username=None):
-        """Lưu token và thông tin tài khoản (display_name, username) sau khi đăng nhập thành công"""
+        """Lưu token (đã mã hóa) và thông tin tài khoản (display_name, username) sau khi đăng nhập thành công"""
         self.access_token = token
         self.user_id = user_id
         self.display_name = display_name
         self.username = username
-        self.store.put("auth", access_token=token, user_id=user_id, display_name=display_name, username=username)
+        self.store.put(
+            "auth",
+            access_token=self._encrypt_token(token),
+            user_id=user_id,
+            display_name=display_name,
+            username=username,
+        )
 
     def clear_session(self):
         """Xóa token và thông tin người dùng khi đăng xuất"""
@@ -106,14 +188,14 @@ class APIClient:
         if header_source:
             return header_source
         if status_code == 404 and isinstance(result, dict) and result.get("detail") == "Not Found":
-            return "FASTAPI_ROUTER_URL_NOT_FOUND: FE goi sai duong dan URL"
+            return "FASTAPI_ROUTER_URL_NOT_FOUND: FE requested an unknown route"
         if status_code == 422:
-            return "PYDANTIC_VALIDATION_ERROR: Du lieu FE gui len chua khop schema BE"
+            return "PYDANTIC_VALIDATION_ERROR: FE payload did not match BE schema"
         if status_code in (401, 403):
-            return "BE_AUTH_GUARD: Loi xac thuc hoac token het han"
+            return "BE_AUTH_GUARD: Authentication failed or token expired"
         if status_code is not None and status_code >= 500:
-            return "BE_UNHANDLED_EXCEPTION: Loi ben trong code BE hoac ket noi DB"
-        return "BE_BUSINESS_RULE_REJECTION: BE tu choi theo quy tac nghiep vu"
+            return "BE_UNHANDLED_EXCEPTION: Internal BE or database error"
+        return "BE_BUSINESS_RULE_REJECTION: Rejected by BE business rules"
 
     @staticmethod
     def _safe_payload_preview(payload):
@@ -244,12 +326,12 @@ class APIClient:
     # =========================================================================
     # 1. AUTHENTICATION
     # =========================================================================
-    def register(self, username, display_name, password, email, on_success, on_failure, on_error):
+    def register(self, username, display_name, password, on_success, on_failure, on_error):
+        """Đăng ký tài khoản mới bằng username, display_name và password."""
         payload = {
             "username": username,
             "password": password,
             "display_name": display_name,
-            "email": email
         }
         self._request("/api/v1/auth/register", method="POST", payload=payload,
                       on_success=on_success, on_failure=on_failure, on_error=on_error)
@@ -298,6 +380,10 @@ class APIClient:
                     ".png": "image/png",
                     ".jpg": "image/jpeg",
                     ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".bmp": "image/bmp",
+                    ".tif": "image/tiff",
+                    ".tiff": "image/tiff",
                     ".csv": "text/csv",
                     ".txt": "text/plain",
                     ".md": "text/markdown",
@@ -336,10 +422,10 @@ class APIClient:
                 if on_error:
                     Clock.schedule_once(lambda dt: on_error(None, "Cannot connect to server (check network or VPN)"), 0)
             except Exception as e:
-                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
+                msg = str(e)  # copy now: Python deletes e when this block ends
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
+                    Clock.schedule_once(lambda dt, m=msg: on_error(None, m), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -388,10 +474,10 @@ class APIClient:
                     if on_failure:
                         Clock.schedule_once(lambda dt: on_failure(None, data), 0)
             except Exception as e:
-                err_msg = str(e)
                 self._print_network_error(method="POST", url=url, payload=payload_info, exc=e)
+                msg = str(e)  # copy now: Python deletes e when this block ends
                 if on_error:
-                    Clock.schedule_once(lambda dt: on_error(None, err_msg), 0)
+                    Clock.schedule_once(lambda dt, m=msg: on_error(None, m), 0)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -466,9 +552,19 @@ class APIClient:
         self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
 
     def search_events(self, query, start_date, end_date, on_success, on_failure, on_error):
-        from urllib.parse import quote
-        endpoint = f"/api/v1/search/events?q={quote(query)}&start_from={start_date}&end_until={end_date}"
-        self._request(endpoint, method="GET", on_success=on_success, on_failure=on_failure, on_error=on_error)
+        from urllib.parse import urlencode
+        params = {"q": query or ""}
+        if start_date:
+            params["start_from"] = start_date
+        if end_date:
+            params["end_until"] = end_date
+        self._request(
+            f"/api/v1/search/events?{urlencode(params)}",
+            method="GET",
+            on_success=on_success,
+            on_failure=on_failure,
+            on_error=on_error,
+        )
 
     def search_events_query(self, query_text, on_success, on_failure=None, on_error=None, top_k=50):
         """Schedule Search: Hybrid SQL + Vector search over user's events."""
@@ -492,15 +588,33 @@ class APIClient:
             on_success=on_success,
             on_failure=on_failure,
             on_error=on_error,
+            timeout=12,
         )
 
 
     # new method, next to the other calls:
-    def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None):
-        payload = {"prompt": prompt, "reschedule_proposal_id": reschedule_proposal_id}
+    def understand(self, prompt, on_success, on_failure, on_error, reschedule_proposal_id=None, reset_context=False):
+        payload = {
+            "prompt": prompt,
+            "reschedule_proposal_id": reschedule_proposal_id,
+            "reset_context": bool(reset_context),
+        }
         # strict client-side timeout (P1-9): on expiry on_error is called and the chat opens the manual picker
         self._request("/api/v1/assistant/understand", method="POST", payload=payload,
                 on_success=on_success, on_failure=on_failure, on_error=on_error, timeout=AI_TIMEOUT_SECONDS)
+
+    def reset_assistant_context(self, on_success=None, on_failure=None, on_error=None):
+        """clear server-side pending scheduling state for the current user."""
+        self._request("/api/v1/assistant/reset", method="POST", payload={},
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def get_preferences(self, on_success=None, on_failure=None, on_error=None):
+        self._request("/api/v1/user/preferences", method="GET",
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
+
+    def save_preferences(self, payload, on_success=None, on_failure=None, on_error=None):
+        self._request("/api/v1/user/preferences", method="POST", payload=payload,
+                      on_success=on_success, on_failure=on_failure, on_error=on_error)
     def get_free_slots(self, window_start, window_end, duration_minutes, on_success, on_failure, on_error,
                    respect_preferences=True):
         payload = {"window_start": window_start, "window_end": window_end,

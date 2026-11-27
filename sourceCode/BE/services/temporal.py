@@ -9,6 +9,15 @@ from database import VN_TZ
 
 _WEEKDAYS = {"hai": 0, "2": 0, "ba": 1, "3": 1, "tư": 2, "4": 2, "năm": 3, "5": 3,
              "sáu": 4, "6": 4, "bảy": 5, "7": 5}
+_EN_WEEKDAYS = {
+    "monday": 0, "mon": 0,
+    "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+    "friday": 4, "fri": 4,
+    "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
 _VAGUE = ("sớm", "lúc nào đó", "sắp tới", "dạo này", "khi nào rảnh", "một lúc nào", "vài hôm nữa", "soon", "sometime", "whenever")
 
 
@@ -25,7 +34,12 @@ def _week_monday(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
-def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWindow:
+def resolve_date_hint(
+    hint: str | None,
+    reference_now: datetime,
+    *,
+    prefer_future: bool = True,
+) -> ResolvedWindow:
     """
     input: hint (str|None) literal date words from the prompt, reference_now (aware datetime).
     core logic: map relative Vietnamese/English expressions to an inclusive VN-local date window using only
@@ -77,7 +91,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         except ValueError:
             default.clarification_question = f'The date "{month_date.group(0)}" is invalid. Which date would you like to choose?'
             return default
-        if not has_year and d < today:
+        if prefer_future and not has_year and d < today:
             try:
                 d = date(year + 1, month, day)
             except ValueError:
@@ -91,7 +105,17 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         default.note = "vague date; defaulted to next 7 days"
         return default
 
-    m = re.search(r"(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{2,4}))?", h)
+    iso_match = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", h)
+    if iso_match:
+        year, month, day = map(int, iso_match.groups())
+        try:
+            d = date(year, month, day)
+        except ValueError:
+            default.clarification_question = f'The date "{iso_match.group(0)}" is invalid. Which date would you like to choose?'
+            return default
+        return ResolvedWindow(d, d)
+
+    m = re.search(r"(?:^|(?<!\d))(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{2,4}))?\b", h)
     if m:
         day, month = int(m.group(1)), int(m.group(2))
         year = int(m.group(3)) if m.group(3) else today.year
@@ -102,7 +126,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         except ValueError:
             default.clarification_question = f'The date "{m.group(0)}" is invalid. Which date would you like to choose?'
             return default
-        if not m.group(3) and d < today:
+        if prefer_future and not m.group(3) and d < today:
             d = date(year + 1, month, day)
         return ResolvedWindow(d, d)
     ordinal = re.search(r"\b(\d{1,2})(st|nd|rd|th)\b", h)
@@ -114,7 +138,7 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
         except ValueError:
             default.clarification_question = f'The date "{ordinal.group(0)}" is invalid. Which date would you like to choose?'
             return default
-        if d < today:
+        if prefer_future and d < today:
             next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
             try:
                 d = date(next_month.year, next_month.month, day)
@@ -154,6 +178,20 @@ def resolve_date_hint(hint: str | None, reference_now: datetime) -> ResolvedWind
     if "cuối tháng" in h:
         last = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
         return ResolvedWindow(max(today, last - timedelta(days=6)), last)
+
+    en_wd_pattern = "|".join(_EN_WEEKDAYS)
+    en_wd = re.search(rf"\b(?:(this|next)\s+)?({en_wd_pattern})\b", h)
+    if en_wd:
+        target = _EN_WEEKDAYS[en_wd.group(2)]
+        if en_wd.group(1) == "next" or next_week:
+            d = _week_monday(today) + timedelta(days=7 + target)
+            return ResolvedWindow(d, d)
+        d = today + timedelta(days=(target - today.weekday()) % 7)
+        window = ResolvedWindow(d, d)
+        if d == today and en_wd.group(1) != "this":
+            window.assumed = True
+            window.note = "weekday is today; assumed today (say 'next <day>' for next week)"
+        return window
 
     if wd or sunday:
         target = 6 if (sunday or wd is None) else _WEEKDAYS[wd.group(1)]

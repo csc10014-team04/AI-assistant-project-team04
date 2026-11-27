@@ -254,6 +254,7 @@ class DayNode(MDCard):
         self.container.add_widget(self.icon_important)
         
         self.day_date = None
+        self._touch_down_pos = None
         self.register_event_type('on_release')
 
     def update_data(self, day_date, is_current_month, is_today):
@@ -292,10 +293,28 @@ class DayNode(MDCard):
         self.indicator_box.add_widget(spacer)
 
     def on_touch_down(self, touch):
+        if getattr(touch, "is_mouse_scrolling", False):
+            return False
         if self.collide_point(*touch.pos) and self.opacity > 0:
-            self.dispatch('on_release')
+            self._touch_down_pos = tuple(touch.pos)
+            touch.grab(self)
             return True
         return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            down_pos = self._touch_down_pos
+            self._touch_down_pos = None
+            if down_pos is not None and not getattr(touch, "is_mouse_scrolling", False):
+                if (
+                    self.collide_point(*touch.pos)
+                    and self.opacity > 0
+                    and max(abs(touch.x - down_pos[0]), abs(touch.y - down_pos[1])) < dp(10)
+                ):
+                    self.dispatch('on_release')
+            return True
+        return super().on_touch_up(touch)
 
     def on_release(self, *args):
         pass
@@ -598,7 +617,7 @@ class EventBlock(ButtonBehavior, FloatLayout):
         # Cập nhật toạ độ vách ngăn nằm ngang cách đỉnh dp(16)
         top_bar_h = dp(16)
         divider_y = self.y + self.height - top_bar_h
-        if self.height > top_bar_h + dp(5):
+        if self.icon_important.opacity > 0 and self.height > top_bar_h + dp(5):
             # Vẽ đường vách ngăn ngang bên dưới dấu chấm than
             self.divider_line.points = [self.x + dp(3), divider_y, self.x + self.width - dp(1), divider_y]
             # Vùng chữ nằm hoàn toàn bên dưới vách ngăn, tận dụng tối đa chiều ngang (trừ 3dp viền/padding)
@@ -609,7 +628,7 @@ class EventBlock(ButtonBehavior, FloatLayout):
             self.divider_line.points = [0, 0, 0, 0]
             self.lbl_title.pos = [self.x, self.y]
             self.lbl_title.size = [self.width, self.height]
-            self.lbl_title.text_size = (max(dp(10), self.width - dp(3)), max(dp(10), self.height - dp(2)))
+            self.lbl_title.text_size = (max(dp(10), self.width - dp(3)), max(dp(10), self.lbl_title.height - dp(2)))
 
     def on_release(self):
         from event_modals import EventDetailModal
@@ -1188,6 +1207,17 @@ class CalendarHomeScreen(MDScreen):
         self.display_month = selected_month
         self.display_year = selected_year
         self.render_month_view()
+
+    def reset_view(self):
+        """reset calendar view back to current month on logout/account switch."""
+        now = datetime.now()
+        self.display_year = now.year
+        self.display_month = now.month
+        if hasattr(self, "content_sm") and hasattr(self, "btn_menu"):
+            self.content_sm.transition.direction = 'right'
+            self.content_sm.current = "month_view"
+            self.btn_menu.icon = "menu"
+        self._redraw_events()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 from datetime import datetime
 from kivy.metrics import dp
 from kivy.core.window import Window
-from kivy.utils import platform
+from kivy.utils import platform, escape_markup
 from kivy.clock import Clock
 from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.uix.textinput import TextInput
@@ -79,13 +79,13 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         is_important = event.get("is_important", False)
         self.has_icon = is_important
         
+        self.icon_lbl = Label(
+            text="!", color=[1, 0, 0, 1], outline_color=[0, 0, 0, 1], outline_width=1.15,
+            bold=True, font_size=dp(24), size_hint=(None, None), size=(dp(18), dp(28)),
+            pos_hint={"center_y": 0.5}
+        )
+        self.divider = MDBoxLayout(size_hint_x=None, width=dp(1.2), md_bg_color=(0, 0, 0, 0.25))
         if is_important:
-            self.icon_lbl = Label(
-                text="!", color=[1, 0, 0, 1], outline_color=[0, 0, 0, 1], outline_width=1.15,
-                bold=True, font_size=dp(24), size_hint=(None, None), size=(dp(18), dp(28)),
-                pos_hint={"center_y": 0.5}
-            )
-            self.divider = MDBoxLayout(size_hint_x=None, width=dp(1.2), md_bg_color=(0, 0, 0, 0.25))
             self.add_widget(self.icon_lbl)
             self.add_widget(self.divider)
 
@@ -107,10 +107,11 @@ class EventCard(ButtonBehavior, MDBoxLayout):
         date_str = start_dt.strftime("%d/%m/%Y")
         start_time_str = start_dt.strftime("%H:%M")
         end_time_str = end_dt.strftime("%H:%M")
-        title = event["title"]
+        title = escape_markup(str(event.get("title") or "(untitled)"))
         room = event.get("room")
+        room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
 
-        if event["kind"] == "DEADLINE":
+        if event.get("kind") == "DEADLINE":
             lbl_deadline = MDLabel(
                 text=f"[b]Deadline:[/b] {title} - {end_time_str} ({date_str})",
                 markup=True, halign='left', valign='top',
@@ -139,14 +140,14 @@ class EventCard(ButtonBehavior, MDBoxLayout):
             )
             self.labels.extend([lbl_date, lbl_title, lbl_time])
 
-        if room and str(room).strip() and str(room).lower() not in ("none", "null"):
-            lbl_room = MDLabel(
-                text=f"[b]Location:[/b] {str(room).strip()}",
-                markup=True, halign='left',
-                theme_text_color="Custom", text_color=BLACK_COLOR,
-                adaptive_height=True, size_hint_x=1
-            )
-            self.labels.append(lbl_room)
+        self.lbl_room = MDLabel(
+            text=f"[b]Location:[/b] {escape_markup(room_clean)}" if room_clean else "",
+            markup=True, halign='left',
+            theme_text_color="Custom", text_color=BLACK_COLOR,
+            adaptive_height=True, size_hint_x=1
+        )
+        if room_clean:
+            self.labels.append(self.lbl_room)
             
         for lbl in self.labels:
             self.content_box.add_widget(lbl)
@@ -159,14 +160,29 @@ class EventCard(ButtonBehavior, MDBoxLayout):
     def _on_content_height(self, instance, val):
         self.height = val + dp(20)
 
+    def _update_important_badge(self, is_important):
+        is_imp = bool(is_important)
+        self.has_icon = is_imp
+        if is_imp:
+            if self.divider.parent is None:
+                self.add_widget(self.divider, index=len(self.children))
+            if self.icon_lbl.parent is None:
+                self.add_widget(self.icon_lbl, index=len(self.children))
+        else:
+            if self.icon_lbl.parent is not None:
+                self.remove_widget(self.icon_lbl)
+            if self.divider.parent is not None:
+                self.remove_widget(self.divider)
+
     def on_release(self):
         # Mở Modal_view chi tiết sự kiện ở trang Search
         from event_modals import EventDetailModal
         EventDetailModal(event=self.event, on_event_updated=self._on_event_updated).open()
 
     def _on_event_updated(self, updated_event):
-        """Cập nhật lại nhãn thời gian trên thẻ sau khi người dùng sửa giờ thành công."""
+        """Cập nhật lại nhãn thời gian và trạng thái quan trọng trên thẻ sau khi chỉnh sửa."""
         self.event = updated_event
+        self._update_important_badge(updated_event.get("is_important", False))
         try:
             st = datetime.fromisoformat(updated_event["start_time"])
             et = datetime.fromisoformat(updated_event["end_time"])
@@ -175,13 +191,24 @@ class EventCard(ButtonBehavior, MDBoxLayout):
             date_str = st.strftime("%d/%m/%Y")
             s_str = st.strftime("%H:%M")
             e_str = et.strftime("%H:%M")
+            title_escaped = escape_markup(str(self.event.get("title") or "(untitled)"))
             if self.event.get("kind") == "DEADLINE":
                 if self.labels:
-                    self.labels[0].text = f"[b]Deadline:[/b] {self.event.get('title')} - {e_str} ({date_str})"
+                    self.labels[0].text = f"[b]Deadline:[/b] {title_escaped} - {e_str} ({date_str})"
             else:
                 if len(self.labels) >= 3:
                     self.labels[0].text = f"[b]{day_str}, {date_str}:[/b]"
+                    self.labels[1].text = f"Event: {title_escaped}"
                     self.labels[2].text = f"Time: {s_str} - {e_str}"
+            room = self.event.get("room")
+            room_clean = str(room).strip() if (room and str(room).strip() and str(room).lower() not in ("none", "null")) else ""
+            if room_clean:
+                self.lbl_room.text = f"[b]Location:[/b] {escape_markup(room_clean)}"
+                if self.lbl_room.parent is None:
+                    self.content_box.add_widget(self.lbl_room)
+                    self.labels.append(self.lbl_room)
+            elif self.lbl_room.parent is not None:
+                self.content_box.remove_widget(self.lbl_room)
         except Exception:
             pass
 
@@ -271,6 +298,9 @@ class SearchScreen(MDScreen):
         self._is_rendering_batch = False
         self._render_queue = []
         self._render_clock_event = None
+        self._search_seq = 0
+        self._last_academic_query = None
+        self._has_academic_result = False
 
         # Đăng ký lắng nghe thay đổi từ store để tự động làm mới kết quả tìm kiếm
         store.on_change(self._on_store_changed)
@@ -313,21 +343,30 @@ class SearchScreen(MDScreen):
         self._is_rendering_batch = False
 
     def on_pre_enter(self, *args):
-        """
-        Kích hoạt ngay khi bắt đầu bấm chuyển sang tab SearchScreen:
-        Thay vì vẽ ngay lập tức gây khựng hiệu ứng chuyển tab, chỉ hiển thị biểu tượng loading
-        ở chính giữa khung chứa sự kiện.
-        """
+        """show loading indicator before transition unless keeping a cached academic answer."""
+        if hasattr(self, "txt_search") and self.search_mode == "academic":
+            q = self.txt_search.text.strip()
+            if self._has_academic_result and q == self._last_academic_query:
+                return
         self.show_loading()
 
     def on_enter(self, *args):
-        """
-        Kích hoạt sau khi chuyển động chuyển tab hoàn tất:
-        Bắt đầu xử lý tìm kiếm và lần lượt vẽ các thẻ sự kiện ra màn hình.
-        """
-        # Trì hoãn nhẹ 0.1s sau khi kết thúc chuyển động để đảm bảo frame chuyển động hoàn toàn mượt mà
-        Clock.schedule_once(lambda dt: self.perform_search(), 0.1)
-        store.refresh(api, on_done=self._on_store_refresh_done)
+        """run initial search cleanly after transition without duplicate academic requests."""
+        if self.search_mode == "academic":
+            q = self.txt_search.text.strip() if hasattr(self, "txt_search") else ""
+            if not (self._has_academic_result and q == self._last_academic_query):
+                Clock.schedule_once(lambda dt: self.perform_search(), 0.08)
+            return
+
+        before_ids = [ev.get("id") for ev in store.events]
+        Clock.schedule_once(lambda dt: self.perform_search(), 0.08)
+
+        def _after_refresh():
+            after_ids = [ev.get("id") for ev in store.events]
+            if after_ids != before_ids:
+                self._on_store_refresh_done()
+
+        store.refresh(api, on_done=_after_refresh)
 
     def on_leave(self, *args):
         """Dọn dẹp hàng đợi vẽ dở dang khi người dùng rời khỏi màn hình tìm kiếm."""
@@ -365,6 +404,7 @@ class SearchScreen(MDScreen):
             foreground_color=BLACK_COLOR, multiline=False, font_size=dp(15), 
             size_hint_y=None, height=dp(30), pos_hint={"center_y": .5}
         )
+        self.txt_search.bind(on_text_validate=self.perform_search)
         input_bg.add_widget(self.txt_search)
 
         btn_search = MDIconButton(
@@ -406,13 +446,21 @@ class SearchScreen(MDScreen):
             )
             mode_bar_outer.add_widget(mode_bar)
 
+        self.btn_mode_schedule_text = MDButtonText(
+            text="My Schedule", font_style="Label", role="small",
+            theme_text_color="Custom", text_color=WHITE_COLOR,
+        )
         self.btn_mode_schedule = MDButton(
-            MDButtonText(text="My Schedule", font_style="Label", role="small"),
+            self.btn_mode_schedule_text,
             style="filled", md_bg_color=BLUE_COLOR, size_hint_x=0.5,
             on_release=lambda x: self.switch_mode("schedule")
         )
+        self.btn_mode_academic_text = MDButtonText(
+            text="Academic Q&A", font_style="Label", role="small",
+            theme_text_color="Custom", text_color=BLUE_COLOR,
+        )
         self.btn_mode_academic = MDButton(
-            MDButtonText(text="Academic Q&A", font_style="Label", role="small"),
+            self.btn_mode_academic_text,
             style="outlined", size_hint_x=0.5,
             on_release=lambda x: self.switch_mode("academic")
         )
@@ -463,13 +511,13 @@ class SearchScreen(MDScreen):
         if mode == "schedule":
             self.btn_mode_schedule.style = "filled"
             self.btn_mode_schedule.md_bg_color = BLUE_COLOR
-            if self.btn_mode_schedule.children:
-                self.btn_mode_schedule.children[0].text_color = WHITE_COLOR
+            if hasattr(self, "btn_mode_schedule_text"):
+                self.btn_mode_schedule_text.text_color = WHITE_COLOR
 
             self.btn_mode_academic.style = "outlined"
             self.btn_mode_academic.md_bg_color = WHITE_COLOR
-            if self.btn_mode_academic.children:
-                self.btn_mode_academic.children[0].text_color = BLUE_COLOR
+            if hasattr(self, "btn_mode_academic_text"):
+                self.btn_mode_academic_text.text_color = BLUE_COLOR
 
             self.txt_search.hint_text = "Search title, date (e.g. math, 26/10)..."
             self.btn_filter.opacity = 1
@@ -477,13 +525,13 @@ class SearchScreen(MDScreen):
         else:
             self.btn_mode_schedule.style = "outlined"
             self.btn_mode_schedule.md_bg_color = WHITE_COLOR
-            if self.btn_mode_schedule.children:
-                self.btn_mode_schedule.children[0].text_color = BLUE_COLOR
+            if hasattr(self, "btn_mode_schedule_text"):
+                self.btn_mode_schedule_text.text_color = BLUE_COLOR
 
             self.btn_mode_academic.style = "filled"
             self.btn_mode_academic.md_bg_color = BLUE_COLOR
-            if self.btn_mode_academic.children:
-                self.btn_mode_academic.children[0].text_color = WHITE_COLOR
+            if hasattr(self, "btn_mode_academic_text"):
+                self.btn_mode_academic_text.text_color = WHITE_COLOR
 
             self.txt_search.hint_text = "Ask academic KB (e.g. graduation requirements)..."
             self.btn_filter.opacity = 0
@@ -663,11 +711,22 @@ class SearchScreen(MDScreen):
             self._render_clock_event = Clock.schedule_once(self._step_render, 0.015)
         else:
             self._is_rendering_batch = False
+            if (
+                self._rendered_count < len(self._all_matching_events)
+                and self.results_box.height <= self.results_scroll.height + dp(20)
+            ):
+                Clock.schedule_once(lambda dt: self._render_next_batch(), 0.02)
 
     # --- LOGIC TÌM KIẾM ---
     def on_text_change(self, instance, value):
         if self.search_event is not None:
             self.search_event.cancel()
+        if self.search_mode == "academic":
+            if not (value or "").strip():
+                self._last_academic_query = None
+                self._has_academic_result = False
+                self.perform_search()
+            return
         self.search_event = Clock.schedule_once(lambda dt: self.perform_search(), 0.4)
 
     def _redirect_to(self, target_screen):
@@ -707,25 +766,30 @@ class SearchScreen(MDScreen):
         self.results_box.add_widget(card)
 
     def perform_search(self, *args):
+        self._search_seq += 1
+        req_seq = self._search_seq
         self.show_loading()
         query = self.txt_search.text.strip()
         if self.search_mode == "academic":
-            self._perform_academic_search(query)
+            self._perform_academic_search(query, req_seq=req_seq)
         else:
-            self._perform_schedule_search(query)
+            self._perform_schedule_search(query, req_seq=req_seq)
 
-    def _perform_schedule_search(self, query):
+    def _perform_schedule_search(self, query, req_seq=None):
         if query and api.access_token:
             api.search_events_query(
                 query,
-                on_success=self._on_schedule_search_ok,
-                on_failure=lambda req, res: self._local_schedule_filter(query.lower()),
-                on_error=lambda req, err: self._local_schedule_filter(query.lower()),
+                on_success=lambda req, res: self._on_schedule_search_ok(req, res, req_seq=req_seq),
+                on_failure=lambda req, res: self._local_schedule_filter(query.lower()) if req_seq in (None, self._search_seq) else None,
+                on_error=lambda req, err: self._local_schedule_filter(query.lower()) if req_seq in (None, self._search_seq) else None,
+                top_k=200,
             )
         else:
             self._local_schedule_filter(query.lower())
 
-    def _on_schedule_search_ok(self, req, res):
+    def _on_schedule_search_ok(self, req, res, req_seq=None):
+        if req_seq is not None and req_seq != self._search_seq:
+            return
         if not isinstance(res, dict):
             self._local_schedule_filter(self.txt_search.text.strip().lower())
             return
@@ -774,6 +838,7 @@ class SearchScreen(MDScreen):
             match_text = (
                 not query or
                 query in event.get("title", "").lower() or
+                query in (event.get("room") or "").lower() or
                 query in kind.lower() or
                 query in date_full_str or
                 query in date_short_str
@@ -783,8 +848,10 @@ class SearchScreen(MDScreen):
 
         self._set_search_results(matching)
 
-    def _perform_academic_search(self, query):
+    def _perform_academic_search(self, query, req_seq=None):
         if not query:
+            self._last_academic_query = None
+            self._has_academic_result = False
             self.hide_loading()
             self.results_box.clear_widgets()
             hint_box = MDBoxLayout(
@@ -805,15 +872,18 @@ class SearchScreen(MDScreen):
         self.show_loading()
         api.ask_academic_kb(
             query,
-            on_success=self._on_academic_ok,
-            on_failure=self._on_academic_error,
-            on_error=self._on_academic_error,
+            on_success=lambda req, res: self._on_academic_ok(req, res, query=query, req_seq=req_seq),
+            on_failure=lambda req, res: self._on_academic_error(req, res, req_seq=req_seq),
+            on_error=lambda req, err: self._on_academic_error(req, err, req_seq=req_seq),
         )
 
-    def _on_academic_ok(self, req, res):
+    def _on_academic_ok(self, req, res, query=None, req_seq=None):
+        if req_seq is not None and req_seq != self._search_seq:
+            return
         self.hide_loading()
         self.results_box.clear_widgets()
         if not isinstance(res, dict):
+            self._has_academic_result = False
             self.results_box.add_widget(MDLabel(
                 text="Invalid response received from server.",
                 theme_text_color="Error", size_hint_y=None, height=dp(40)
@@ -823,6 +893,8 @@ class SearchScreen(MDScreen):
         redirect_target = res.get("redirect_target")
         redirect_label = res.get("redirect_button_label") or "AI Assistant"
         if redirect_target:
+            self._last_academic_query = query
+            self._has_academic_result = True
             self._show_redirect_banner(
                 res.get("message") or "You may want to schedule this task with the assistant.",
                 redirect_target,
@@ -839,12 +911,14 @@ class SearchScreen(MDScreen):
             text="Answer from Academic Assistant:",
             bold=True, theme_text_color="Primary", font_style="Title", role="small", adaptive_height=True
         ))
-        ans_text = res.get("answer") or "No matching information found for this question."
+        ans_text = res.get("answer") or res.get("message") or "No matching information found for this question."
         ans_box.add_widget(MDLabel(
             text=ans_text,
             font_style="Body", role="medium", adaptive_height=True
         ))
         self.results_box.add_widget(ans_box)
+        self._last_academic_query = query
+        self._has_academic_result = True
 
         # Danh sách trích dẫn nguồn (citations)
         citations = res.get("citations") or []
@@ -874,7 +948,10 @@ class SearchScreen(MDScreen):
                 cite_container.add_widget(cite_box)
             self.results_box.add_widget(cite_container)
 
-    def _on_academic_error(self, req, err):
+    def _on_academic_error(self, req, err, req_seq=None):
+        if req_seq is not None and req_seq != self._search_seq:
+            return
+        self._has_academic_result = False
         self.hide_loading()
         self.results_box.clear_widgets()
         err_msg = "Cannot connect to academic search server."
@@ -889,6 +966,28 @@ class SearchScreen(MDScreen):
             size_hint_y=None,
             height=dp(50)
         ))
+
+    def reset_state(self):
+        """reset search filters, text, and stale results on logout or account switch."""
+        self._search_seq += 1
+        if self.search_event is not None:
+            self.search_event.cancel()
+            self.search_event = None
+        self._cancel_progressive_rendering()
+        self._all_matching_events = []
+        self._rendered_count = 0
+        self._last_academic_query = None
+        self._has_academic_result = False
+        self.active_filters = {
+            "CLASS": True, "EXAM": True, "EVENT": True,
+            "TASK": True, "DEADLINE": True,
+        }
+        self.filter_important_only = False
+        if hasattr(self, "txt_search"):
+            self.txt_search.text = ""
+        if hasattr(self, "results_box"):
+            self.results_box.clear_widgets()
+        self.hide_loading()
 
 if __name__ == "__main__":
     Window.size = (360, 640)

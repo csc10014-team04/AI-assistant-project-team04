@@ -13,12 +13,21 @@ as the app process; for alarms that must survive the app being killed use Androi
 (`android_alarm()` below, requires pyjnius inside a python-for-android build and was NOT run on a device here).
 """
 from datetime import datetime, timedelta, timezone
-from kivy.uix.modalview import ModalView
-from kivy.metrics import dp
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDButton, MDButtonText
-from kivy.clock import Clock
+
+try:
+    from kivy.uix.modalview import ModalView
+    from kivy.metrics import dp
+    from kivymd.uix.boxlayout import MDBoxLayout
+    from kivymd.uix.label import MDLabel
+    from kivymd.uix.button import MDButton, MDButtonText
+    from kivy.clock import Clock
+    _KIVY_AVAILABLE = True
+except ImportError:
+    _KIVY_AVAILABLE = False
+    ModalView = object  # type: ignore[misc, assignment]
+    dp = lambda value: value  # type: ignore[misc, assignment]  # noqa: E731
+    MDBoxLayout = MDLabel = MDButton = MDButtonText = Clock = None  # type: ignore[assignment]
+
 VN_TZ = timezone(timedelta(hours=7))
 LATE_GRACE = timedelta(minutes=5)  # a reminder this much overdue is still shown (app was just opened)
 
@@ -199,10 +208,21 @@ class ReminderScheduler:
         self.timer = timer
         self.now = now or (lambda: datetime.now(VN_TZ))
         self._armed: dict[int, object] = {}
+        self._delivered_reported: set[int] = set()
 
-    def schedule(self, event_id: int, fire_at: str, title: str, room: str = "", start_time_str: str = "", offset_minutes: int = 30) -> bool:
+    def schedule(
+        self,
+        event_id: int,
+        fire_at: str,
+        title: str,
+        room: str = "",
+        start_time_str: str = "",
+        offset_minutes: int = 30,
+        report_scheduled: bool = True,
+    ) -> bool:
         """arm an alarm; replaces an older alarm of the same event. False when it is too late to matter."""
         self.cancel(event_id)
+        self._delivered_reported.discard(event_id)
         when = datetime.fromisoformat(fire_at)
         if when.tzinfo is None:
             when = when.replace(tzinfo=VN_TZ)
@@ -210,7 +230,10 @@ class ReminderScheduler:
         if delay < -LATE_GRACE.total_seconds():
             return False  # long gone; do not wake the user for the past
         self._armed[event_id] = self.timer(max(delay, 0), lambda: self._fire(event_id, title, room, start_time_str, offset_minutes))
-        if self.reporter:
+        # Trên Android: đăng ký thêm báo thức native qua AlarmManager để vẫn nhắc khi app bị đóng
+        if delay > 0:
+            android_alarm(event_id, int(when.timestamp() * 1000), title)
+        if report_scheduled and self.reporter:
             try:
                 self.reporter.report_reminder_scheduled(event_id)
             except Exception:
@@ -222,23 +245,98 @@ class ReminderScheduler:
         mins = snooze_minutes if snooze_minutes is not None else get_snooze_interval()
         delay_seconds = mins * 60
         self.cancel(event_id)
+        self._delivered_reported.discard(event_id)
         self._armed[event_id] = self.timer(delay_seconds, lambda: self._fire(event_id, title, room, start_time_str, offset_minutes=mins))
+        # Trên Android: đăng ký thêm báo thức snooze với AlarmManager
+        fire_epoch_ms = int((self.now().timestamp() + delay_seconds) * 1000)
+        android_alarm(event_id, fire_epoch_ms, title)
+
+    @staticmethod
+    def _format_start_time(raw_start: str | None) -> str:
+        if not raw_start:
+            return ""
+        try:
+            dt = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(VN_TZ)
+            return dt.strftime("%H:%M (%d/%m)")
+        except Exception:
+            return ""
 
     def schedule_from_confirm(self, response: dict) -> int:
         """feed the body of POST /proposals/{id}/confirm or /proposals/manual; returns how many alarms were armed."""
-        titles = {e["event_id"]: e["title"] for e in response.get("events", [])}
+        events_by_id = {e["event_id"]: e for e in response.get("events", []) if "event_id" in e}
         armed = 0
         for r in response.get("reminders", []):
-            armed += self.schedule(r["event_id"], r["fire_at"], titles.get(r["event_id"], "Event"), offset_minutes=r.get("offset_minutes", 30))
+            ev = events_by_id.get(r["event_id"], {})
+            armed += self.schedule(
+                r["event_id"],
+                r["fire_at"],
+                ev.get("title", "Event"),
+                room=ev.get("room") or "",
+                start_time_str=self._format_start_time(ev.get("start_time")),
+                offset_minutes=r.get("offset_minutes", 30),
+            )
         return armed
 
     def cancel(self, event_id: int) -> bool:
         handle = self._armed.pop(event_id, None)
+        # Hủy báo thức native trên Android (nếu có) song song với timer trong app
+        android_cancelled = cancel_android_alarm(event_id)
         if handle is None:
-            return False
+            return android_cancelled
         if hasattr(handle, "cancel"):
             handle.cancel()
         return True
+
+    def cancel_all(self) -> int:
+        """cancel every armed alarm (used on logout or full refresh)."""
+        count = 0
+        for eid in list(self._armed):
+            if self.cancel(eid):
+                count += 1
+        self._delivered_reported.clear()
+        return count
+
+    def sync_from_backend(self, api_client, store_events: list[dict] | None = None) -> None:
+        """fetch upcoming reminders from backend and arm local timers without redundant audit writes."""
+        if not api_client or not getattr(api_client, "access_token", None):
+            return
+        events_snapshot = list(store_events) if store_events is not None else None
+
+        def _on_ok(req, res):
+            rows = res if isinstance(res, list) else []
+            ev_list = events_snapshot
+            if ev_list is None:
+                try:
+                    from event_store import store as _store
+                    ev_list = list(_store.events)
+                except Exception:
+                    ev_list = []
+            ev_map = {e.get("id"): e for e in ev_list if isinstance(e, dict) and e.get("id") is not None}
+            self.cancel_all()
+            for r in rows:
+                if not isinstance(r, dict) or r.get("delivered_at") is not None:
+                    continue
+                eid = r.get("event_id")
+                fire_at = r.get("fire_at")
+                if eid is None or not fire_at:
+                    continue
+                ev = ev_map.get(eid, {})
+                self.schedule(
+                    eid,
+                    fire_at,
+                    ev.get("title") or "Event",
+                    room=ev.get("room") or "",
+                    start_time_str=self._format_start_time(ev.get("start_time")),
+                    offset_minutes=r.get("offset_minutes", 30),
+                    report_scheduled=False,
+                )
+
+        try:
+            api_client.get_reminders(on_success=_on_ok)
+        except Exception:
+            pass
 
     def pending(self) -> list[int]:
         return sorted(self._armed)
@@ -252,30 +350,34 @@ class ReminderScheduler:
         self.notify("Upcoming Event", msg_text)
 
         # Báo cáo việc đã chuyển giao thông báo tới người dùng (delivery audit)
-        if self.reporter:
+        if self.reporter and event_id not in self._delivered_reported:
+            self._delivered_reported.add(event_id)
             try:
                 self.reporter.report_reminder_delivered(event_id)
             except Exception:
                 pass
 
         # Mở popup thông báo trực quan trên giao diện ứng dụng (với 2 nút Xác nhận và Báo lại)
-        try:
-            from kivy.clock import Clock
-            Clock.schedule_once(lambda dt: DeviceNotificationModal(
-                event_id=event_id,
-                title=title,
-                room=room,
-                start_time_str=start_time_str,
-                offset_minutes=offset_minutes,
-                on_confirm=self._on_confirmed,
-                on_snooze=self._on_snoozed,
-            ).open(), 0)
-        except Exception:
-            pass
+        if _KIVY_AVAILABLE and Clock is not None:
+            try:
+                from kivymd.app import MDApp
+                if MDApp.get_running_app() is not None:
+                    Clock.schedule_once(lambda dt: DeviceNotificationModal(
+                        event_id=event_id,
+                        title=title,
+                        room=room,
+                        start_time_str=start_time_str,
+                        offset_minutes=offset_minutes,
+                        on_confirm=self._on_confirmed,
+                        on_snooze=self._on_snoozed,
+                    ).open(), 0)
+            except Exception:
+                pass
 
     def _on_confirmed(self, event_id: int) -> None:
         """Người dùng bấm Xác nhận: báo về BE là đã delivered."""
-        if self.reporter:
+        if self.reporter and event_id not in self._delivered_reported:
+            self._delivered_reported.add(event_id)
             try:
                 self.reporter.report_reminder_delivered(event_id)
             except Exception:
@@ -297,6 +399,20 @@ except Exception:
     pass
 
 
+def request_android_notification_permission() -> bool:
+    """
+    Chỉ chạy trên Android 13+ (API 33+): xin quyền POST_NOTIFICATIONS lúc runtime.
+    Trả về False nếu chạy trên PC hoặc không có module android.permissions.
+    """
+    try:
+        from android.permissions import Permission, request_permissions  # type: ignore
+
+        request_permissions([Permission.POST_NOTIFICATIONS])
+        return True
+    except Exception:
+        return False
+
+
 def android_alarm(event_id: int, fire_epoch_ms: int, title: str) -> bool:
     """
     Android only: register an exact alarm with AlarmManager so it survives the app being closed. Needs a
@@ -305,17 +421,64 @@ def android_alarm(event_id: int, fire_epoch_ms: int, title: str) -> bool:
     """
     try:
         from jnius import autoclass  # type: ignore
+
+        Context = autoclass("android.content.Context")
+        Intent = autoclass("android.content.Intent")
+        PendingIntent = autoclass("android.app.PendingIntent")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        activity = PythonActivity.mActivity
+        if activity is None:
+            return False
+
+        intent = Intent(activity, activity.getClass())
+        intent.putExtra("event_id", int(event_id))
+        intent.putExtra("title", str(title))
+        pending = PendingIntent.getActivity(
+            activity,
+            int(event_id),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager = activity.getSystemService(Context.ALARM_SERVICE)
+        # Ưu tiên setExactAndAllowWhileIdle (0 = RTC_WAKEUP); nếu Android 12+ từ chối quyền exact alarm
+        # thì tự động hạ về setAndAllowWhileIdle để không crash ứng dụng.
+        try:
+            manager.setExactAndAllowWhileIdle(0, int(fire_epoch_ms), pending)
+        except Exception:
+            manager.setAndAllowWhileIdle(0, int(fire_epoch_ms), pending)
+        return True
     except Exception:
         return False
-    Context = autoclass("android.content.Context")
-    Intent = autoclass("android.content.Intent")
-    PendingIntent = autoclass("android.app.PendingIntent")
-    PythonActivity = autoclass("org.kivy.android.PythonActivity")
-    activity = PythonActivity.mActivity
-    intent = Intent(activity, activity.getClass())
-    intent.putExtra("event_id", event_id)
-    intent.putExtra("title", title)
-    pending = PendingIntent.getActivity(activity, event_id, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)
-    manager = activity.getSystemService(Context.ALARM_SERVICE)
-    manager.setExactAndAllowWhileIdle(0, fire_epoch_ms, pending)  # 0 = RTC_WAKEUP
-    return True
+
+
+def cancel_android_alarm(event_id: int) -> bool:
+    """
+    Hủy báo thức AlarmManager đã đăng ký trước đó trên Android theo event_id.
+    Trả về False khi chạy trên PC hoặc khi không tìm thấy PendingIntent.
+    """
+    try:
+        from jnius import autoclass  # type: ignore
+
+        Context = autoclass("android.content.Context")
+        Intent = autoclass("android.content.Intent")
+        PendingIntent = autoclass("android.app.PendingIntent")
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        activity = PythonActivity.mActivity
+        if activity is None:
+            return False
+
+        intent = Intent(activity, activity.getClass())
+        pending = PendingIntent.getActivity(
+            activity,
+            int(event_id),
+            intent,
+            PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE,
+        )
+        if pending is None:
+            return False
+        manager = activity.getSystemService(Context.ALARM_SERVICE)
+        manager.cancel(pending)
+        pending.cancel()
+        return True
+    except Exception:
+        return False

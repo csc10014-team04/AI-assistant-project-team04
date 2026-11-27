@@ -43,15 +43,15 @@ def iso(minutes_from_now):
 
 def test_NT01_future_reminder_is_armed_with_the_right_delay_and_audited():
     h = Harness()
-    assert h.s.schedule(7, iso(90), "Làm đồ án") is True
+    assert h.s.schedule(7, iso(90), "Work on project") is True
     assert h.timers[0].delay == 90 * 60 and h.s.pending() == [7] and h.sched == [7]
 
 
 def test_NT02_firing_shows_a_notification_and_reports_delivery():
     h = Harness()
-    h.s.schedule(7, iso(10), "Làm đồ án", offset_minutes=30)
+    h.s.schedule(7, iso(10), "Work on project", offset_minutes=30)
     h.timers[0].callback()
-    assert h.shown == [("Sắp đến giờ", "Làm đồ án bắt đầu sau 30 phút")] and h.deliv == [7] and h.s.pending() == []
+    assert h.shown == [("Upcoming Event", "Work on project starts in 30 mins")] and h.deliv == [7] and h.s.pending() == []
 
 
 def test_NT03_rescheduling_cancels_the_old_alarm():
@@ -75,12 +75,12 @@ def test_NT05_recently_overdue_fires_now_but_long_past_is_skipped():
 
 def test_NT06_confirm_response_arms_one_alarm_per_block_with_event_titles():
     h = Harness()
-    body = {"events": [{"event_id": 1, "title": "Học bài"}, {"event_id": 2, "title": "Học bài"}],
+    body = {"events": [{"event_id": 1, "title": "Study"}, {"event_id": 2, "title": "Study"}],
             "reminders": [{"event_id": 1, "offset_minutes": 30, "fire_at": iso(60)},
                           {"event_id": 2, "offset_minutes": 15, "fire_at": iso(300)}]}
     assert h.s.schedule_from_confirm(body) == 2 and h.s.pending() == [1, 2] and h.sched == [1, 2]
     h.timers[1].callback()
-    assert h.shown[0][1] == "Học bài bắt đầu sau 15 phút"
+    assert h.shown[0][1] == "Study starts in 15 mins"
 
 
 def test_NT07_naive_fire_at_is_treated_as_vietnam_time():

@@ -48,7 +48,7 @@ SYSTEM_PROMPT = (
     "Never invent values the user did not state; use null instead. "
     "Never output calendar dates, only copy the user's own date words. "
     "Distinguish schedule_task vs query_schedule: 'xếp lịch', 'sắp xếp', or scheduling an activity is schedule_task; "
-    "'xem lịch', 'có lịch gì', 'khi nào rảnh' is query_schedule. "
+    "'xem lịch', 'có lịch gì', 'khi nào rảnh', or academic handbook/course/lecturer/regulation questions is query_schedule. "
     "Do not include time of day words (sáng, chiều, tối) in date_hint or deadline_hint."
 )
 
@@ -131,23 +131,35 @@ _DURATION_RE = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(tiếng|tieng|giờ|gio|h|hours?|hrs?|phút|phut|p|mins?|minutes?)\b",
     re.IGNORECASE,
 )
+_EN_MONTH_PAT = (
+    r"(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|"
+    r"july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)"
+)
+_EN_WEEKDAY_PAT = (
+    r"(?:(?:this|next)\s+)?(?:monday|mon|tuesday|tues|tue|wednesday|wed|"
+    r"thursday|thurs|thur|thu|friday|fri|saturday|sat|sunday|sun)"
+)
 _DATE_HINT_RE = re.compile(
-    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|"
+    rf"\b(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[/-]\d{{1,2}}(?:[/-]\d{{2,4}})?|"
+    rf"{_EN_MONTH_PAT}\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?|"
+    rf"\d{{1,2}}(?:st|nd|rd|th)?\s+{_EN_MONTH_PAT}(?:,?\s+\d{{4}})?|"
+    r"hôm nay|hom nay|ngày mai|ngay mai|ngày kia|"
     r"(?:thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật)(?:\s+(?:tuần\s+này|tuan\s+nay|tuần\s+sau|tuan\s+sau))?|"
     r"cuối tuần|cuoi tuan|cuối tháng|tháng sau|"
     r"tuần này|tuan nay|tuần sau|tuan sau|"
+    rf"(?:this|next)\s+weekend|weekend|{_EN_WEEKDAY_PAT}|"
     r"\d{1,2}(?:st|nd|rd|th)|today|tomorrow|this week|next week|"
     # vague phrases (P2-3): captured so temporal.resolve_date_hint can ask a clarifying question
     r"sớm|som|lúc nào đó|luc nao do|sắp tới|sap toi|dạo này|dao nay|khi nào rảnh|khi nao ranh|"
-    r"một lúc nào|mot luc nao|vài hôm nữa|vai hom nua|soon|sometime|whenever)",
+    r"một lúc nào|mot luc nao|vài hôm nữa|vai hom nua|soon|sometime|whenever)\b",
     re.IGNORECASE,
 )
 # matches explicit deadline clauses ("hạn nộp bài tập CTDL là thứ 6", "deadline 25/11", "nộp trước thứ sáu")
 _DEADLINE_HINT_RE = re.compile(
     r"\b(?:hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|hoàn\s+thành\s+trước|due)"
     r"[^,.;\n]{0,60}?"
-    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
-    r"cuối tuần|cuoi tuan|thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow)",
+    rf"\b(\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[/-]\d{{1,2}}(?:[/-]\d{{2,4}})?|hôm nay|hom nay|ngày mai|ngay mai|ngày kia|tuần này|tuan nay|tuần sau|tuan sau|"
+    rf"cuối tuần|cuoi tuan|(?:this|next)\s+weekend|weekend|{_EN_WEEKDAY_PAT}|thứ\s*(?:hai|ba|tư|năm|sáu|bảy|[2-7])|chủ nhật|today|tomorrow)\b",
     re.IGNORECASE,
 )
 _TIME_OF_DAY = {
@@ -163,11 +175,14 @@ _HIGH_PRIORITY = ("gấp", "gap", "quan trọng", "quan trong", "urgent", "asap"
 # "7 hours" produced wrong durations and left words such as "từ ... đến" in the title.
 _PERIOD = r"(sáng|sang|trưa|trua|chiều|chieu|tối|toi|pm|am)"
 _CLOCK_RANGE_RE = re.compile(
-    r"(?:từ|tu|from)?\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?\s*"
-    r"(?:đến|den|tới|toi|to|until|-|–)\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?",
+    r"(?:từ|tu|from|between)?\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?\s*"
+    r"(?:đến|den|tới|toi|to|until|and|-|–)\s*(\d{1,2})(?:\s*(?:h|giờ|gio|:)\s*(\d{2})?)?\s*" + _PERIOD + r"?",
     re.IGNORECASE,
 )
-_CLOCK_POINT_RE = re.compile(r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau)\s*\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}", re.IGNORECASE)
+_CLOCK_POINT_RE = re.compile(
+    r"(?:lúc|luc|vào\s+lúc|at|trước|truoc|sau|by)\s*\d{1,2}(?:\s*(?:h|giờ|gio|:)\s*\d{0,2}\s*(?:am|pm)?|\s*(?:am|pm))",
+    re.IGNORECASE,
+)
 _HOURS_MINUTES_RE = re.compile(r"(\d{1,2})\s*(?:h|giờ|gio|tiếng|tieng)\s*(\d{1,2})\s*(?:phút|phut|p|min)?\b", re.IGNORECASE)
 _HALF_HOURS_RE = re.compile(r"(\d{1,2})\s*(?:tiếng|tieng|giờ|gio|h)\s*(?:rưỡi|ruoi)\b", re.IGNORECASE)
 _DURATION_RANGE_RE = re.compile(
@@ -302,19 +317,33 @@ def _extract_title(text: str) -> str | None:
     cleaned = _HOURS_MINUTES_RE.sub(" ", cleaned)
     cleaned = _DURATION_RE.sub(" ", cleaned)
     cleaned = re.sub(r"\b(?:xếp|xep|sắp xếp|sap xep)\s+lịch\b", " ", cleaned, flags=re.IGNORECASE)  # the request words, not the activity
+    cleaned = re.sub(
+        r"\b(?:i\s+(?:want|need|would\s+like)\s+to|i'd\s+like\s+to|can\s+you(?:\s+please)?|"
+        r"could\s+you(?:\s+please)?|help\s+me(?:\s+to)?|let's)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = _DATE_HINT_RE.sub(" ", cleaned)
     cleaned = re.sub(
         r"\b(xếp|xep|sắp xếp|sap xep|hãy|giúp|giup|cho|mình|minh|tôi|toi|vào|vao|không|khong|buổi|buoi|lịch|lich|"
         r"hạn\s+nộp|hạn\s+chót|deadline|nộp\s+trước|là|trong|"
         r"khoảng|khoang|tầm|cỡ|chừng|chắc|ước\s+chừng|đồng\s+hồ|rưỡi|ruoi|thôi|nữa|ạ|nhỉ|"
-        r"about|around|approximately|approx|roughly|maybe|"
-        r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|for|me)\b",
+        r"about|around|approximately|approx|roughly|maybe|for|me|"
+        r"sáng|sang|chiều|chieu|tối|toi|nhé|nhe|nha|please|schedule|plan|book|session|activity)\b",
         " ",
         cleaned,
         flags=re.IGNORECASE,
     )
     cleaned = re.sub(r"[^\w\s]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # strip leading/trailing English connecting prepositions left behind after removing times/dates
+    while True:
+        updated = re.sub(r"^(?:on|at|in|by|from|to|between|a|an|the)\b\s*", "", cleaned, flags=re.IGNORECASE)
+        updated = re.sub(r"\s*\b(?:on|at|in|by|from|to|between|for)$", "", updated, flags=re.IGNORECASE).strip()
+        if updated == cleaned:
+            break
+        cleaned = updated
     return cleaned[:255] or None
 
 
@@ -360,6 +389,7 @@ def rule_based_understand(text: str) -> NluResult:
 
     stripped_clock = _strip_clock_times(text)
     has_explicit_duration = _has_explicit_duration(text)
+    has_clock_window = extract_time_range_minutes(text) is not None
     extracted_title = _extract_title(text_without_deadline)
     has_sched_verb = _has_scheduling_verb(lowered)
 
@@ -367,12 +397,14 @@ def rule_based_understand(text: str) -> NluResult:
         intent: Intent = "delete_event"
     elif re.search(r"\b(dời|doi|đổi|chuyển|chuyen|move|reschedule)\b", lowered):
         intent = "reschedule"
-    elif has_sched_verb or (has_explicit_duration and extracted_title is not None):
+    elif has_sched_verb or ((has_explicit_duration or has_clock_window) and extracted_title is not None):
         intent = "schedule_task"
     elif has_explicit_duration and extracted_title is None:
         intent = "schedule_task"  # bare duration ("2 tiếng", "5 tiếng") asks for activity without triggering busy fallback
     elif re.search(
-        r"\b(lịch|lich|có gì|co gi|khi nào|khi nao|mấy giờ|quy chế|quy định|tín chỉ|học vụ|schedule|what)\b",
+        r"\b(lịch(?!\s+sự\b(?!\s+kiện))|lich(?!\s+su\b(?!\s+kien))|có gì(?!\s+đâu\b)|co gi(?!\s+dau\b)|khi nào|khi nao|mấy giờ|quy chế|quy định|tín chỉ|học vụ|"
+        r"tốt nghiệp|giảng viên|học phần|môn học|graduation|credits|lecturer|prerequisite|regulations|"
+        r"schedule|what(?:'s|\s+is|\s+are|\s+do|\s+time))\b",
         lowered,
     ):
         intent = "query_schedule"
@@ -380,6 +412,7 @@ def rule_based_understand(text: str) -> NluResult:
         intent = "unknown"
 
     priority = 1 if any(re.search(rf"\b{w}\b", lowered) for w in _HIGH_PRIORITY) else None
+    keep_date_hint = intent != "unknown" or has_clock_window or bool(date_match)
     return NluResult(
         intent=intent,
         title=extracted_title if intent == "schedule_task" else None,
@@ -387,7 +420,7 @@ def rule_based_understand(text: str) -> NluResult:
         priority=priority,
         preferred_time_of_day=preferred,
         avoid_time_of_day=avoided,
-        date_hint=date_match.group(0) if date_match and intent != "unknown" else None,
+        date_hint=date_match.group(0) if date_match and keep_date_hint else None,
         deadline_hint=deadline_hint if intent != "unknown" else None,
         fallback_mode=False,
         source="rules",
@@ -457,6 +490,23 @@ def _finalize(
         result.intent = "schedule_task"
         if not result.title:
             result.title = rules.title
+    elif (
+        result.intent == "unknown"
+        and rules.intent == "query_schedule"
+        and parent_title is None
+        and (
+            result.source == "rules"
+            or re.search(
+                r"\b(quy chế|quy định|tín chỉ|học vụ|tốt nghiệp|giảng viên|học phần|"
+                r"graduation|credits|lecturer|prerequisite|regulations|xem\s+lịch|"
+                r"lịch\s+(?:học|thi|trình|tuần|ngày|hôm\s+nay|ngày\s+mai)|"
+                r"what(?:'s|\s+is|\s+are)?\s+(?:on\s+)?(?:my\s+|the\s+)?schedule)\b",
+                prompt,
+                re.IGNORECASE,
+            )
+        )
+    ):
+        result.intent = "query_schedule"
     # temporal hallucination guard: only a date phrase that literally occurs in the prompt is accepted
     hint = rules.date_hint
     if hint is None and result.date_hint and result.date_hint.lower() in prompt.lower():
@@ -608,7 +658,8 @@ def understand_prompt(
                     continue
                 break
             if (
-                not re.search(
+                parent_title is None
+                and not re.search(
                     r"\b(schedule|plan|add|book|xếp|xep|sắp xếp|sap xep|đặt lịch|lên lịch|"
                     r"what|when|lich|lịch|co gi|có gì|khi nao|khi nào)\b",
                     safe_prompt,
