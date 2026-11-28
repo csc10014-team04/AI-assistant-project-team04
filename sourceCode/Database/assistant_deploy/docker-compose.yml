@@ -48,7 +48,9 @@ services:
       - internal_bridge
 
   backend:
-    build: ./backend
+    build:
+      context: ../../BE
+      dockerfile: Dockerfile
     container_name: schedule_backend
     restart: always
     environment:
