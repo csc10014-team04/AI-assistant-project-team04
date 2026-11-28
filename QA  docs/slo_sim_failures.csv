@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/api/v1/assistant/understand,CatchResponseError('HTTP 500'),2,2026-11-28T10:31:54Z,2026-11-28T10:31:57Z
