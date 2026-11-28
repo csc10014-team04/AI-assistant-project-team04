@@ -11,6 +11,8 @@
 # System (non-pip) prerequisites:
 #   - MySQL 8.0+ (utf8mb4); apply sourceCode/BE/schema.sql
 #   - Tesseract OCR + "vie" language data (only for image timetable OCR)
+#       Linux: sudo apt install tesseract-ocr tesseract-ocr-vie
+#       Windows: tick "Vietnamese" in UB-Mannheim installer (or download vie.traineddata into tessdata\)
 #   - A running vLLM server (see section 3) for the AI model
 # ==============================================================================
 

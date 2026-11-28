@@ -665,3 +665,35 @@ def test_assistant_reset_wide_window_english_dates_and_normalizer(client, monkey
 def test_search_date_word_boundary_ctdl_not_thursday():
     meta = search_engine.optimize_search_query("ctdl", datetime(2026, 11, 24, 9, 0, tzinfo=VN_TZ))
     assert meta["date_hint"] is None and meta["window_start"] is None
+
+
+def test_ocr_line_band_sorting_and_image_upscaling():
+    from PIL import Image
+
+    # 1. words on the same visual line with +/- 3px top jitter from diacritics must stay left-to-right
+    line1_scrambled_by_top = [
+        (12, 10, 20, "Kinh"),
+        (10, 58, 22, "tế"),
+        (13, 88, 19, "đại"),
+        (11, 125, 21, "cương"),
+    ]
+    assert parser._sort_cell_words_by_line(line1_scrambled_by_top) == "Kinh tế đại cương"
+
+    # 2. multi-line cell keeps line 1 before line 2 and sorts left-to-right within each line
+    multiline_words = [
+        (45, 90, 18, "(C.45)"),
+        (12, 10, 18, "T4"),
+        (10, 42, 20, "07:30-09:10"),
+        (43, 12, 19, "Phòng"),
+    ]
+    assert parser._sort_cell_words_by_line(multiline_words) == "T4 07:30-09:10 Phòng (C.45)"
+
+    # 3. small web screenshot is upscaled, while already-large image keeps original size
+    small_img = Image.new("L", (1024, 345), 255)
+    prepared_small = parser._prepare_ocr_image(small_img)
+    assert prepared_small.mode == "RGB"
+    assert prepared_small.size == (3072, 1035)
+
+    large_img = Image.new("RGB", (2400, 1200), (255, 255, 255))
+    prepared_large = parser._prepare_ocr_image(large_img)
+    assert prepared_large.size == (2400, 1200)
