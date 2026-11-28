@@ -1439,6 +1439,61 @@ def _ocr_with_lang_fallback(ocr_fn: Any, image: Any, **kwargs: Any) -> Any:
     raise last_exc
 
 
+def _prepare_ocr_image(image: Any) -> Any:
+    """upscale small raster screenshots (e.g. web timetable captures) and normalize to RGB for sharper OCR."""
+    prepared = image.convert("RGB") if getattr(image, "mode", None) != "RGB" else image
+    width, height = prepared.size
+    if width <= 0 or height <= 0:
+        return prepared
+    scale = 1
+    if width < 900 or height < 450:
+        scale = 3
+    elif width < 1800 or height < 900:
+        scale = 2
+    if scale > 1:
+        max_dim = 4000
+        if width * scale > max_dim or height * scale > max_dim:
+            scale = min(max_dim / width, max_dim / height)
+        if scale > 1.1:
+            new_size = (max(1, int(round(width * scale))), max(1, int(round(height * scale))))
+            resampling_ns = getattr(Image, "Resampling", Image)
+            resample = getattr(resampling_ns, "LANCZOS", getattr(resampling_ns, "BICUBIC", 3))
+            prepared = prepared.resize(new_size, resample=resample)
+    return prepared
+
+
+def _sort_cell_words_by_line(words_in_cell: list[tuple[int, int, int, str]]) -> str:
+    """group words within the same visual text line before sorting left-to-right so tall accents never scramble word order."""
+    if not words_in_cell:
+        return ""
+    heights = sorted(h for _, _, h, _ in words_in_cell if h > 0)
+    median_h = heights[len(heights) // 2] if heights else 16
+    line_tol = max(6.0, median_h * 0.55)
+
+    # sort by vertical center first so words on the same baseline cluster together regardless of diacritic height
+    by_y = sorted(words_in_cell, key=lambda item: (item[0] + item[2] / 2.0, item[1]))
+    lines: list[list[tuple[int, int, int, str]]] = []
+    current_line: list[tuple[int, int, int, str]] = []
+    anchor_cy = 0.0
+    for item in by_y:
+        cy = item[0] + item[2] / 2.0
+        if not current_line or abs(cy - anchor_cy) <= line_tol:
+            current_line.append(item)
+            anchor_cy = sum(w[0] + w[2] / 2.0 for w in current_line) / len(current_line)
+        else:
+            lines.append(current_line)
+            current_line = [item]
+            anchor_cy = cy
+    if current_line:
+        lines.append(current_line)
+
+    ordered_words: list[str] = []
+    for line_words in lines:
+        line_words.sort(key=lambda item: item[1])  # left-to-right within the visual line
+        ordered_words.extend(w[3] for w in line_words)
+    return " ".join(ordered_words)
+
+
 def _extract_text_from_image(file_bytes: bytes) -> str:
     """
     Input:
@@ -1461,7 +1516,7 @@ def _extract_text_from_image(file_bytes: bytes) -> str:
         )
 
     try:
-        image = Image.open(io.BytesIO(file_bytes))
+        image = _prepare_ocr_image(Image.open(io.BytesIO(file_bytes)))
     except Exception as exc:
         raise ValueError(
             f"Cannot open image file: {type(exc).__name__}: {exc}"
@@ -1560,15 +1615,16 @@ def _extract_image_table_rows(
             "Pillow and pytesseract are required to read timetable images."
         )
 
-    horizontal_boundaries = _grid_line_positions(image, horizontal=True)
-    vertical_boundaries = _grid_line_positions(image, horizontal=False)
+    prepared_image = _prepare_ocr_image(image)
+    horizontal_boundaries = _grid_line_positions(prepared_image, horizontal=True)
+    vertical_boundaries = _grid_line_positions(prepared_image, horizontal=False)
     if len(horizontal_boundaries) < 2 or len(vertical_boundaries) < 2:
         return None
 
     try:
         ocr_data = _ocr_with_lang_fallback(
             pytesseract.image_to_data,
-            image,
+            prepared_image,
             output_type=pytesseract.Output.DICT,
         )
     except pytesseract.TesseractNotFoundError as error:
@@ -1582,7 +1638,7 @@ def _extract_image_table_rows(
 
     row_count = len(horizontal_boundaries) - 1
     column_count = len(vertical_boundaries) - 1
-    cell_words: list[list[list[tuple[int, int, str]]]] = [
+    cell_words: list[list[list[tuple[int, int, int, str]]]] = [
         [[] for _ in range(column_count)] for _ in range(row_count)
     ]
     low_confidence_cells: set[tuple[int, int]] = set()
@@ -1612,7 +1668,7 @@ def _extract_image_table_rows(
         if column_index is None or row_index is None:
             continue
 
-        cell_words[row_index][column_index].append((top, left, word))
+        cell_words[row_index][column_index].append((top, left, word_height, word))
         confidence_values = ocr_data.get("conf", [])
         confidence = 100.0
         if word_index < len(confidence_values):
@@ -1627,8 +1683,7 @@ def _extract_image_table_rows(
     for row in cell_words:
         table_cells: list[str] = []
         for words_in_cell in row:
-            words_in_cell.sort(key=lambda item: (item[0], item[1]))
-            table_cells.append(" ".join(word for _, _, word in words_in_cell))
+            table_cells.append(_sort_cell_words_by_line(words_in_cell))
         table_rows.append(table_cells)
 
     return table_rows, low_confidence_cells
